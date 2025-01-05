@@ -126,7 +126,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: containers
-        path: dist/containers
+        path: dist
     - name: Restore Containers
       run: tar xzvf containers.tar.gz
       working-directory: dist
@@ -134,7 +134,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: charts
-        path: dist/charts
+        path: dist
     - name: Restore Charts
       run: tar xzvf charts.tar.gz
     - name: Create Release
