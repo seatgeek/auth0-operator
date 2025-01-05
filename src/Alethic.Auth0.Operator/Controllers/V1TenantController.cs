@@ -45,6 +45,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformation("Reconciling Tenant {Entity}.", entity);
 
                 var api = await GetTenantApiClientAsync(entity, cancellationToken);
+                if (api == null)
+                    throw new InvalidOperationException($"Tenant {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
 
                 // update specified configuration
                 if (entity.Spec.Conf is { } conf)
