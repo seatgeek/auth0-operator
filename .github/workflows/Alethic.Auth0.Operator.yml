@@ -137,6 +137,7 @@ jobs:
         path: dist
     - name: Restore Charts
       run: tar xzvf charts.tar.gz
+      working-directory: dist
     - name: Create Release
       if: github.ref_type == 'tag'
       uses: ncipollo/release-action@v1
