@@ -141,5 +141,5 @@ jobs:
         password: ${{ github.token }}
     - name: Push Charts (GitHub)
       if: github.event_name != 'pull_request'
-      run: helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}/charts          
+      run: helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}          
   
