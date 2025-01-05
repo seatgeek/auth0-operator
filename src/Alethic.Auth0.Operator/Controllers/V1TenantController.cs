@@ -22,7 +22,9 @@ namespace Alethic.Auth0.Operator.Controllers
     [EntityRbac(typeof(V1Tenant), Verbs = RbacVerb.All)]
     [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class V1TenantController : V1ControllerBase<V1Tenant>, IEntityController<V1Tenant>
+    public class V1TenantController :
+        V1Controller<V1Tenant, V1Tenant.SpecDef, V1Tenant.StatusDef, TenantConf>,
+        IEntityController<V1Tenant>
     {
 
         /// <summary>

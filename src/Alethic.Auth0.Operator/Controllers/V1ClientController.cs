@@ -24,7 +24,9 @@ namespace Alethic.Auth0.Operator.Controllers
     [EntityRbac(typeof(V1Client), Verbs = RbacVerb.All)]
     [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class V1ClientController : V1ControllerBase<V1Client>, IEntityController<V1Client>
+    public class V1ClientController : 
+        V1TenantEntityController<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>,
+        IEntityController<V1Client>
     {
 
         /// <summary>
@@ -106,37 +108,9 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        public override async Task DeletedAsync(V1Client entity, CancellationToken cancellationToken)
+        public override Task DeletedAsync(V1Client entity, CancellationToken cancellationToken)
         {
-            try
-            {
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
-
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
-
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    Logger.LogWarning($"Client {entity.Namespace()}:{entity.Name()} has no known ID, skipping delete.");
-                    return;
-                }
-
-                await api.Clients.DeleteAsync(entity.Status.Id, cancellationToken: cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception deleting Client.");
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+            throw new NotImplementedException();
         }
 
     }

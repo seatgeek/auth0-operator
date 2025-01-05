@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Entities;
+using Alethic.Auth0.Operator.Models.Connection;
 using Alethic.Auth0.Operator.Models.ResourceServer;
 
 using Auth0.ManagementApi.Models;
@@ -24,7 +25,9 @@ namespace Alethic.Auth0.Operator.Controllers
     [EntityRbac(typeof(V1ResourceServer), Verbs = RbacVerb.All)]
     [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class V1ResourceServerController : V1ControllerBase<V1ResourceServer>, IEntityController<V1ResourceServer>
+    public class V1ResourceServerController :
+        V1TenantEntityController<V1ResourceServer, V1ResourceServer.SpecDef, V1ResourceServer.StatusDef, ResourceServerConf>,
+        IEntityController<V1ResourceServer>
     {
 
         /// <summary>

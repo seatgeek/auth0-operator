@@ -13,10 +13,12 @@ namespace Alethic.Auth0.Operator.Entities
     [EntityScope(EntityScope.Namespaced)]
     [KubernetesEntity(Group = "kubernetes.auth0.com", ApiVersion = "v1", Kind = "ResourceServer")]
     [KubernetesEntityShortNames("a0api")]
-    public partial class V1ResourceServer : CustomKubernetesEntity<V1ResourceServer.SpecDef, V1ResourceServer.StatusDef>
+    public partial class V1ResourceServer :
+        CustomKubernetesEntity<V1ResourceServer.SpecDef, V1ResourceServer.StatusDef>,
+        V1TenantEntity<V1ResourceServer.SpecDef, V1ResourceServer.StatusDef, ResourceServerConf>
     {
 
-        public class SpecDef
+        public class SpecDef : V1TenantEntitySpec<ResourceServerConf>
         {
 
             [JsonPropertyName("tenantRef")]
@@ -28,7 +30,7 @@ namespace Alethic.Auth0.Operator.Entities
 
         }
 
-        public class StatusDef
+        public class StatusDef : V1TenantEntityStatus<ResourceServerConf>
         {
 
             [JsonPropertyName("id")]

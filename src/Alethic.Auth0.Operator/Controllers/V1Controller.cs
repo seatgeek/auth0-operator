@@ -26,8 +26,11 @@ using Newtonsoft.Json;
 namespace Alethic.Auth0.Operator.Controllers
 {
 
-    public abstract class V1ControllerBase<TEntity> : IEntityController<TEntity>
-        where TEntity : IKubernetesObject<V1ObjectMeta>
+    public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
+        where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
+        where TSpec : V1EntitySpec<TConf>
+        where TStatus : V1EntityStatus<TConf>
+        where TConf : class
     {
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
@@ -43,7 +46,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="kube"></param>
         /// <param name="util"></param>
         /// <param name="logger"></param>
-        public V1ControllerBase(IMemoryCache cache, IKubernetesClient kube, ILogger<V1ClientController> logger)
+        public V1Controller(IMemoryCache cache, IKubernetesClient kube, ILogger<V1ClientController> logger)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _kube = kube ?? throw new ArgumentNullException(nameof(kube));
@@ -137,10 +140,6 @@ namespace Alethic.Auth0.Operator.Controllers
 
             return api;
         }
-
-        public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);
-
-        public abstract Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken);
 
         /// <summary>
         /// Updates the Reconcile event to a warning.
@@ -241,6 +240,12 @@ namespace Alethic.Auth0.Operator.Controllers
             _newtonsoftJsonSerializer.Serialize(w, from);
             return System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString());
         }
+
+        /// <inheritdoc />
+        public abstract Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken);
+
+        /// <inheritdoc />
+        public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);
 
     }
 
