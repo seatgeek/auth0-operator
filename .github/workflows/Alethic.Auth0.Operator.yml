@@ -75,7 +75,7 @@ jobs:
         name: msbuild.binlog
         path: msbuild.binlog
     - name: Package Containers
-      run: tar czvf /tmp/containers.tar.gz tests
+      run: tar czvf /tmp/containers.tar.gz containers
       working-directory: dist
     - name: Upload Containers
       uses: actions/upload-artifact@v4
@@ -83,7 +83,7 @@ jobs:
         name: containers
         path: /tmp/containers.tar.gz
     - name: Package Charts
-      run: tar czvf /tmp/charts.tar.gz tests
+      run: tar czvf /tmp/charts.tar.gz charts
       working-directory: dist
     - name: Upload Charts
       uses: actions/upload-artifact@v4
