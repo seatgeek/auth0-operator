@@ -7,6 +7,8 @@ using Alethic.Auth0.Operator.Models.Tenant;
 
 using Auth0.ManagementApi.Models;
 
+using k8s.Models;
+
 using KubeOps.Abstractions.Controller;
 using KubeOps.Abstractions.Rbac;
 using KubeOps.KubernetesClient;
@@ -18,6 +20,7 @@ namespace Alethic.Auth0.Operator.Controllers
 {
 
     [EntityRbac(typeof(V1Tenant), Verbs = RbacVerb.All)]
+    [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
     public class V1TenantController : V1ControllerBase<V1Tenant>, IEntityController<V1Tenant>
     {
 

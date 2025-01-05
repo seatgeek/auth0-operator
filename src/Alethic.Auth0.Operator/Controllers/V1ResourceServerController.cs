@@ -21,6 +21,7 @@ namespace Alethic.Auth0.Operator.Controllers
 {
 
     [EntityRbac(typeof(V1ResourceServer), Verbs = RbacVerb.All)]
+    [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
     public class V1ResourceServerController : V1ControllerBase<V1ResourceServer>, IEntityController<V1ResourceServer>
     {
 
