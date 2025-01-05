@@ -127,11 +127,16 @@ jobs:
       with:
         name: containers
         path: dist/containers
+    - name: Restore Containers
+      run: tar xzvf containers.tar.gz
+      working-directory: dist
     - name: Download Charts
       uses: actions/download-artifact@v4
       with:
         name: charts
         path: dist/charts
+    - name: Restore Charts
+      run: tar xzvf charts.tar.gz
     - name: Create Release
       if: github.ref_type == 'tag'
       uses: ncipollo/release-action@v1
