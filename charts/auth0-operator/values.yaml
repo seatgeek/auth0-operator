@@ -8,7 +8,7 @@ operator:
   # Specify the Operator container image to use for the deployment.
   image:
     repository: auth0-operator
-    tag: 
+    tag:
     pullPolicy: IfNotPresent
   # An array of Kubernetes secrets to use for pulling images from a private ``image.repository``.
   # Only one array element is supported at this time.
