@@ -6,7 +6,7 @@
         <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
         <Nullable>enable</Nullable>
         <SelfContained>true</SelfContained>
-        <ContainerRepository>auth0-operator</ContainerRepository>
+        <ContainerRepository>auth0-operator-image</ContainerRepository>
     </PropertyGroup>
     
     <ItemGroup>
