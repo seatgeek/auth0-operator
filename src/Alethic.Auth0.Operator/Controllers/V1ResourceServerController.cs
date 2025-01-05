@@ -103,10 +103,37 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        public override Task DeletedAsync(V1ResourceServer entity, CancellationToken cancellationToken)
+        public override async Task DeletedAsync(V1ResourceServer entity, CancellationToken cancellationToken)
         {
-            Logger.LogWarning("Unsupported operation deleting ResourceServer {Entity}.", entity);
-            return Task.CompletedTask;
+            try
+            {
+                if (entity.Spec.TenantRef == null)
+                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
+
+                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+                if (api == null)
+                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
+
+                if (string.IsNullOrWhiteSpace(entity.Status.Id))
+                {
+                    Logger.LogWarning($"ResourceServer {entity.Namespace()}:{entity.Name()} has no known ID, skipping delete.");
+                    return;
+                }
+
+                await api.ResourceServers.DeleteAsync(entity.Status.Id, cancellationToken: cancellationToken);
+            }
+            catch (Exception e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Unexpected exception deleting ResourceServer.");
+                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
+                }
+                catch
+                {
+                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                }
+            }
         }
 
     }

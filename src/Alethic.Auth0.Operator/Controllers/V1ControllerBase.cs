@@ -184,6 +184,27 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Updates the Deleting event to a warning.
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="message"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        protected async Task DeletingWarningAsync(TEntity entity, string message, CancellationToken cancellationToken)
+        {
+            await _kube.CreateAsync(new Eventsv1Event(
+                    DateTime.Now,
+                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                    reportingController: "kubernetes.auth0.com/operator",
+                    reportingInstance: Dns.GetHostName(),
+                    regarding: entity.MakeObjectReference(),
+                    action: "Deleting",
+                    type: "Warning",
+                    reason: message),
+                cancellationToken);
+        }
+
+        /// <summary>
         /// Transforms the given Newtonsoft JSON serializable object to a System.Text.Json serializable object.
         /// </summary>
         /// <typeparam name="TFrom"></typeparam>
