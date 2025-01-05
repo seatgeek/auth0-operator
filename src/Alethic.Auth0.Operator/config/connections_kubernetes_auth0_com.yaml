@@ -1,0 +1,769 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: connections.kubernetes.auth0.com
+spec:
+  group: kubernetes.auth0.com
+  names:
+    kind: Connection
+    listKind: ConnectionList
+    plural: connections
+    singular: connection
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          status:
+            nullable: false
+            properties:
+              id:
+                nullable: true
+                type: string
+              lastConf:
+                nullable: true
+                properties:
+                  id:
+                    nullable: true
+                    type: string
+                  strategy:
+                    nullable: true
+                    type: string
+                  provisioning_ticket_url:
+                    nullable: true
+                    type: string
+                  options:
+                    nullable: true
+                    properties:
+                      validation:
+                        nullable: true
+                        properties:
+                          username:
+                            nullable: true
+                            properties:
+                              min:
+                                format: int32
+                                nullable: true
+                                type: integer
+                              max:
+                                format: int32
+                                nullable: true
+                                type: integer
+                            type: object
+                        type: object
+                      non_persistent_attrs:
+                        items:
+                          nullable: false
+                          type: string
+                        nullable: true
+                        type: array
+                      precedence:
+                        items:
+                          enum:
+                          - email
+                          - phone_number
+                          - username
+                          type: string
+                        nullable: true
+                        type: array
+                      attributes:
+                        nullable: true
+                        properties:
+                          email:
+                            nullable: true
+                            properties:
+                              identifier:
+                                nullable: true
+                                properties:
+                                  active:
+                                    nullable: true
+                                    type: boolean
+                                type: object
+                              profile_required:
+                                nullable: true
+                                type: boolean
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                  verification:
+                                    nullable: true
+                                    properties:
+                                      active:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                          phone_number:
+                            nullable: true
+                            properties:
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                  verification:
+                                    nullable: true
+                                    properties:
+                                      active:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                          username:
+                            nullable: true
+                            properties:
+                              identifier:
+                                nullable: true
+                                properties:
+                                  active:
+                                    nullable: true
+                                    type: boolean
+                                type: object
+                              profile_required:
+                                nullable: true
+                                type: boolean
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                type: object
+                              validation:
+                                nullable: true
+                                properties:
+                                  min_length:
+                                    format: int32
+                                    nullable: true
+                                    type: integer
+                                  max_length:
+                                    format: int32
+                                    nullable: true
+                                    type: integer
+                                  allowed_types:
+                                    nullable: true
+                                    properties:
+                                      email:
+                                        nullable: true
+                                        type: boolean
+                                      phone_number:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                        type: object
+                      enable_script_context:
+                        nullable: true
+                        type: boolean
+                      enabledDatabaseCustomization:
+                        nullable: true
+                        type: boolean
+                      import_mode:
+                        nullable: true
+                        type: boolean
+                      customScripts:
+                        nullable: true
+                        properties:
+                          login:
+                            nullable: true
+                            type: string
+                          get_user:
+                            nullable: true
+                            type: string
+                          delete:
+                            nullable: true
+                            type: string
+                          change_password:
+                            nullable: true
+                            type: string
+                          verify:
+                            nullable: true
+                            type: string
+                          create:
+                            nullable: true
+                            type: string
+                          change_username:
+                            nullable: true
+                            type: string
+                          change_email:
+                            nullable: true
+                            type: string
+                          change_phone_number:
+                            nullable: true
+                            type: string
+                        type: object
+                      authentication_methods:
+                        nullable: true
+                        properties:
+                          password:
+                            nullable: true
+                            properties:
+                              enabled:
+                                nullable: true
+                                type: boolean
+                            type: object
+                          passkey:
+                            nullable: true
+                            properties:
+                              enabled:
+                                nullable: true
+                                type: boolean
+                            type: object
+                        type: object
+                      passkey_options:
+                        nullable: true
+                        properties:
+                          challenge_ui:
+                            enum:
+                            - both
+                            - autofill
+                            - button
+                            nullable: true
+                            type: string
+                          progressive_enrollment_enabled:
+                            nullable: true
+                            type: boolean
+                          local_enrollment_enabled:
+                            nullable: true
+                            type: boolean
+                        type: object
+                      passwordPolicy:
+                        enum:
+                        - none
+                        - low
+                        - fair
+                        - good
+                        - excellent
+                        nullable: true
+                        type: string
+                      password_complexity_options:
+                        nullable: true
+                        properties:
+                          min_length:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                      password_history:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                          size:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                      password_no_personal_info:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                        type: object
+                      password_dictionary:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                          dictionary:
+                            items:
+                              nullable: false
+                              type: string
+                            nullable: true
+                            type: array
+                        type: object
+                      api_enable_users:
+                        nullable: true
+                        type: boolean
+                      basic_profile:
+                        nullable: true
+                        type: boolean
+                      ext_admin:
+                        nullable: true
+                        type: boolean
+                      ext_is_suspended:
+                        nullable: true
+                        type: boolean
+                      ext_agreed_terms:
+                        nullable: true
+                        type: boolean
+                      ext_groups:
+                        nullable: true
+                        type: boolean
+                      ext_assigned_plans:
+                        nullable: true
+                        type: boolean
+                      ext_profile:
+                        nullable: true
+                        type: boolean
+                      disable_self_service_change_password:
+                        nullable: true
+                        type: boolean
+                      upstream_params:
+                        nullable: true
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      set_user_root_attributes:
+                        enum:
+                        - on_each_login
+                        - on_first_login
+                        - never_on_login
+                        nullable: true
+                        type: string
+                      gateway_authentication:
+                        nullable: true
+                        properties:
+                          method:
+                            nullable: true
+                            type: string
+                          subject:
+                            nullable: true
+                            type: string
+                          audience:
+                            nullable: true
+                            type: string
+                          secret:
+                            nullable: true
+                            type: string
+                          secret_base64_encoded:
+                            nullable: true
+                            type: boolean
+                        type: object
+                    type: object
+                  name:
+                    nullable: true
+                    type: string
+                  display_name:
+                    nullable: true
+                    type: string
+                  metadata:
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  realms:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                  enabled_clients:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                  show_as_button:
+                    nullable: true
+                    type: boolean
+                  is_domain_connection:
+                    nullable: true
+                    type: boolean
+                type: object
+            type: object
+          spec:
+            nullable: false
+            properties:
+              tenantRef:
+                nullable: true
+                properties:
+                  namespace:
+                    nullable: true
+                    type: string
+                  name:
+                    nullable: true
+                    type: string
+                required:
+                - name
+                type: object
+              conf:
+                nullable: true
+                properties:
+                  id:
+                    nullable: true
+                    type: string
+                  strategy:
+                    nullable: true
+                    type: string
+                  provisioning_ticket_url:
+                    nullable: true
+                    type: string
+                  options:
+                    nullable: true
+                    properties:
+                      validation:
+                        nullable: true
+                        properties:
+                          username:
+                            nullable: true
+                            properties:
+                              min:
+                                format: int32
+                                nullable: true
+                                type: integer
+                              max:
+                                format: int32
+                                nullable: true
+                                type: integer
+                            type: object
+                        type: object
+                      non_persistent_attrs:
+                        items:
+                          nullable: false
+                          type: string
+                        nullable: true
+                        type: array
+                      precedence:
+                        items:
+                          enum:
+                          - email
+                          - phone_number
+                          - username
+                          type: string
+                        nullable: true
+                        type: array
+                      attributes:
+                        nullable: true
+                        properties:
+                          email:
+                            nullable: true
+                            properties:
+                              identifier:
+                                nullable: true
+                                properties:
+                                  active:
+                                    nullable: true
+                                    type: boolean
+                                type: object
+                              profile_required:
+                                nullable: true
+                                type: boolean
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                  verification:
+                                    nullable: true
+                                    properties:
+                                      active:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                          phone_number:
+                            nullable: true
+                            properties:
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                  verification:
+                                    nullable: true
+                                    properties:
+                                      active:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                          username:
+                            nullable: true
+                            properties:
+                              identifier:
+                                nullable: true
+                                properties:
+                                  active:
+                                    nullable: true
+                                    type: boolean
+                                type: object
+                              profile_required:
+                                nullable: true
+                                type: boolean
+                              signup:
+                                nullable: true
+                                properties:
+                                  status:
+                                    enum:
+                                    - required
+                                    - optional
+                                    - inactive
+                                    nullable: true
+                                    type: string
+                                type: object
+                              validation:
+                                nullable: true
+                                properties:
+                                  min_length:
+                                    format: int32
+                                    nullable: true
+                                    type: integer
+                                  max_length:
+                                    format: int32
+                                    nullable: true
+                                    type: integer
+                                  allowed_types:
+                                    nullable: true
+                                    properties:
+                                      email:
+                                        nullable: true
+                                        type: boolean
+                                      phone_number:
+                                        nullable: true
+                                        type: boolean
+                                    type: object
+                                type: object
+                            type: object
+                        type: object
+                      enable_script_context:
+                        nullable: true
+                        type: boolean
+                      enabledDatabaseCustomization:
+                        nullable: true
+                        type: boolean
+                      import_mode:
+                        nullable: true
+                        type: boolean
+                      customScripts:
+                        nullable: true
+                        properties:
+                          login:
+                            nullable: true
+                            type: string
+                          get_user:
+                            nullable: true
+                            type: string
+                          delete:
+                            nullable: true
+                            type: string
+                          change_password:
+                            nullable: true
+                            type: string
+                          verify:
+                            nullable: true
+                            type: string
+                          create:
+                            nullable: true
+                            type: string
+                          change_username:
+                            nullable: true
+                            type: string
+                          change_email:
+                            nullable: true
+                            type: string
+                          change_phone_number:
+                            nullable: true
+                            type: string
+                        type: object
+                      authentication_methods:
+                        nullable: true
+                        properties:
+                          password:
+                            nullable: true
+                            properties:
+                              enabled:
+                                nullable: true
+                                type: boolean
+                            type: object
+                          passkey:
+                            nullable: true
+                            properties:
+                              enabled:
+                                nullable: true
+                                type: boolean
+                            type: object
+                        type: object
+                      passkey_options:
+                        nullable: true
+                        properties:
+                          challenge_ui:
+                            enum:
+                            - both
+                            - autofill
+                            - button
+                            nullable: true
+                            type: string
+                          progressive_enrollment_enabled:
+                            nullable: true
+                            type: boolean
+                          local_enrollment_enabled:
+                            nullable: true
+                            type: boolean
+                        type: object
+                      passwordPolicy:
+                        enum:
+                        - none
+                        - low
+                        - fair
+                        - good
+                        - excellent
+                        nullable: true
+                        type: string
+                      password_complexity_options:
+                        nullable: true
+                        properties:
+                          min_length:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                      password_history:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                          size:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                      password_no_personal_info:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                        type: object
+                      password_dictionary:
+                        nullable: true
+                        properties:
+                          enable:
+                            nullable: true
+                            type: boolean
+                          dictionary:
+                            items:
+                              nullable: false
+                              type: string
+                            nullable: true
+                            type: array
+                        type: object
+                      api_enable_users:
+                        nullable: true
+                        type: boolean
+                      basic_profile:
+                        nullable: true
+                        type: boolean
+                      ext_admin:
+                        nullable: true
+                        type: boolean
+                      ext_is_suspended:
+                        nullable: true
+                        type: boolean
+                      ext_agreed_terms:
+                        nullable: true
+                        type: boolean
+                      ext_groups:
+                        nullable: true
+                        type: boolean
+                      ext_assigned_plans:
+                        nullable: true
+                        type: boolean
+                      ext_profile:
+                        nullable: true
+                        type: boolean
+                      disable_self_service_change_password:
+                        nullable: true
+                        type: boolean
+                      upstream_params:
+                        nullable: true
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      set_user_root_attributes:
+                        enum:
+                        - on_each_login
+                        - on_first_login
+                        - never_on_login
+                        nullable: true
+                        type: string
+                      gateway_authentication:
+                        nullable: true
+                        properties:
+                          method:
+                            nullable: true
+                            type: string
+                          subject:
+                            nullable: true
+                            type: string
+                          audience:
+                            nullable: true
+                            type: string
+                          secret:
+                            nullable: true
+                            type: string
+                          secret_base64_encoded:
+                            nullable: true
+                            type: boolean
+                        type: object
+                    type: object
+                  name:
+                    nullable: true
+                    type: string
+                  display_name:
+                    nullable: true
+                    type: string
+                  metadata:
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  realms:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                  enabled_clients:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                  show_as_button:
+                    nullable: true
+                    type: boolean
+                  is_domain_connection:
+                    nullable: true
+                    type: boolean
+                type: object
+            required:
+            - tenantRef
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
