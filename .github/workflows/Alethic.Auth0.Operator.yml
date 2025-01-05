@@ -50,7 +50,7 @@ jobs:
         configFilePath: GitVersion.yml
     - name: Add NuGet Source (GitHub)
       shell: pwsh
-      run: dotnet nuget add source --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text --name ikvm $env:GITHUB_REPOS
+      run: dotnet nuget add source --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text --name alethic $env:GITHUB_REPOS
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
