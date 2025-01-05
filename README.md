@@ -24,6 +24,13 @@ Other resources, such as `Client`, `ResourceServer`, etc, must have a `spec.tena
 
 Since the entire API is derived from the Auth0 Management API their documentation is relevant: [Auth0 Management API](https://auth0.com/docs/api/management/v2).
 
+## Supported Resources
+
+- [x] kubernetes.auth0.com/v1:Tenant `a0tenant`
+- [x] kubernetes.auth0.com/v1:Client `a0app`
+- [x] kubernetes.auth0.com/v1:ResourceServer `a0api`
+- [x] kubernetes.auth0.com/v1:Connection `a0con`
+
 ## Examples
 
 ### Tenant
