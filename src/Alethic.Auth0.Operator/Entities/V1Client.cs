@@ -12,6 +12,7 @@ namespace Alethic.Auth0.Operator.Entities
 
     [EntityScope(EntityScope.Namespaced)]
     [KubernetesEntity(Group = "kubernetes.auth0.com", ApiVersion = "v1", Kind = "Client")]
+    [KubernetesEntityShortNames("a0app")]
     public partial class V1Client : CustomKubernetesEntity<V1Client.SpecDef, V1Client.StatusDef>
     {
 

@@ -8,6 +8,8 @@ spec:
     kind: ResourceServer
     listKind: ResourceServerList
     plural: resourceservers
+    shortNames:
+    - a0api
     singular: resourceserver
   scope: Namespaced
   versions:

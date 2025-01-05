@@ -8,6 +8,8 @@ spec:
     kind: Tenant
     listKind: TenantList
     plural: tenants
+    shortNames:
+    - a0tenant
     singular: tenant
   scope: Namespaced
   versions:

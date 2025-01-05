@@ -8,6 +8,8 @@ spec:
     kind: Connection
     listKind: ConnectionList
     plural: connections
+    shortNames:
+    - a0con
     singular: connection
   scope: Namespaced
   versions:

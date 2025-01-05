@@ -8,6 +8,8 @@ spec:
     kind: Client
     listKind: ClientList
     plural: clients
+    shortNames:
+    - a0app
     singular: client
   scope: Namespaced
   versions:
