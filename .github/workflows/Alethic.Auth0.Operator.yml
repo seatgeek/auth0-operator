@@ -132,14 +132,16 @@ jobs:
         artifacts: dist/containers/*.tar,dist/charts/*.tgz
         makeLatest: true
         token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Login to GitHub Container Registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
+    - name: Login To Repository (GitHub)
+      uses: redhat-actions/podman-login@v1
       with:
-        registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ github.token }}
+        registry: ghcr.io/${{ github.repository_owner }}
+    - name: Push Containers (GitHub)
+      if: github.event_name != 'pull_request'
+      run: helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}
     - name: Push Charts (GitHub)
       if: github.event_name != 'pull_request'
-      run: helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}          
+      run: podman push dist/containers/*.tar oci://ghcr.io/${{ github.repository }}
   
