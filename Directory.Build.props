@@ -40,6 +40,15 @@
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     </PropertyGroup>
 
+    <PropertyGroup>
+        <ContainerImageTag>$(Version)</ContainerImageTag>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ContainerLabel Include="application" Value="auth0-operator" />
+        <ContainerLabel Include="version" Value="$(Version)" />
+    </ItemGroup>
+
     <ItemGroup>
         <PackageReference Include="IKVM.Core.MSBuild" Version="0.1.106">
             <PrivateAssets>all</PrivateAssets>
