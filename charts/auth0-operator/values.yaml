@@ -7,18 +7,14 @@ operator:
   additionalLabels: {}
   # Specify the Operator container image to use for the deployment.
   image:
-    repository: auth0-operator
-    tag:
+    repository: ghcr.io/alethic/auth0-operator
     pullPolicy: IfNotPresent
   # An array of Kubernetes secrets to use for pulling images from a private ``image.repository``.
   # Only one array element is supported at this time.
   imagePullSecrets: [ ]
   # An array of `initContainers <https://kubernetes.io/docs/concepts/workloads/pods/init-containers/>`__ to start up before the Operator pods.
-  # Exercise care as ``initContainer`` failures prevent Operator pods from starting.
-  # Pass an empty array to start the Operator normally.
   initContainers: [ ]
   # The number of Operator pods to deploy.
-  # Higher values increase availability in the event of worker node failures.
   replicaCount: 1
   # You may need to modify these values to meet your cluster's security and access settings.
   securityContext:
