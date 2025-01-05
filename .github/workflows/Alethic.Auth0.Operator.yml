@@ -150,8 +150,7 @@ jobs:
         registry: ghcr.io/${{ github.repository_owner }}
     - name: Push Containers (GitHub)
       if: github.event_name != 'pull_request'
-      run: helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}
-    - name: Push Charts (GitHub)
-      if: github.event_name != 'pull_request'
-      run: podman push dist/containers/*.tar oci://ghcr.io/${{ github.repository }}
+      run: |
+        podman push dist/containers/*.tar oci://ghcr.io/${{ github.repository }}
+        helm push dist/charts/*.tgz oci://ghcr.io/${{ github.repository }}
   
