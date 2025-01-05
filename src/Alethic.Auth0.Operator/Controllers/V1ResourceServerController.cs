@@ -20,7 +20,9 @@ using Microsoft.Extensions.Logging;
 namespace Alethic.Auth0.Operator.Controllers
 {
 
+    [EntityRbac(typeof(V1Tenant), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(V1ResourceServer), Verbs = RbacVerb.All)]
+    [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
     public class V1ResourceServerController : V1ControllerBase<V1ResourceServer>, IEntityController<V1ResourceServer>
     {
