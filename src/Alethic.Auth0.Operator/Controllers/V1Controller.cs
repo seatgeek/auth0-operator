@@ -233,7 +233,6 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <typeparam name="TFrom"></typeparam>
         /// <typeparam name="TTo"></typeparam>
         /// <param name="from"></param>
-        /// <param name="to"></param>
         /// <returns></returns>
         protected static TTo? TransformToSystemTextJson<TFrom, TTo>(TFrom? from)
             where TFrom : class
@@ -262,7 +261,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformation("Reconciling {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
 
                 if (entity.Spec.Conf == null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing configuration.");
+                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing configuration.");
 
                 // does the actual work of reconciling
                 await Reconcile(entity, cancellationToken);
@@ -274,8 +273,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogError(e, "Exception updating {EntityTypeName}: {Message}", EntityTypeName, e.ApiError.Message);
-                    await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
+                    Logger.LogError(e, "API error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
+                    await DeletingWarningAsync(entity, e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -286,8 +285,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                    Logger.LogError(e, "Rate limit hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
+                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -300,8 +299,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                    Logger.LogError(e, "Unexpected exception reconciling {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
+                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
