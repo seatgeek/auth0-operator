@@ -19,6 +19,7 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Controller;
 using KubeOps.Abstractions.Entities;
+using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
@@ -38,21 +39,23 @@ namespace Alethic.Auth0.Operator.Controllers
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
 
-        readonly IMemoryCache _cache;
         readonly IKubernetesClient _kube;
+        readonly EntityRequeue<TEntity> _requeue;
+        readonly IMemoryCache _cache;
         readonly ILogger _logger;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cache"></param>
         /// <param name="kube"></param>
-        /// <param name="util"></param>
+        /// <param name="requeue"></param>
+        /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1Controller(IMemoryCache cache, IKubernetesClient kube, ILogger<V1ClientController> logger)
+        public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger<V1ClientController> logger)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _kube = kube ?? throw new ArgumentNullException(nameof(kube));
+            _requeue = requeue ?? throw new ArgumentNullException(nameof(requeue));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -65,6 +68,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Gets the Kubernetes API client.
         /// </summary>
         protected IKubernetesClient Kube => _kube;
+
+        /// <summary>
+        /// Gets the requeue function for the entity controller.
+        /// </summary>
+        protected EntityRequeue<TEntity> Requeue => _requeue;
 
         /// <summary>
         /// Gets the logger.
@@ -345,7 +353,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
-                throw;
+                // calculate next attempt time, floored to one minute
+                var n = e.RateLimit.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
+                if (n < TimeSpan.FromMinutes(1))
+                    n = TimeSpan.FromMinutes(1);
+
+                Requeue(entity, n);
             }
             catch (Exception e)
             {

@@ -11,6 +11,7 @@ using Auth0.ManagementApi;
 using k8s;
 using k8s.Models;
 
+using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
@@ -29,11 +30,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cache"></param>
         /// <param name="kube"></param>
+        /// <param name="requeue"></param>
+        /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1TenantEntityController(IMemoryCache cache, IKubernetesClient kube, ILogger<V1ClientController> logger) :
-            base(cache, kube, logger)
+        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
+            base(kube, requeue, cache, logger)
         {
 
         }
@@ -193,7 +195,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
-                throw;
+                // calculate next attempt time, floored to one minute
+                var n = e.RateLimit.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
+                if (n < TimeSpan.FromMinutes(1))
+                    n = TimeSpan.FromMinutes(1);
+
+                Requeue(entity, n);
             }
             catch (Exception e)
             {
