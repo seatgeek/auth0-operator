@@ -176,7 +176,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "API error deleting {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
-                    await DeletingWarningAsync(entity, e.ApiError.Message, cancellationToken);
+                    await DeletingWarningAsync(entity, "ApiError", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -188,7 +188,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Rate limit hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
+                    await DeletingWarningAsync(entity, "RateLimit", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -208,7 +208,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Unexpected exception deleting {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
+                    await DeletingWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {

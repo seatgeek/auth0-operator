@@ -220,10 +220,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Updates the Reconcile event to a warning.
         /// </summary>
         /// <param name="entity"></param>
-        /// <param name="message"></param>
+        /// <param name="reason"></param>
+        /// <param name="note"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected async Task ReconcileWarningAsync(TEntity entity, string message, CancellationToken cancellationToken)
+        protected async Task ReconcileWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
             await _kube.CreateAsync(new Eventsv1Event(
                     DateTime.Now,
@@ -233,7 +234,8 @@ namespace Alethic.Auth0.Operator.Controllers
                     regarding: entity.MakeObjectReference(),
                     action: "Reconcile",
                     type: "Warning",
-                    reason: message),
+                    reason: reason,
+                    note: note),
                 cancellationToken);
         }
 
@@ -241,10 +243,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Updates the Deleting event to a warning.
         /// </summary>
         /// <param name="entity"></param>
-        /// <param name="message"></param>
+        /// <param name="reason"></param>
+        /// <param name="note"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected async Task DeletingWarningAsync(TEntity entity, string message, CancellationToken cancellationToken)
+        protected async Task DeletingWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
             await _kube.CreateAsync(new Eventsv1Event(
                     DateTime.Now,
@@ -254,7 +257,8 @@ namespace Alethic.Auth0.Operator.Controllers
                     regarding: entity.MakeObjectReference(),
                     action: "Deleting",
                     type: "Warning",
-                    reason: message),
+                    reason: reason,
+                    note: note),
                 cancellationToken);
         }
 
@@ -334,7 +338,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "API error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
-                    await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, "ApiError", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -346,7 +350,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Rate limit hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, "RateLimit", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -366,7 +370,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Unexpected exception reconciling {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
