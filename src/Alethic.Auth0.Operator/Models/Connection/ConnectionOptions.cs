@@ -83,6 +83,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
         public IDictionary? UpstreamParams { get; set; }
 
         [JsonPropertyName("set_user_root_attributes")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public SetUserRootAttributes? SetUserRootAttributes { get; set; }
 
         [JsonPropertyName("gateway_authentication")]
