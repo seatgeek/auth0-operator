@@ -1,11 +1,11 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Entities;
 using Alethic.Auth0.Operator.Models.Client;
 
+using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 
 using k8s.Models;
@@ -24,7 +24,7 @@ namespace Alethic.Auth0.Operator.Controllers
     [EntityRbac(typeof(V1Client), Verbs = RbacVerb.All)]
     [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.List | RbacVerb.Get)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class V1ClientController : 
+    public class V1ClientController :
         V1TenantEntityController<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>,
         IEntityController<V1Client>
     {
@@ -42,75 +42,48 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        public override async Task ReconcileAsync(V1Client entity, CancellationToken cancellationToken)
+        protected override string EntityTypeName => "Client";
+
+        /// <inheritdoc />
+        protected override async Task<ClientConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            try
-            {
-                Logger.LogInformation("Reconciling Client {Entity}.", entity);
-
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
-
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
-
-                if (entity.Spec.Conf == null)
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} is missing configuration.");
-
-                if (string.IsNullOrWhiteSpace(entity.Spec.Conf.Name))
-                    throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} is missing a name.");
-
-                // discover entity by name, or create
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
-                    var self = list.FirstOrDefault(i => i.Name == entity.Spec.Conf.Name);
-                    if (self == null)
-                    {
-                        Logger.LogInformation("Client {Namespace}/{Name} could not be located, creating.", entity.Namespace(), entity.Name());
-
-                        if (entity.Spec.Conf.ApplicationType == null)
-                            throw new InvalidOperationException($"Client {entity.Namespace()}:{entity.Name()} is missing a value for application type.");
-
-                        self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(entity.Spec.Conf), cancellationToken);
-                        Logger.LogInformation("Client {Namespace}/{Name} created with {Id}", entity.Namespace(), entity.Name(), self.ClientId);
-                        entity.Status.Id = self.ClientId;
-                        await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                }
-
-                // update specified configuration
-                if (entity.Spec.Conf is { } conf)
-                    await api.Clients.UpdateAsync(entity.Status.Id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
-
-                // retrieve and copy applied settings to status
-                var settings = await api.Clients.GetAsync(entity.Status.Id, cancellationToken: cancellationToken);
-                var lastConf = TransformToSystemTextJson<Client, ClientConf>(settings);
-                entity.Status.LastConf = lastConf;
-                await Kube.UpdateStatusAsync(entity, cancellationToken);
-
-                Logger.LogInformation("Reconciled Client {Entity}.", entity);
-                await ReconcileSuccessAsync(entity, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating Client.");
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+            return TransformToSystemTextJson<Client, ClientConf>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        public override Task DeletedAsync(V1Client entity, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ClientConf conf, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
+            var self = list.FirstOrDefault(i => i.Name == conf.Name);
+            return self?.ClientId;
+        }
+
+        /// <inheritdoc />
+        protected override string? ValidateCreateConf(ClientConf conf)
+        {
+            if (conf.ApplicationType == null)
+                return "missing a value for application type";
+
+            return null;
+        }
+
+        /// <inheritdoc />
+        protected override async Task<string> CreateApi(IManagementApiClient api, ClientConf conf, CancellationToken cancellationToken)
+        {
+            var self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf), cancellationToken);
+            return self.ClientId;
+        }
+
+        /// <inheritdoc />
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ClientConf conf, CancellationToken cancellationToken)
+        {
+            await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        {
+            return api.Clients.DeleteAsync(id, cancellationToken);
         }
 
     }

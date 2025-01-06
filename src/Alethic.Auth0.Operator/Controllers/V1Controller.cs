@@ -54,6 +54,11 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Gets the type name of the entity used in messages.
+        /// </summary>
+        protected abstract string EntityTypeName { get; }
+
+        /// <summary>
         /// Gets the Kubernetes API client.
         /// </summary>
         protected IKubernetesClient Kube => _kube;

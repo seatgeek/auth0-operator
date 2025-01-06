@@ -1,12 +1,11 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Entities;
-using Alethic.Auth0.Operator.Models.Connection;
 using Alethic.Auth0.Operator.Models.ResourceServer;
 
+using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 
 using k8s.Models;
@@ -43,100 +42,45 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        public override async Task ReconcileAsync(V1ResourceServer entity, CancellationToken cancellationToken)
+        protected override string EntityTypeName => "ResourceServer";
+
+        /// <inheritdoc />
+        protected override async Task<ResourceServerConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            try
-            {
-                Logger.LogInformation("Reconciling ResourceServer {Entity}.", entity);
-
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
-
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
-
-                if (entity.Spec.Conf == null)
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} is missing configuration.");
-
-                if (string.IsNullOrWhiteSpace(entity.Spec.Conf.Name))
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} is missing a name.");
-
-                // discover entity by name, or create
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    var list = await api.ResourceServers.GetAllAsync(new ResourceServerGetRequest(), cancellationToken: cancellationToken);
-                    var self = list.FirstOrDefault(i => i.Identifier == entity.Spec.Conf.Name);
-                    if (self == null)
-                    {
-                        Logger.LogInformation("ResourceServer {Namespace}/{Name} could not be located, creating.", entity.Namespace(), entity.Name());
-
-                        self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(entity.Spec.Conf), cancellationToken);
-                        Logger.LogInformation("ResourceServer {Namespace}/{Name} created with {Id}", entity.Namespace(), entity.Name(), self.Id);
-                        entity.Status.Id = self.Id;
-                        await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                }
-
-                // update specified configuration
-                if (entity.Spec.Conf is { } conf)
-                    await api.ResourceServers.UpdateAsync(entity.Status.Id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
-
-                // retrieve and copy applied settings to status
-                var settings = await api.ResourceServers.GetAsync(entity.Status.Id, cancellationToken: cancellationToken);
-                var lastConf = TransformToSystemTextJson<ResourceServer, ResourceServerConf>(settings);
-                entity.Status.LastConf = lastConf;
-                await Kube.UpdateStatusAsync(entity, cancellationToken);
-
-                Logger.LogInformation("Reconciled ResourceServer {Entity}.", entity);
-                await ReconcileSuccessAsync(entity, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating ResourceServer.");
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+            return TransformToSystemTextJson<Connection, ResourceServerConf>(await api.Connections.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        public override async Task DeletedAsync(V1ResourceServer entity, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ResourceServerConf conf, CancellationToken cancellationToken)
         {
-            try
-            {
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
+            var list = await api.ResourceServers.GetAllAsync(new ResourceServerGetRequest() { }, cancellationToken: cancellationToken);
+            var self = list.FirstOrDefault(i => i.Identifier == conf.Identifier);
+            return self?.Id;
+        }
 
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"ResourceServer {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
+        /// <inheritdoc />
+        protected override string? ValidateCreateConf(ResourceServerConf conf)
+        {
+            return null;
+        }
 
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    Logger.LogWarning($"ResourceServer {entity.Namespace()}:{entity.Name()} has no known ID, skipping delete.");
-                    return;
-                }
+        /// <inheritdoc />
+        protected override async Task<string> CreateApi(IManagementApiClient api, ResourceServerConf conf, CancellationToken cancellationToken)
+        {
+            var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
+            return self.Id;
+        }
 
-                await api.ResourceServers.DeleteAsync(entity.Status.Id, cancellationToken: cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception deleting ResourceServer.");
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+        /// <inheritdoc />
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ResourceServerConf conf, CancellationToken cancellationToken)
+        {
+            await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        {
+            return api.ResourceServers.DeleteAsync(id, cancellationToken);
         }
 
     }

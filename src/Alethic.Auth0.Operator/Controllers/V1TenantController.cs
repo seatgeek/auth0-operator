@@ -40,6 +40,9 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
+        protected override string EntityTypeName => "Tenant";
+
+        /// <inheritdoc />
         public override async Task ReconcileAsync(V1Tenant entity, CancellationToken cancellationToken)
         {
             try

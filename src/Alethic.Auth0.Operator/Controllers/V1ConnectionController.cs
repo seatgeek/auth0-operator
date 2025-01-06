@@ -1,14 +1,12 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Entities;
-using Alethic.Auth0.Operator.Models.Client;
 using Alethic.Auth0.Operator.Models.Connection;
 
+using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
-using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -44,100 +42,45 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        public override async Task ReconcileAsync(V1Connection entity, CancellationToken cancellationToken)
+        protected override string EntityTypeName => "Connection";
+
+        /// <inheritdoc />
+        protected override async Task<ConnectionConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            try
-            {
-                Logger.LogInformation("Reconciling Connection {Entity}.", entity);
-
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
-
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
-
-                if (entity.Spec.Conf == null)
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} is missing configuration.");
-
-                if (string.IsNullOrWhiteSpace(entity.Spec.Conf.Name))
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} is missing a name.");
-
-                // discover entity by name, or create
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, (PaginationInfo?)null, cancellationToken: cancellationToken);
-                    var self = list.FirstOrDefault(i => i.Name == entity.Spec.Conf.Name);
-                    if (self == null)
-                    {
-                        Logger.LogInformation("Connection {Namespace}/{Name} could not be located, creating.", entity.Namespace(), entity.Name());
-
-                        self = await api.Connections.CreateAsync(TransformToNewtonsoftJson<ConnectionConf, ConnectionCreateRequest>(entity.Spec.Conf), cancellationToken);
-                        Logger.LogInformation("Connection {Namespace}/{Name} created with {Id}", entity.Namespace(), entity.Name(), self.Id);
-                        entity.Status.Id = self.Id;
-                        await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                }
-
-                // update specified configuration
-                if (entity.Spec.Conf is { } conf)
-                    await api.Connections.UpdateAsync(entity.Status.Id, TransformToNewtonsoftJson<ConnectionConf, ConnectionUpdateRequest>(conf), cancellationToken);
-
-                // retrieve and copy applied settings to status
-                var settings = await api.Connections.GetAsync(entity.Status.Id, cancellationToken: cancellationToken);
-                var lastConf = TransformToSystemTextJson<Connection, ConnectionConf>(settings);
-                entity.Status.LastConf = lastConf;
-                await Kube.UpdateStatusAsync(entity, cancellationToken);
-
-                Logger.LogInformation("Reconciled Connection {Entity}.", entity);
-                await ReconcileSuccessAsync(entity, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating Connection.");
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating Connection.");
-                }
-            }
+            return TransformToSystemTextJson<Connection, ConnectionConf>(await api.Connections.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        public override async Task DeletedAsync(V1Connection entity, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
         {
-            try
-            {
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
+            var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
+            var self = list.FirstOrDefault(i => i.Name == conf.Name);
+            return self?.ClientId;
+        }
 
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"Connection {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
+        /// <inheritdoc />
+        protected override string? ValidateCreateConf(ConnectionConf conf)
+        {
+            return null;
+        }
 
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                {
-                    Logger.LogWarning($"Connection {entity.Namespace()}:{entity.Name()} has no known ID, skipping delete.");
-                    return;
-                }
+        /// <inheritdoc />
+        protected override async Task<string> CreateApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
+        {
+            var self = await api.Connections.CreateAsync(TransformToNewtonsoftJson<ConnectionConf, ConnectionCreateRequest>(conf), cancellationToken);
+            return self.Id;
+        }
 
-                await api.Connections.DeleteAsync(entity.Status.Id, cancellationToken: cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception deleting Connection.");
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+        /// <inheritdoc />
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ConnectionConf conf, CancellationToken cancellationToken)
+        {
+            await api.Connections.UpdateAsync(id, TransformToNewtonsoftJson<ConnectionConf, ConnectionUpdateRequest>(conf), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        {
+            return api.Connections.DeleteAsync(id, cancellationToken);
         }
 
     }

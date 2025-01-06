@@ -7,7 +7,9 @@
         where TConf : class
     {
 
+        TSpec Spec { get; }
 
+        TStatus Status { get; }
 
     }
 
