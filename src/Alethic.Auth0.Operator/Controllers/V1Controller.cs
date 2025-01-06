@@ -307,6 +307,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
+
+                throw;
             }
         }
 
