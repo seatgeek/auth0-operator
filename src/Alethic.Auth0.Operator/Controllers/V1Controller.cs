@@ -358,6 +358,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (n < TimeSpan.FromMinutes(1))
                     n = TimeSpan.FromMinutes(1);
 
+                Logger.LogInformation("Rescheduling reconcilation after {TimeSpan}.", n);
                 Requeue(entity, n);
             }
             catch (Exception e)
