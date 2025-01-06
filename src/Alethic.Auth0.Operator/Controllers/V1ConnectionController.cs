@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -119,7 +120,7 @@ namespace Alethic.Auth0.Operator.Controllers
             req.Name = conf.Name;
             req.Strategy = conf.Strategy;
             req.DisplayName = conf.DisplayName;
-            req.Options = conf.Options;
+            req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
             req.Metadata = conf.Metadata;
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
@@ -138,7 +139,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var req = new ConnectionUpdateRequest();
             req.DisplayName = conf.DisplayName;
-            req.Options = conf.Options;
+            req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
             req.Metadata = conf.Metadata;
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
