@@ -21,7 +21,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
 
         [JsonPropertyName("options")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public ConnectionOptions? Options { get; set; }
+        public IDictionary? Options { get; set; }
 
         [JsonPropertyName("name")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
