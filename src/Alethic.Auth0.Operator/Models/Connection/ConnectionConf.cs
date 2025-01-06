@@ -1,6 +1,8 @@
 ﻿using System.Collections;
 using System.Text.Json.Serialization;
 
+using KubeOps.Abstractions.Entities.Attributes;
+
 namespace Alethic.Auth0.Operator.Models.Connection
 {
 
@@ -38,7 +40,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
         public bool? ShowAsButton { get; set; }
 
         [JsonPropertyName("is_domain_connection")]
-        public bool? IsDomainConnection { get; set; }
+        public bool? IsDomainConnection { get; set; } = false;
 
     }
 
