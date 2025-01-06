@@ -173,9 +173,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Exception deleting {EntityTypeName}: {Message}", EntityTypeName, e.ApiError.Message);
                     await DeletingWarningAsync(entity, e.ApiError.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
             }
             catch (RateLimitApiException e)
@@ -185,9 +185,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Unexpected exception deleting {EntityTypeName}.", EntityTypeName);
                     await DeletingWarningAsync(entity, e.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 throw;
@@ -199,10 +199,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Unexpected exception deleting {EntityTypeName}.", EntityTypeName);
                     await DeletingWarningAsync(entity, e.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
+
+                throw;
             }
         }
 

@@ -277,9 +277,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Exception updating {EntityTypeName}: {Message}", EntityTypeName, e.ApiError.Message);
                     await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
             }
             catch (RateLimitApiException e)
@@ -289,9 +289,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
                     await ReconcileWarningAsync(entity, e.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 throw;
@@ -303,9 +303,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
                     await ReconcileWarningAsync(entity, e.Message, cancellationToken);
                 }
-                catch
+                catch (Exception e2)
                 {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
             }
         }
