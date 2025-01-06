@@ -54,7 +54,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
         {
-            var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "identifier,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
+            var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Name == conf.Name);
             return self?.Id;
         }
