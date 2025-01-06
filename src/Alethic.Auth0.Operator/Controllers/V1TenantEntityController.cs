@@ -85,14 +85,14 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
             if (entity.Spec.TenantRef == null)
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()}: missing a tenant reference.");
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()}: missing a tenant reference.");
 
             if (entity.Spec.Conf == null)
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()}: missing configuration.");
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()}: missing configuration.");
 
             var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
             if (api == null)
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()}: failed to retrieve API client.");
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()}: failed to retrieve API client.");
 
             // discover entity by name, or create
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
@@ -104,7 +104,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     // check for validation before create
                     if (ValidateCreateConf(entity.Spec.Conf) is string msg)
-                        throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is invalid: {msg}");
+                        throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
 
                     entity.Status.Id = await CreateApi(api, entity.Spec.Conf, cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name}: created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
