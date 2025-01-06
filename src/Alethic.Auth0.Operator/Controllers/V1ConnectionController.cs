@@ -82,15 +82,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="o"></param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        object? ToDictionary(object? o)
+        object? ToDictionary(object? o) => o switch
         {
-            return o switch
-            {
-                JObject j => j.ToDictionary(),
-                null => null,
-                _ => throw new InvalidOperationException(),
-            };
-        }
+            JObject j => j.ToDictionary(),
+            null => null,
+            _ => throw new InvalidOperationException(),
+        };
 
         /// <inheritdoc />
         protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
