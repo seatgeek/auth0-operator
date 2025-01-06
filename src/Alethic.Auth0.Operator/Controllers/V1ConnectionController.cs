@@ -7,6 +7,7 @@ using Alethic.Auth0.Operator.Models.Connection;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
+using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -53,9 +54,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
         {
-            var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
+            var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "identifier,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Name == conf.Name);
-            return self?.ClientId;
+            return self?.Id;
         }
 
         /// <inheritdoc />
