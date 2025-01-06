@@ -71,8 +71,24 @@ namespace Alethic.Auth0.Operator.Controllers
                 ["show_as_button"] = self.ShowAsButton,
                 ["provisioning_ticket_url"] = self.ProvisioningTicketUrl,
                 ["enabled_clients"] = self.EnabledClients,
-                ["options"] = self.Options is JObject options ? options.ToDictionary() : throw new InvalidOperationException(),
-                ["metadata"] = self.Metadata is JObject metadata ? metadata.ToDictionary() : throw new InvalidOperationException()
+                ["options"] = ToDictionary(self.Options),
+                ["metadata"] = ToDictionary(self.Metadata),
+            };
+        }
+
+        /// <summary>
+        /// Converts the given potentially dynamic API type to a dictionary type.
+        /// </summary>
+        /// <param name="o"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        object? ToDictionary(object? o)
+        {
+            return o switch
+            {
+                JObject j => j.ToDictionary(),
+                null => null,
+                _ => throw new InvalidOperationException(),
             };
         }
 
