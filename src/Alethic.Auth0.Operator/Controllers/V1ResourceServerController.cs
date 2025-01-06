@@ -47,7 +47,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<ResourceServerConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Connection, ResourceServerConf>(await api.Connections.GetAsync(id, cancellationToken: cancellationToken));
+            return TransformToSystemTextJson<Connection, ResourceServerConf>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
