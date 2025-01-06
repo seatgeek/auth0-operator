@@ -82,98 +82,52 @@ namespace Alethic.Auth0.Operator.Controllers
         protected abstract Task UpdateApi(IManagementApiClient api, string id, TConf conf, CancellationToken cancellationToken);
 
         /// <inheritdoc />
-        public sealed override async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
+        protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
-            try
+            if (entity.Spec.TenantRef == null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
+
+            if (entity.Spec.Conf == null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing configuration.");
+
+            var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            if (api == null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
+
+            // discover entity by name, or create
+            if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                Logger.LogInformation("Reconciling {EntityTypeName} {Entity}.", EntityTypeName, entity);
-
-                if (entity.Spec.TenantRef == null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing a tenant reference.");
-
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
-
-                if (entity.Spec.Conf == null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing configuration.");
-
-                // discover entity by name, or create
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
+                var self = await FindApi(api, entity.Spec.Conf, cancellationToken);
+                if (self == null)
                 {
-                    var self = await FindApi(api, entity.Spec.Conf, cancellationToken);
-                    if (self == null)
-                    {
-                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
 
-                        // check for validation before create
-                        if (ValidateCreateConf(entity.Spec.Conf) is string msg)
-                            throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is invalid: {msg}");
+                    // check for validation before create
+                    if (ValidateCreateConf(entity.Spec.Conf) is string msg)
+                        throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is invalid: {msg}");
 
-                        entity.Status.Id = await CreateApi(api, entity.Spec.Conf, cancellationToken);
-                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                        await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                    else
-                    {
-                        entity.Status.Id = self;
-                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} loaded with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                        await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
+                    entity.Status.Id = await CreateApi(api, entity.Spec.Conf, cancellationToken);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
-
-                if (string.IsNullOrWhiteSpace(entity.Status.Id))
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing an existing ID.");
-
-                // update specified configuration
-                if (entity.Spec.Conf is { } conf)
-                    await UpdateApi(api, entity.Status.Id, conf, cancellationToken);
-
-                // retrieve and copy last known configuration
-                entity.Status.LastConf = await GetApi(api, entity.Status.Id, cancellationToken: cancellationToken);
-                await Kube.UpdateStatusAsync(entity, cancellationToken);
-
-                Logger.LogInformation("Reconciled {EntityTypeName} {Entity}.", EntityTypeName, entity);
-                await ReconcileSuccessAsync(entity, cancellationToken);
-            }
-            catch (ErrorApiException e)
-            {
-                try
+                else
                 {
-                    Logger.LogError(e, "Exception updating {EntityTypeName}: {Message}", EntityTypeName, e.ApiError.Message);
-                    await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                    entity.Status.Id = self;
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} loaded with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
             }
-            catch (RateLimitApiException e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
 
-                throw;
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+            if (string.IsNullOrWhiteSpace(entity.Status.Id))
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing an existing ID.");
+
+            // update specified configuration
+            if (entity.Spec.Conf is { } conf)
+                await UpdateApi(api, entity.Status.Id, conf, cancellationToken);
+
+            // retrieve and copy last known configuration
+            entity.Status.LastConf = await GetApi(api, entity.Status.Id, cancellationToken: cancellationToken);
+            await Kube.UpdateStatusAsync(entity, cancellationToken);
         }
 
         /// <summary>

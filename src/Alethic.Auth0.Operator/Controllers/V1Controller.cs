@@ -9,6 +9,7 @@ using Alethic.Auth0.Operator.Entities;
 
 using Auth0.AuthenticationApi;
 using Auth0.AuthenticationApi.Models;
+using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 
 using k8s;
@@ -246,8 +247,68 @@ namespace Alethic.Auth0.Operator.Controllers
             return System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString());
         }
 
+        /// <summary>
+        /// Implement this method to attempt the reconcillation.
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="cancellationToken"></param>
+        protected abstract Task Reconcile(TEntity entity, CancellationToken cancellationToken);
+
         /// <inheritdoc />
-        public abstract Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken);
+        public async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
+        {
+            try
+            {
+                Logger.LogInformation("Reconciling {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
+
+                if (entity.Spec.Conf == null)
+                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} is missing configuration.");
+
+                // does the actual work of reconciling
+                await Reconcile(entity, cancellationToken);
+
+                Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
+                await ReconcileSuccessAsync(entity, cancellationToken);
+            }
+            catch (ErrorApiException e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Exception updating {EntityTypeName}: {Message}", EntityTypeName, e.ApiError.Message);
+                    await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
+                }
+                catch
+                {
+                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                }
+            }
+            catch (RateLimitApiException e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
+                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                }
+                catch
+                {
+                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                }
+
+                throw;
+            }
+            catch (Exception e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Unexpected exception updating {EntityTypeName}.", EntityTypeName);
+                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
+                }
+                catch
+                {
+                    Logger.LogCritical(e, "Unexpected exception creating event.");
+                }
+            }
+        }
 
         /// <inheritdoc />
         public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);

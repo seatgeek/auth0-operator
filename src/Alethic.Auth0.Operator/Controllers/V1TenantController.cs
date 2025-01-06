@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Entities;
 using Alethic.Auth0.Operator.Models.Tenant;
 
+using Auth0.Core.Exceptions;
 using Auth0.ManagementApi.Models;
 
 using k8s.Models;
@@ -43,41 +44,24 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Tenant";
 
         /// <inheritdoc />
-        public override async Task ReconcileAsync(V1Tenant entity, CancellationToken cancellationToken)
+        protected override async Task Reconcile(V1Tenant entity, CancellationToken cancellationToken)
         {
-            try
-            {
-                Logger.LogInformation("Reconciling Tenant {Entity}.", entity);
+            var api = await GetTenantApiClientAsync(entity, cancellationToken);
+            if (api == null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
 
-                var api = await GetTenantApiClientAsync(entity, cancellationToken);
-                if (api == null)
-                    throw new InvalidOperationException($"Tenant {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
+            // update specified configuration
+            if (entity.Spec.Conf is { } conf)
+                await api.TenantSettings.UpdateAsync(TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf), cancellationToken);
 
-                // update specified configuration
-                if (entity.Spec.Conf is { } conf)
-                    await api.TenantSettings.UpdateAsync(TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf), cancellationToken);
+            // retrieve and copy applied settings to status
+            var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
+            var lastConf = TransformToSystemTextJson<TenantSettings, TenantConf>(settings);
+            entity.Status.LastConf = lastConf;
+            await Kube.UpdateStatusAsync(entity, cancellationToken);
 
-                // retrieve and copy applied settings to status
-                var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
-                var lastConf = TransformToSystemTextJson<TenantSettings, TenantConf>(settings);
-                entity.Status.LastConf = lastConf;
-                await Kube.UpdateStatusAsync(entity, cancellationToken);
-
-                Logger.LogInformation("Reconciled Tenant {Entity}.", entity);
-                await ReconcileSuccessAsync(entity, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    Logger.LogError(e, "Unexpected exception updating ResourceServer.");
-                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
-                }
-                catch
-                {
-                    Logger.LogCritical(e, "Unexpected exception creating event.");
-                }
-            }
+            Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
+            await ReconcileSuccessAsync(entity, cancellationToken);
         }
 
         /// <inheritdoc />
