@@ -203,6 +203,13 @@ namespace Alethic.Auth0.Operator.Controllers
                     return;
                 }
 
+                var self = await GetApi(api, entity.Status.Id, cancellationToken);
+                if (self is null)
+                {
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}:{EntityName} has already been deleted, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
+                    return;
+                }
+
                 await DeleteApi(api, entity.Status.Id, cancellationToken);
             }
             catch (ErrorApiException e)
