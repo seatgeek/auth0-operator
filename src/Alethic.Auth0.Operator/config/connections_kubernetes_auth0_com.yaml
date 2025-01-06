@@ -25,49 +25,8 @@ spec:
                 type: string
               lastConf:
                 nullable: true
-                properties:
-                  id:
-                    nullable: true
-                    type: string
-                  strategy:
-                    nullable: true
-                    type: string
-                  provisioning_ticket_url:
-                    nullable: true
-                    type: string
-                  options:
-                    nullable: true
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  name:
-                    nullable: true
-                    type: string
-                  display_name:
-                    nullable: true
-                    type: string
-                  metadata:
-                    nullable: true
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  realms:
-                    items:
-                      nullable: false
-                      type: string
-                    nullable: true
-                    type: array
-                  enabled_clients:
-                    items:
-                      nullable: false
-                      type: string
-                    nullable: true
-                    type: array
-                  show_as_button:
-                    nullable: true
-                    type: boolean
-                  is_domain_connection:
-                    nullable: true
-                    type: boolean
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           spec:
             nullable: false
@@ -87,23 +46,20 @@ spec:
               conf:
                 nullable: true
                 properties:
-                  id:
+                  name:
+                    nullable: true
+                    type: string
+                  display_name:
                     nullable: true
                     type: string
                   strategy:
-                    nullable: true
-                    type: string
-                  provisioning_ticket_url:
                     nullable: true
                     type: string
                   options:
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
-                  name:
-                    nullable: true
-                    type: string
-                  display_name:
+                  provisioning_ticket_url:
                     nullable: true
                     type: string
                   metadata:
@@ -118,8 +74,17 @@ spec:
                     type: array
                   enabled_clients:
                     items:
-                      nullable: false
-                      type: string
+                      properties:
+                        namespace:
+                          nullable: true
+                          type: string
+                        name:
+                          nullable: true
+                          type: string
+                        id:
+                          nullable: true
+                          type: string
+                      type: object
                     nullable: true
                     type: array
                   show_as_button:

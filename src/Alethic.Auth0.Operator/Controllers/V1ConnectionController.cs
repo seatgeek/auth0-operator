@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,9 +49,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Connection";
 
         /// <inheritdoc />
-        protected override async Task<ConnectionConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Connection, ConnectionConf>(await api.Connections.GetAsync(id, cancellationToken: cancellationToken));
+            var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
+            if (self == null)
+                return null;
+
+            return TransformToSystemTextJson<Connection, IDictionary>(self);
         }
 
         /// <inheritdoc />
@@ -66,21 +72,79 @@ namespace Alethic.Auth0.Operator.Controllers
             return null;
         }
 
-        /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
+        /// <summary>
+        /// Attempts to resolve the list of client references to client IDs.
+        /// </summary>
+        /// <param name="refs"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        async Task<string[]?> ResolveClientRefsToId(V1ClientRef[]? refs, string defaultNamespace, CancellationToken cancellationToken)
         {
+            if (refs is null)
+                return Array.Empty<string>();
+
+            var l = new List<string>(refs.Length);
+
+            foreach (var i in refs)
+            {
+                if (i.Id is { } id)
+                {
+                    l.Add(id);
+                }
+                else
+                {
+                    Logger.LogDebug($"Attempting to resolve client reference {i.Namespace}/{i.Name}.");
+
+                    var client = await ResolveClientRef(i, defaultNamespace, cancellationToken);
+                    if (client is null)
+                        throw new InvalidOperationException($"Could not resolve ClientRef {i}.");
+
+                    if (client.Status.Id is null)
+                        throw new InvalidOperationException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconcilled.");
+
+                    Logger.LogDebug($"Resolved client reference {i.Namespace}/{i.Name} to {client.Status.Id}.");
+                    l.Add(client.Status.Id);
+                }
+            }
+
+            return l.ToArray();
+        }
+
+        /// <inheritdoc />
+        protected override async Task<string> CreateApi(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            var req = new ConnectionCreateRequest();
+            req.Name = conf.Name;
+            req.Strategy = conf.Strategy;
+            req.DisplayName = conf.DisplayName;
+            req.Options = conf.Options;
+            req.Metadata = conf.Metadata;
+            req.Realms = conf.Realms;
+            req.IsDomainConnection = conf.IsDomainConnection ?? false;
+            req.ShowAsButton = conf.ShowAsButton;
+            req.EnabledClients = await ResolveClientRefsToId(conf.EnabledClients, defaultNamespace, cancellationToken);
+
             var self = await api.Connections.CreateAsync(TransformToNewtonsoftJson<ConnectionConf, ConnectionCreateRequest>(conf), cancellationToken);
+            if (self is null)
+                throw new InvalidOperationException();
+
             return self.Id;
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ConnectionConf conf, CancellationToken cancellationToken)
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var req = TransformToNewtonsoftJson<ConnectionConf, ConnectionUpdateRequest>(conf);
-            if (req == null)
-                return;
+            var req = new ConnectionUpdateRequest();
+            req.DisplayName = conf.DisplayName;
+            req.Options = conf.Options;
+            req.Metadata = conf.Metadata;
+            req.Realms = conf.Realms;
+            req.IsDomainConnection = conf.IsDomainConnection ?? false;
+            req.ShowAsButton = conf.ShowAsButton;
+            req.EnabledClients = await ResolveClientRefsToId(conf.EnabledClients, defaultNamespace, cancellationToken);
 
-            req.Name = null;
             await api.Connections.UpdateAsync(id, req, cancellationToken);
         }
 

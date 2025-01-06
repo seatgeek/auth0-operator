@@ -3,7 +3,7 @@
 
     public interface V1Entity<TSpec, TStatus, TConf>
         where TSpec : V1EntitySpec<TConf>
-        where TStatus : V1EntityStatus<TConf>
+        where TStatus : V1EntityStatus
         where TConf : class
     {
 

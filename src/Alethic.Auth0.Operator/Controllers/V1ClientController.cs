@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,9 +46,9 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Client";
 
         /// <inheritdoc />
-        protected override async Task<ClientConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Client, ClientConf>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
+            return TransformToSystemTextJson<Client, IDictionary>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
@@ -68,14 +69,14 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ClientConf conf, CancellationToken cancellationToken)
+        protected override async Task<string> CreateApi(IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf), cancellationToken);
             return self.ClientId;
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ClientConf conf, CancellationToken cancellationToken)
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
         }

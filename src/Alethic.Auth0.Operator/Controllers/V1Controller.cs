@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Eventing.Reader;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -30,7 +32,7 @@ namespace Alethic.Auth0.Operator.Controllers
     public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
         where TSpec : V1EntitySpec<TConf>
-        where TStatus : V1EntityStatus<TConf>
+        where TStatus : V1EntityStatus
         where TConf : class
     {
 
@@ -70,13 +72,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected ILogger Logger => _logger;
 
         /// <summary>
-        /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
+        /// Attempts to resolve the tenant document referenced by the tenant reference.
         /// </summary>
         /// <param name="tenantRef"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        public async Task<V1Tenant?> ResolveTenantRef(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(tenantRef.Name))
                 throw new InvalidOperationException($"Tenant reference has no name.");
@@ -86,6 +88,45 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"Tenant reference has no discovered namesace.");
 
             var tenant = await _kube.GetAsync<V1Tenant>(tenantRef.Name, ns);
+            if (tenant == null)
+                throw new InvalidOperationException($"Tenant reference cannot be resolved.");
+
+            return tenant;
+        }
+
+        /// <summary>
+        /// Attempts to resolve the tenant document referenced by the tenant reference.
+        /// </summary>
+        /// <param name="clientRef"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<V1Client?> ResolveClientRef(V1ClientRef clientRef, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(clientRef.Name))
+                throw new InvalidOperationException($"Client reference has no name.");
+
+            var ns = clientRef.Namespace ?? defaultNamespace;
+            if (string.IsNullOrWhiteSpace(ns))
+                throw new InvalidOperationException($"Client reference has no discovered namesace.");
+
+            var client = await _kube.GetAsync<V1Client>(clientRef.Name, ns);
+            if (client == null)
+                throw new InvalidOperationException($"Client reference cannot be resolved.");
+
+            return client;
+        }
+
+        /// <summary>
+        /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
+        /// </summary>
+        /// <param name="tenantRef"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
             if (tenant == null)
                 throw new InvalidOperationException($"Tenant reference cannot be resolved.");
 
@@ -217,6 +258,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="from"></param>
         /// <param name="to"></param>
         /// <returns></returns>
+        [return: NotNullIfNotNull(nameof(from))]
         protected static TTo? TransformToNewtonsoftJson<TFrom, TTo>(TFrom? from)
             where TFrom : class
             where TTo : class
@@ -224,7 +266,11 @@ namespace Alethic.Auth0.Operator.Controllers
             if (from == null)
                 return null;
 
-            return _newtonsoftJsonSerializer.Deserialize<TTo>(new JsonTextReader(new StringReader(System.Text.Json.JsonSerializer.Serialize(from))));
+            var to = _newtonsoftJsonSerializer.Deserialize<TTo>(new JsonTextReader(new StringReader(System.Text.Json.JsonSerializer.Serialize(from))));
+            if (to is null)
+                throw new InvalidOperationException();
+
+            return to;
         }
 
         /// <summary>
@@ -234,6 +280,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <typeparam name="TTo"></typeparam>
         /// <param name="from"></param>
         /// <returns></returns>
+        [return: NotNullIfNotNull(nameof(from))]
         protected static TTo? TransformToSystemTextJson<TFrom, TTo>(TFrom? from)
             where TFrom : class
             where TTo : class
@@ -243,7 +290,12 @@ namespace Alethic.Auth0.Operator.Controllers
 
             using var w = new StringWriter();
             _newtonsoftJsonSerializer.Serialize(w, from);
-            return System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString());
+
+            var to = System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString());
+            if (to is null)
+                throw new InvalidOperationException();
+
+            return to;
         }
 
         /// <summary>

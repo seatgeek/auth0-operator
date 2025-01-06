@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,9 +46,9 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ResourceServer";
 
         /// <inheritdoc />
-        protected override async Task<ResourceServerConf?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<ResourceServer, ResourceServerConf>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
+            return TransformToSystemTextJson<ResourceServer, IDictionary>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
@@ -65,14 +66,14 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ResourceServerConf conf, CancellationToken cancellationToken)
+        protected override async Task<string> CreateApi(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
             return self.Id;
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ResourceServerConf conf, CancellationToken cancellationToken)
+        protected override async Task UpdateApi(IManagementApiClient api, string id, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
         }

@@ -1,27 +1,15 @@
 ﻿using System.Collections;
 using System.Text.Json.Serialization;
 
+using Alethic.Auth0.Operator.Entities;
+
+using Riok.Mapperly.Abstractions;
+
 namespace Alethic.Auth0.Operator.Models.Connection
 {
 
     public class ConnectionConf
     {
-
-        [JsonPropertyName("id")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Id { get; set; }
-
-        [JsonPropertyName("strategy")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Strategy { get; set; }
-
-        [JsonPropertyName("provisioning_ticket_url")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? ProvisioningTicketUrl { get; set; }
-
-        [JsonPropertyName("options")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IDictionary? Options { get; set; }
 
         [JsonPropertyName("name")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -30,6 +18,18 @@ namespace Alethic.Auth0.Operator.Models.Connection
         [JsonPropertyName("display_name")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? DisplayName { get; set; }
+
+        [JsonPropertyName("strategy")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Strategy { get; set; }
+
+        [JsonPropertyName("options")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IDictionary? Options { get; set; }
+
+        [JsonPropertyName("provisioning_ticket_url")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ProvisioningTicketUrl { get; set; }
 
         [JsonPropertyName("metadata")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -41,7 +41,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
 
         [JsonPropertyName("enabled_clients")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string[]? EnabledClients { get; set; }
+        public V1ClientRef[]? EnabledClients { get; set; }
 
         [JsonPropertyName("show_as_button")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

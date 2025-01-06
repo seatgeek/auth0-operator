@@ -21,6 +21,7 @@
         <PackageReference Include="KubeOps.Generator" Version="9.1.6-alethic.5" />
         <PackageReference Include="KubeOps.Operator" Version="9.1.6-alethic.5" />
         <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.0" />
+        <PackageReference Include="Riok.Mapperly" Version="4.1.1" />
         <PackageReference Include="System.Text.Json" Version="9.0.0" />
     </ItemGroup>
 

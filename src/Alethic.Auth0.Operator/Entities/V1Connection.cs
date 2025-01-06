@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Collections;
+using System.Text.Json.Serialization;
 
 using Alethic.Auth0.Operator.Models.Connection;
 
@@ -30,14 +31,14 @@ namespace Alethic.Auth0.Operator.Entities
 
         }
 
-        public class StatusDef : V1TenantEntityStatus<ConnectionConf>
+        public class StatusDef : V1TenantEntityStatus
         {
 
             [JsonPropertyName("id")]
             public string? Id { get; set; }
 
             [JsonPropertyName("lastConf")]
-            public ConnectionConf? LastConf { get; set; }
+            public IDictionary? LastConf { get; set; }
 
         }
 

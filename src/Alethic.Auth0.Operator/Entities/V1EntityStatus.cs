@@ -1,11 +1,12 @@
-﻿namespace Alethic.Auth0.Operator.Entities
+﻿using System.Collections;
+
+namespace Alethic.Auth0.Operator.Entities
 {
 
-    public interface V1EntityStatus<TConf>
-        where TConf : class
+    public interface V1EntityStatus
     {
 
-        TConf? LastConf { get; set; }
+        IDictionary? LastConf { get; set; }
 
     }
 
