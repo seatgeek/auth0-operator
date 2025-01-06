@@ -7,13 +7,13 @@ namespace Alethic.Auth0.Operator.Models
     public enum SigningAlgorithm
     {
 
-        [JsonStringEnumMemberName("hs256")]
+        [JsonStringEnumMemberName("HS256")]
         HS256,
 
-        [JsonStringEnumMemberName("rs256")]
+        [JsonStringEnumMemberName("RS256")]
         RS256,
 
-        [JsonStringEnumMemberName("ps256")]
+        [JsonStringEnumMemberName("PS256")]
         PS256
 
     }

@@ -49,9 +49,9 @@ spec:
                     type: array
                   signing_alg:
                     enum:
-                    - hs256
-                    - rs256
-                    - ps256
+                    - HS256
+                    - RS256
+                    - PS256
                     nullable: true
                     type: string
                   signing_secret:
@@ -179,9 +179,9 @@ spec:
                     type: array
                   signing_alg:
                     enum:
-                    - hs256
-                    - rs256
-                    - ps256
+                    - HS256
+                    - RS256
+                    - PS256
                     nullable: true
                     type: string
                   signing_secret:
