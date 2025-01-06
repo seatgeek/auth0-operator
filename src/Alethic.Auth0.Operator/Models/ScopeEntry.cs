@@ -7,6 +7,7 @@ namespace Alethic.Auth0.Operator.Models
     {
 
         [JsonPropertyName("actions")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string[]? Actions { get; set; }
 
     }

@@ -9,10 +9,12 @@ namespace Alethic.Auth0.Operator.Models.ResourceServer
     {
 
         [JsonPropertyName("required")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Required { get; set; }
 
         [JsonPropertyName("mechanism")]
-        public Mechanism Mechanism { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Mechanism? Mechanism { get; set; }
 
     }
 

@@ -7,12 +7,15 @@ namespace Alethic.Auth0.Operator.Models
     {
 
         [JsonPropertyName("cert")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Certificate { get; set; }
 
         [JsonPropertyName("pub")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? PublicKey { get; set; }
 
         [JsonPropertyName("subject")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Subject { get; set; }
 
     }

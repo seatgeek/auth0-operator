@@ -7,9 +7,11 @@ namespace Alethic.Auth0.Operator.Models.ResourceServer
     {
 
         [JsonPropertyName("format")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public TokenFormat? Format { get; set; }
 
         [JsonPropertyName("encryption_key")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public TokenEncryptionKey? EncryptionKey { get; set; }
 
     }

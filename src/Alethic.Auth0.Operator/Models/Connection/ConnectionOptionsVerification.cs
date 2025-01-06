@@ -7,6 +7,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("active")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Active { get; set; }
 
     }

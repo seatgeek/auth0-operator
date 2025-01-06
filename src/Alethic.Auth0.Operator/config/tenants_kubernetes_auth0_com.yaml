@@ -53,8 +53,8 @@ spec:
                     properties:
                       charset:
                         enum:
-                        - Base20
-                        - Digits
+                        - base20
+                        - digits
                         nullable: true
                         type: string
                       mask:
@@ -273,8 +273,8 @@ spec:
                     properties:
                       charset:
                         enum:
-                        - Base20
-                        - Digits
+                        - base20
+                        - digits
                         nullable: true
                         type: string
                       mask:

@@ -7,16 +7,16 @@ namespace Alethic.Auth0.Operator.Models.ResourceServer
     public enum TokenDialect
     {
 
-        [JsonPropertyName("access_token")]
+        [JsonStringEnumMemberName("access_token")]
         AccessToken,
 
-        [JsonPropertyName("access_token_authz")]
+        [JsonStringEnumMemberName("access_token_authz")]
         AccessTokenAuthZ,
 
-        [JsonPropertyName("rfc9068_profile")]
+        [JsonStringEnumMemberName("rfc9068_profile")]
         Rfc9068Profile,
 
-        [JsonPropertyName("rfc9068_profile_authz")]
+        [JsonStringEnumMemberName("rfc9068_profile_authz")]
         Rfc9068ProfileAuthz
 
     }

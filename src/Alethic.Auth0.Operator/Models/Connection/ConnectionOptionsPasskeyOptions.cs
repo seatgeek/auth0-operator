@@ -7,12 +7,15 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("challenge_ui")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ChallengeUi? ChallengeUi { get; set; }
 
         [JsonPropertyName("progressive_enrollment_enabled")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? ProgressiveEnrollmentEnabled { get; set; }
 
         [JsonPropertyName("local_enrollment_enabled")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? LocalEnrollmentEnabled { get; set; }
 
     }

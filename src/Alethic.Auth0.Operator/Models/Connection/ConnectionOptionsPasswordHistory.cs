@@ -7,9 +7,11 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("enable")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Enable { get; set; }
 
         [JsonPropertyName("size")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? Size { get; set; }
 
     }

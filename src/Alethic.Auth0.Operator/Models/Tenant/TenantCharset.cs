@@ -1,5 +1,4 @@
-﻿using System.Runtime.Serialization;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Alethic.Auth0.Operator.Entities
 {
@@ -8,10 +7,10 @@ namespace Alethic.Auth0.Operator.Entities
     public enum TenantCharset
     {
 
-        [EnumMember(Value = "base20")]
+        [JsonStringEnumMemberName("base20")]
         Base20,
 
-        [EnumMember(Value = "digits")]
+        [JsonStringEnumMemberName("digits")]
         Digits
 
     }

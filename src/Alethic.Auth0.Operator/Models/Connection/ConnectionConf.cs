@@ -16,6 +16,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
         public string? Strategy { get; set; }
 
         [JsonPropertyName("provisioning_ticket_url")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ProvisioningTicketUrl { get; set; }
 
         [JsonPropertyName("options")]
@@ -31,6 +32,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
         public string? DisplayName { get; set; }
 
         [JsonPropertyName("metadata")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IDictionary? Metadata { get; set; }
 
         [JsonPropertyName("realms")]

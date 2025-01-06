@@ -7,9 +7,11 @@ namespace Alethic.Auth0.Operator.Models
     {
 
         [JsonPropertyName("backchannel_logout_urls")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string[]? BackchannelLogoutUrls { get; set; }
 
         [JsonPropertyName("backchannel_logout_initiators")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public BackchannelLogoutInitiators? BackchannelLogoutInitiators { get; set; }
 
     }

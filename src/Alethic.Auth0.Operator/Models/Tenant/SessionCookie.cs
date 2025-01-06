@@ -8,6 +8,7 @@ namespace Alethic.Auth0.Operator.Models.Tenant
 
 
         [JsonPropertyName("mode")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Mode { get; set; }
 
     }

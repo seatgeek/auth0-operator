@@ -7,9 +7,11 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("min")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? Min { get; set; }
 
         [JsonPropertyName("max")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? Max { get; set; }
 
     }

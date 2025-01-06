@@ -7,7 +7,7 @@ namespace Alethic.Auth0.Operator.Models.ResourceServer
     public enum ConsentPolicy
     {
 
-        [JsonPropertyName("transactional-authorization-with-mfa")]
+        [JsonStringEnumMemberName("transactional-authorization-with-mfa")]
         TransactionalAuthorizationWithMfa,
 
     }

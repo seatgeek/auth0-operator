@@ -7,6 +7,7 @@ namespace Alethic.Auth0.Operator.Models.Tenant
     {
 
         [JsonPropertyName("enabled")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Enabled { get; set; }
 
         [JsonPropertyName("html")]

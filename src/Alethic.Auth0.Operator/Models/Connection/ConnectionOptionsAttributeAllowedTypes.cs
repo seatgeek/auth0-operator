@@ -7,9 +7,11 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("email")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Email { get; set; }
 
         [JsonPropertyName("phone_number")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? PhoneNumber { get; set; }
 
     }

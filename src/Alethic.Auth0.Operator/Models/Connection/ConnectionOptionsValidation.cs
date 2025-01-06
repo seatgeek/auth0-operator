@@ -7,6 +7,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("username")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ConnectionOptionsUserName? UserName { get; set; }
 
     }

@@ -76,10 +76,10 @@ spec:
                     type: string
                   token_dialect:
                     enum:
-                    - AccessToken
-                    - AccessTokenAuthZ
-                    - Rfc9068Profile
-                    - Rfc9068ProfileAuthz
+                    - access_token
+                    - access_token_authz
+                    - rfc9068_profile
+                    - rfc9068_profile_authz
                     nullable: true
                     type: string
                   enforce_policies:
@@ -87,7 +87,7 @@ spec:
                     type: boolean
                   consent_policy:
                     enum:
-                    - TransactionalAuthorizationWithMfa
+                    - transactional-authorization-with-mfa
                     nullable: true
                     type: string
                   authorization_details:
@@ -133,7 +133,7 @@ spec:
                       mechanism:
                         enum:
                         - mtls
-                        nullable: false
+                        nullable: true
                         type: string
                     type: object
                 type: object
@@ -206,10 +206,10 @@ spec:
                     type: string
                   token_dialect:
                     enum:
-                    - AccessToken
-                    - AccessTokenAuthZ
-                    - Rfc9068Profile
-                    - Rfc9068ProfileAuthz
+                    - access_token
+                    - access_token_authz
+                    - rfc9068_profile
+                    - rfc9068_profile_authz
                     nullable: true
                     type: string
                   enforce_policies:
@@ -217,7 +217,7 @@ spec:
                     type: boolean
                   consent_policy:
                     enum:
-                    - TransactionalAuthorizationWithMfa
+                    - transactional-authorization-with-mfa
                     nullable: true
                     type: string
                   authorization_details:
@@ -263,7 +263,7 @@ spec:
                       mechanism:
                         enum:
                         - mtls
-                        nullable: false
+                        nullable: true
                         type: string
                     type: object
                 type: object

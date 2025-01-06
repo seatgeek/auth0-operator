@@ -7,6 +7,7 @@ namespace Alethic.Auth0.Operator.Models.Connection
     {
 
         [JsonPropertyName("status")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ConnectionOptionsAttributeStatus? Status { get; set; }
 
     }
