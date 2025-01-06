@@ -81,15 +81,15 @@ namespace Alethic.Auth0.Operator.Controllers
         public async Task<V1Tenant?> ResolveTenantRef(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(tenantRef.Name))
-                throw new InvalidOperationException($"Tenant reference has no name.");
+                throw new InvalidOperationException($"Tenant reference {tenantRef} has no name.");
 
             var ns = tenantRef.Namespace ?? defaultNamespace;
             if (string.IsNullOrWhiteSpace(ns))
-                throw new InvalidOperationException($"Tenant reference has no discovered namesace.");
+                throw new InvalidOperationException($"Tenant reference {tenantRef} has no discovered namesace.");
 
-            var tenant = await _kube.GetAsync<V1Tenant>(tenantRef.Name, ns);
-            if (tenant == null)
-                throw new InvalidOperationException($"Tenant reference cannot be resolved.");
+            var tenant = await _kube.GetAsync<V1Tenant>(tenantRef.Name, ns, cancellationToken);
+            if (tenant is null)
+                throw new InvalidOperationException($"Tenant reference {tenantRef} cannot be resolved.");
 
             return tenant;
         }
@@ -110,8 +110,8 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(ns))
                 throw new InvalidOperationException($"Client reference has no discovered namesace.");
 
-            var client = await _kube.GetAsync<V1Client>(clientRef.Name, ns);
-            if (client == null)
+            var client = await _kube.GetAsync<V1Client>(clientRef.Name, ns, cancellationToken);
+            if (client is null)
                 throw new InvalidOperationException($"Client reference cannot be resolved.");
 
             return client;
@@ -127,7 +127,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
-            if (tenant == null)
+            if (tenant is null)
                 throw new InvalidOperationException($"Tenant reference cannot be resolved.");
 
             return await GetTenantApiClientAsync(tenant, cancellationToken);

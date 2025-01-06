@@ -17,6 +17,12 @@ namespace Alethic.Auth0.Operator.Entities
         [Required]
         public string? Name { get; set; }
 
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            return $"{Namespace}/{Name}";
+        }
+
     }
 
 }
