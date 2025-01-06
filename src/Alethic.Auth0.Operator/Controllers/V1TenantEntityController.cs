@@ -113,13 +113,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     entity.Status.Id = await CreateApi(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                    await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
                 else
                 {
                     entity.Status.Id = entityId;
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} loaded with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                    await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
             }
 
@@ -132,7 +132,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // retrieve and copy last known configuration
             entity.Status.LastConf = await GetApi(api, entity.Status.Id, cancellationToken: cancellationToken);
-            await Kube.UpdateStatusAsync(entity, cancellationToken);
+            entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
         }
 
         /// <summary>

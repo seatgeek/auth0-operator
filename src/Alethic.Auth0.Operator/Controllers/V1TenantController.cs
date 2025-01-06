@@ -59,7 +59,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // retrieve and copy applied settings to status
             var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
             entity.Status.LastConf = TransformToSystemTextJson<TenantSettings, IDictionary>(settings);
-            await Kube.UpdateStatusAsync(entity, cancellationToken);
+            entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
             Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
             await ReconcileSuccessAsync(entity, cancellationToken);
