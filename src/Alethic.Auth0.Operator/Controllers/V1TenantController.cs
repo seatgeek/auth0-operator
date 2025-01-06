@@ -3,10 +3,9 @@ using System.Collections;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Entities;
-using Alethic.Auth0.Operator.Models.Tenant;
+using Alethic.Auth0.Operator.Core.Models.Tenant;
+using Alethic.Auth0.Operator.Models;
 
-using Auth0.Core.Exceptions;
 using Auth0.ManagementApi.Models;
 
 using k8s.Models;

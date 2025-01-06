@@ -3,7 +3,7 @@ using System.Collections;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Entities;
+using Alethic.Auth0.Operator.Models;
 
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;

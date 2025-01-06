@@ -6,8 +6,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Entities;
-using Alethic.Auth0.Operator.Models.Connection;
+using Alethic.Auth0.Operator.Core.Extensions;
+using Alethic.Auth0.Operator.Core.Models;
+using Alethic.Auth0.Operator.Core.Models.Connection;
+using Alethic.Auth0.Operator.Models;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
@@ -21,6 +23,8 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+
+using Newtonsoft.Json.Linq;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -56,7 +60,20 @@ namespace Alethic.Auth0.Operator.Controllers
             if (self == null)
                 return null;
 
-            return TransformToSystemTextJson<Connection, IDictionary>(self);
+            return new Dictionary<string, object?>
+            {
+                ["id"] = self.Id,
+                ["name"] = self.Name,
+                ["display_name"] = self.DisplayName,
+                ["strategy"] = self.Strategy,
+                ["realms"] = self.Realms,
+                ["is_domain_connection"] = self.IsDomainConnection,
+                ["show_as_button"] = self.ShowAsButton,
+                ["provisioning_ticket_url"] = self.ProvisioningTicketUrl,
+                ["enabled_clients"] = self.EnabledClients,
+                ["options"] = self.Options is JObject options ? options.ToDictionary() : throw new InvalidOperationException(),
+                ["metadata"] = self.Metadata is JObject metadata ? metadata.ToDictionary() : throw new InvalidOperationException()
+            };
         }
 
         /// <inheritdoc />

@@ -4,7 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Entities;
+using Alethic.Auth0.Operator.Models;
 
 using Auth0.AuthenticationApi;
 using Auth0.AuthenticationApi.Models;

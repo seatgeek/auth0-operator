@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Eventing.Reader;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Entities;
+using Alethic.Auth0.Operator.Core.Models;
+using Alethic.Auth0.Operator.Models;
 
 using Auth0.AuthenticationApi;
 using Auth0.AuthenticationApi.Models;
@@ -326,7 +326,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "API error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
-                    await DeletingWarningAsync(entity, e.ApiError.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -338,7 +338,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Rate limit hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -352,7 +352,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Unexpected exception reconciling {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
-                    await DeletingWarningAsync(entity, e.Message, cancellationToken);
+                    await ReconcileWarningAsync(entity, e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {

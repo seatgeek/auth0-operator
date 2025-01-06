@@ -33,6 +33,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "charts", "charts", "{029417
 EndProject
 Project("{13B669BE-BB05-4DDF-9536-439F39A36129}") = "auth0-operator", "charts\auth0-operator\auth0-operator.msbuildproj", "{1B2FC917-BA10-4D6D-AF75-84B04C562F17}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alethic.Auth0.Operator.Tests", "src\Alethic.Auth0.Operator.Tests\Alethic.Auth0.Operator.Tests.csproj", "{DBFB6920-CA41-4EE6-B16F-A36AB874F20B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alethic.Auth0.Operator.Core", "src\Alethic.Auth0.Operator.Core\Alethic.Auth0.Operator.Core.csproj", "{71799DB3-A560-45D9-A9D7-0BEF2A2B8BA9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -59,6 +63,14 @@ Global
 		{1B2FC917-BA10-4D6D-AF75-84B04C562F17}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1B2FC917-BA10-4D6D-AF75-84B04C562F17}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1B2FC917-BA10-4D6D-AF75-84B04C562F17}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DBFB6920-CA41-4EE6-B16F-A36AB874F20B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DBFB6920-CA41-4EE6-B16F-A36AB874F20B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DBFB6920-CA41-4EE6-B16F-A36AB874F20B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DBFB6920-CA41-4EE6-B16F-A36AB874F20B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71799DB3-A560-45D9-A9D7-0BEF2A2B8BA9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71799DB3-A560-45D9-A9D7-0BEF2A2B8BA9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71799DB3-A560-45D9-A9D7-0BEF2A2B8BA9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71799DB3-A560-45D9-A9D7-0BEF2A2B8BA9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
