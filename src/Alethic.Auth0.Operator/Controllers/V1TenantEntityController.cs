@@ -160,7 +160,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
                     return;
-                }
+                }s
 
                 var self = await GetApi(api, entity.Status.Id, cancellationToken);
                 if (self is null)
