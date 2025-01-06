@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -75,7 +76,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task UpdateApi(IManagementApiClient api, string id, ConnectionConf conf, CancellationToken cancellationToken)
         {
-            await api.Connections.UpdateAsync(id, TransformToNewtonsoftJson<ConnectionConf, ConnectionUpdateRequest>(conf), cancellationToken);
+            var req = TransformToNewtonsoftJson<ConnectionConf, ConnectionUpdateRequest>(conf);
+            if (req == null)
+                return;
+
+            req.Name = null;
+            await api.Connections.UpdateAsync(id, req, cancellationToken);
         }
 
         /// <inheritdoc />
