@@ -1,5 +1,7 @@
 ﻿using System.Text.Json.Serialization;
 
+using KubeOps.Abstractions.Entities.Attributes;
+
 namespace Alethic.Auth0.Operator.Core.Models.ClientGrant
 {
 
@@ -8,10 +10,12 @@ namespace Alethic.Auth0.Operator.Core.Models.ClientGrant
 
         [JsonPropertyName("clientRef")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [Required]
         public V1ClientRef? ClientRef { get; set; }
 
         [JsonPropertyName("audience")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [Required]
         public V1ResourceServerRef? Audience { get; set; }
 
         [JsonPropertyName("organization_usage")]
@@ -22,9 +26,10 @@ namespace Alethic.Auth0.Operator.Core.Models.ClientGrant
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? AllowAnyOrganization { get; set; }
 
-        [JsonPropertyName("resourceServerRef")]
+        [JsonPropertyName("scope")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string[]? Scopes { get; set; }
+        [Required]
+        public string[]? Scope { get; set; }
 
     }
 
