@@ -86,6 +86,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 return "missing a value for ClientRef";
             if (conf.Audience is null)
                 return "missing a value for Audience";
+            if (conf.Scope is null)
+                return "missing a value for Scope";
 
             return null;
         }
