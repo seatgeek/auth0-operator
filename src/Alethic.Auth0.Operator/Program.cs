@@ -1,7 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-
-using Auth0.ManagementApi;
+﻿using System.Threading.Tasks;
 
 using KubeOps.Operator;
 
@@ -19,7 +16,6 @@ namespace Alethic.Auth0.Operator
             var builder = Host.CreateApplicationBuilder(args);
             builder.Services.AddKubernetesOperator().RegisterComponents();
             builder.Services.AddMemoryCache();
-            builder.Services.AddTransient<Util>();
             var app = builder.Build();
             return app.RunAsync();
         }

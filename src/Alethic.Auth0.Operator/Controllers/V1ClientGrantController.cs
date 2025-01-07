@@ -50,14 +50,14 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ClientGrant";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Id == id);
             if (self == null)
                 return null;
 
-            return TransformToSystemTextJson<ClientGrant, IDictionary>(self);
+            return TransformToSystemTextJson<Hashtable>(self);
         }
 
         /// <inheritdoc />

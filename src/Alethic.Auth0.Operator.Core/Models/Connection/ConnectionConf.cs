@@ -1,6 +1,8 @@
 ﻿using System.Collections;
 using System.Text.Json.Serialization;
 
+using Alethic.Auth0.Operator.Core.Extensions;
+
 namespace Alethic.Auth0.Operator.Core.Models.Connection
 {
 
@@ -21,7 +23,8 @@ namespace Alethic.Auth0.Operator.Core.Models.Connection
 
         [JsonPropertyName("options")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IDictionary? Options { get; set; }
+        [JsonConverter(typeof(SimplePrimitiveHashtableConverter))]
+        public Hashtable? Options { get; set; }
 
         [JsonPropertyName("provisioning_ticket_url")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -29,7 +32,8 @@ namespace Alethic.Auth0.Operator.Core.Models.Connection
 
         [JsonPropertyName("metadata")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IDictionary? Metadata { get; set; }
+        [JsonConverter(typeof(SimplePrimitiveHashtableConverter))]
+        public Hashtable? Metadata { get; set; }
 
         [JsonPropertyName("realms")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

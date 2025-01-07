@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Text.Json.Serialization;
 
+using Alethic.Auth0.Operator.Core.Extensions;
 using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.ClientGrant;
 
@@ -40,7 +41,8 @@ namespace Alethic.Auth0.Operator.Models
             public string? Id { get; set; }
 
             [JsonPropertyName("lastConf")]
-            public IDictionary? LastConf { get; set; }
+            [JsonConverter(typeof(SimplePrimitiveHashtableConverter))]
+            public Hashtable? LastConf { get; set; }
 
         }
 

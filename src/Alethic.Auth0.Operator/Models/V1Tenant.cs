@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Text.Json.Serialization;
 
+using Alethic.Auth0.Operator.Core.Extensions;
 using Alethic.Auth0.Operator.Core.Models.Tenant;
 
 using k8s.Models;
@@ -53,7 +54,8 @@ namespace Alethic.Auth0.Operator.Models
         {
 
             [JsonPropertyName("lastConf")]
-            public IDictionary? LastConf { get; set; }
+            [JsonConverter(typeof(SimplePrimitiveHashtableConverter))]
+            public Hashtable? LastConf { get; set; }
 
         }
 

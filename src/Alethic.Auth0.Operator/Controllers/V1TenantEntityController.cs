@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Dynamic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -48,7 +49,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to locate a matching API element by the given configuration.
@@ -149,7 +150,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="lastConf"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, IDictionary lastConf, CancellationToken cancellationToken)
+        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, CancellationToken cancellationToken)
         {
             entity.Status.LastConf = lastConf;
             return Task.CompletedTask;

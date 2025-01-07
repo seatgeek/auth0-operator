@@ -49,9 +49,9 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ResourceServer";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<ResourceServer, IDictionary>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
+            return TransformToSystemTextJson<Hashtable>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
@@ -82,9 +82,9 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, IDictionary lastConf, CancellationToken cancellationToken)
+        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, CancellationToken cancellationToken)
         {
-            var identifier = (string?)lastConf["identifier"];
+            var identifier = ((dynamic)lastConf).identifier;
             if (string.IsNullOrWhiteSpace(identifier))
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing Identifier.");
 

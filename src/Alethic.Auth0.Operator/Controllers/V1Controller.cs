@@ -3,9 +3,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Alethic.Auth0.Operator.Core.Extensions;
 using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Models;
 
@@ -39,6 +41,7 @@ namespace Alethic.Auth0.Operator.Controllers
     {
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
+        static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
 
         readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
@@ -381,7 +384,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (from == null)
                 return null;
 
-            var to = _newtonsoftJsonSerializer.Deserialize<TTo>(new JsonTextReader(new StringReader(System.Text.Json.JsonSerializer.Serialize(from))));
+            var to = _newtonsoftJsonSerializer.Deserialize<TTo>(new JsonTextReader(new StringReader(System.Text.Json.JsonSerializer.Serialize(from, _jsonSerializerOptions))));
             if (to is null)
                 throw new InvalidOperationException();
 
@@ -391,13 +394,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Transforms the given Newtonsoft JSON serializable object to a System.Text.Json serializable object.
         /// </summary>
-        /// <typeparam name="TFrom"></typeparam>
         /// <typeparam name="TTo"></typeparam>
         /// <param name="from"></param>
         /// <returns></returns>
         [return: NotNullIfNotNull(nameof(from))]
-        protected static TTo? TransformToSystemTextJson<TFrom, TTo>(TFrom? from)
-            where TFrom : class
+        protected static TTo? TransformToSystemTextJson<TTo>(object? from)
             where TTo : class
         {
             if (from == null)
@@ -406,7 +407,7 @@ namespace Alethic.Auth0.Operator.Controllers
             using var w = new StringWriter();
             _newtonsoftJsonSerializer.Serialize(w, from);
 
-            var to = System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString());
+            var to = System.Text.Json.JsonSerializer.Deserialize<TTo>(w.ToString(), _jsonSerializerOptions);
             if (to is null)
                 throw new InvalidOperationException();
 

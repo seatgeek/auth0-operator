@@ -48,9 +48,9 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Client";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Client, IDictionary>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
+            return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />

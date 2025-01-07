@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Dynamic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -58,7 +59,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // retrieve and copy applied settings to status
             var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
-            entity.Status.LastConf = TransformToSystemTextJson<TenantSettings, IDictionary>(settings);
+            entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
             Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());

@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Core.Extensions;
 using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Connection;
 using Alethic.Auth0.Operator.Models;
@@ -24,8 +23,6 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-
-using Newtonsoft.Json.Linq;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -56,40 +53,26 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Connection";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
             if (self == null)
                 return null;
 
-            return new Dictionary<string, object?>
-            {
-                ["id"] = self.Id,
-                ["name"] = self.Name,
-                ["display_name"] = self.DisplayName,
-                ["strategy"] = self.Strategy,
-                ["realms"] = self.Realms,
-                ["is_domain_connection"] = self.IsDomainConnection,
-                ["show_as_button"] = self.ShowAsButton,
-                ["provisioning_ticket_url"] = self.ProvisioningTicketUrl,
-                ["enabled_clients"] = self.EnabledClients,
-                ["options"] = ToDictionary(self.Options),
-                ["metadata"] = ToDictionary(self.Metadata),
-            };
+            var dict = new Hashtable();
+            dict["id"] = self.Id;
+            dict["name"] = self.Name;
+            dict["display_name"] = self.DisplayName;
+            dict["strategy"] = self.Strategy;
+            dict["realms"] = self.Realms;
+            dict["is_domain_connection"] = self.IsDomainConnection;
+            dict["show_as_button"] = self.ShowAsButton;
+            dict["provisioning_ticket_url"] = self.ProvisioningTicketUrl;
+            dict["enabled_clients"] = self.EnabledClients;
+            dict["options"] = TransformToSystemTextJson<Hashtable?>(self.Options);
+            dict["metadata"] = TransformToSystemTextJson<Hashtable?>(self.Metadata);
+            return dict;
         }
-
-        /// <summary>
-        /// Converts the given potentially dynamic API type to a dictionary type.
-        /// </summary>
-        /// <param name="o"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
-        object? ToDictionary(object? o) => o switch
-        {
-            JObject j => j.ToDictionary(),
-            null => null,
-            _ => throw new InvalidOperationException(),
-        };
 
         /// <inheritdoc />
         protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
