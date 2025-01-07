@@ -84,7 +84,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, CancellationToken cancellationToken)
         {
-            var identifier = ((dynamic)lastConf).identifier;
+            var identifier = (string?)lastConf["identifier"];
             if (string.IsNullOrWhiteSpace(identifier))
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing Identifier.");
 
