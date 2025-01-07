@@ -8,13 +8,7 @@ rules:
   - kubernetes.auth0.com
   resources:
   - tenants
-  verbs:
-  - '*'
-- apiGroups:
-  - kubernetes.auth0.com
-  resources:
   - clients
-  - connections
   - resourceservers
   verbs:
   - '*'
@@ -29,6 +23,13 @@ rules:
   - events.k8s.io
   resources:
   - events
+  verbs:
+  - '*'
+- apiGroups:
+  - kubernetes.auth0.com
+  resources:
+  - clientgrants
+  - connections
   verbs:
   - '*'
 - apiGroups:
@@ -65,7 +66,7 @@ rules:
 - apiGroups:
   - kubernetes.auth0.com
   resources:
-  - connections/status
+  - resourceservers/status
   verbs:
   - get
   - update
@@ -73,7 +74,15 @@ rules:
 - apiGroups:
   - kubernetes.auth0.com
   resources:
-  - resourceservers/status
+  - clientgrants/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - kubernetes.auth0.com
+  resources:
+  - connections/status
   verbs:
   - get
   - update
