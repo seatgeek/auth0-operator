@@ -162,6 +162,7 @@ spec:
                 type: object
             required:
             - tenantRef
+            - conf
             type: object
         type: object
     served: true

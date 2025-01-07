@@ -18,6 +18,10 @@ namespace Alethic.Auth0.Operator.Core.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Id { get; set; }
 
+        [JsonPropertyName("identifier")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Identifier { get; set; }
+
         /// <inheritdoc />
         public override string ToString()
         {

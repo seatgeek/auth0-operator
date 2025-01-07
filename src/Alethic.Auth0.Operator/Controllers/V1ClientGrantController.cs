@@ -50,7 +50,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ClientGrant";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace,CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Id == id);
@@ -65,13 +65,13 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (conf.ClientRef is null)
                 throw new InvalidOperationException("ClientRef is required.");
-            var clientId = await ResolveClientRefToId(conf.ClientRef, defaultNamespace, cancellationToken);
+            var clientId = await ResolveClientRefToId(api, conf.ClientRef, defaultNamespace, cancellationToken);
             if (string.IsNullOrWhiteSpace(clientId))
                 throw new InvalidOperationException();
 
             if (conf.Audience is null)
                 throw new InvalidOperationException("Audience is required.");
-            var audience = await ResolveResourceServerRefToIdentifier(conf.Audience, defaultNamespace, cancellationToken);
+            var audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken);
             if (string.IsNullOrWhiteSpace(audience))
                 throw new InvalidOperationException();
 
@@ -97,8 +97,8 @@ namespace Alethic.Auth0.Operator.Controllers
             req.AllowAnyOrganization = conf.AllowAnyOrganization;
             req.OrganizationUsage = Convert(conf.OrganizationUsage);
             req.Scope = conf.Scopes?.ToList();
-            req.ClientId = await ResolveClientRefToId(conf.ClientRef, defaultNamespace, cancellationToken);
-            req.Audience = await ResolveResourceServerRefToIdentifier(conf.Audience, defaultNamespace, cancellationToken);
+            req.ClientId = await ResolveClientRefToId(api, conf.ClientRef, defaultNamespace, cancellationToken);
+            req.Audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken);
 
             var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
             if (self is null)
@@ -124,6 +124,12 @@ namespace Alethic.Auth0.Operator.Controllers
             return api.ClientGrants.DeleteAsync(id, cancellationToken);
         }
 
+        /// <summary>
+        /// Converts a from a local model type to a request type.
+        /// </summary>
+        /// <param name="organizationUsage"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         global::Auth0.ManagementApi.Models.OrganizationUsage? Convert(global::Alethic.Auth0.Operator.Core.Models.OrganizationUsage? organizationUsage)
         {
             return organizationUsage switch

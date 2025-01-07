@@ -113,7 +113,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        async Task<string[]?> ResolveClientRefsToId(V1ClientRef[]? refs, string defaultNamespace, CancellationToken cancellationToken)
+        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, V1ClientRef[]? refs, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (refs is null)
                 return Array.Empty<string>();
@@ -122,24 +122,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
             foreach (var i in refs)
             {
-                if (i.Id is { } id)
-                {
-                    l.Add(id);
-                }
-                else
-                {
-                    Logger.LogDebug("Attempting to resolve ClientRef {Namespace}/{Name}.", i.Namespace, i.Name);
+                var r = await ResolveClientRefToId(api, i, defaultNamespace, cancellationToken);
+                if (r is null)
+                    throw new InvalidOperationException();
 
-                    var client = await ResolveClientRef(i, defaultNamespace, cancellationToken);
-                    if (client is null)
-                        throw new InvalidOperationException($"Could not resolve ClientRef {i}.");
-
-                    if (client.Status.Id is null)
-                        throw new RetryException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconciled.");
-
-                    Logger.LogDebug("Resolved ClientRef {Namespace}/{Name} to {Id}.", i.Namespace, i.Name, client.Status.Id);
-                    l.Add(client.Status.Id);
-                }
+                l.Add(r);
             }
 
             return l.ToArray();
@@ -157,7 +144,7 @@ namespace Alethic.Auth0.Operator.Controllers
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
-            req.EnabledClients = await ResolveClientRefsToId(conf.EnabledClients, defaultNamespace, cancellationToken);
+            req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
 
             var self = await api.Connections.CreateAsync(TransformToNewtonsoftJson<ConnectionConf, ConnectionCreateRequest>(conf), cancellationToken);
             if (self is null)
@@ -176,7 +163,7 @@ namespace Alethic.Auth0.Operator.Controllers
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
-            req.EnabledClients = await ResolveClientRefsToId(conf.EnabledClients, defaultNamespace, cancellationToken);
+            req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
 
             await api.Connections.UpdateAsync(id, req, cancellationToken);
         }

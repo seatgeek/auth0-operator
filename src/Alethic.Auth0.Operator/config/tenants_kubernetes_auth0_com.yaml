@@ -247,6 +247,7 @@ spec:
             required:
             - name
             - auth
+            - conf
             type: object
         type: object
     served: true
