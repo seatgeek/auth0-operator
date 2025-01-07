@@ -146,7 +146,7 @@ namespace Alethic.Auth0.Operator.Controllers
             req.ShowAsButton = conf.ShowAsButton;
             req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
 
-            var self = await api.Connections.CreateAsync(TransformToNewtonsoftJson<ConnectionConf, ConnectionCreateRequest>(conf), cancellationToken);
+            var self = await api.Connections.CreateAsync(req, cancellationToken);
             if (self is null)
                 throw new InvalidOperationException();
 
