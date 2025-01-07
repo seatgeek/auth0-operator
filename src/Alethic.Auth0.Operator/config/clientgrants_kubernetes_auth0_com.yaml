@@ -85,12 +85,16 @@ spec:
                   allow_any_organization:
                     nullable: true
                     type: boolean
-                  resourceServerRef:
+                  scope:
                     items:
                       nullable: false
                       type: string
                     nullable: true
                     type: array
+                required:
+                - clientRef
+                - audience
+                - scope
                 type: object
             required:
             - tenantRef
