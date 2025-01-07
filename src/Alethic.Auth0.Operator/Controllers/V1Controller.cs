@@ -94,7 +94,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
             if (tenant is null)
-                throw new InvalidOperationException($"Tenant reference cannot be resolved.");
+                throw new RetryException($"Tenant reference cannot be resolved.");
 
             return await GetTenantApiClientAsync(tenant, cancellationToken);
         }
@@ -147,7 +147,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var client = await _kube.GetAsync<V1Client>(clientRef.Name, ns, cancellationToken);
             if (client is null)
-                throw new InvalidOperationException($"Client reference cannot be resolved.");
+                throw new RetryException($"Client reference cannot be resolved.");
 
             return client;
         }
@@ -202,7 +202,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var resourceServer = await _kube.GetAsync<V1ResourceServer>(resourceServerRef.Name, ns, cancellationToken);
             if (resourceServer is null)
-                throw new InvalidOperationException($"ResourceServer reference cannot be resolved.");
+                throw new RetryException($"ResourceServer reference cannot be resolved.");
 
             return resourceServer;
         }
@@ -241,7 +241,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"Could not resolve ResourceServerRef {reference}.");
 
             if (resourceServer.Status.Identifier is null)
-                throw new InvalidOperationException($"Referenced ResourceServer {resourceServer.Namespace()}/{resourceServer.Name()} has not been reconcilled.");
+                throw new RetryException($"Referenced ResourceServer {resourceServer.Namespace()}/{resourceServer.Name()} has not been reconcilled.");
 
             Logger.LogDebug("Resolved ResourceServer reference {Namespace}/{Name} to {Identifier}.", reference.Namespace, reference.Name, resourceServer.Status.Identifier);
             return resourceServer.Status.Identifier;
