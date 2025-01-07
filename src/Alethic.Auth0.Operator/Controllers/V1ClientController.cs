@@ -48,13 +48,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Client";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             return TransformToSystemTextJson<Client, IDictionary>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ClientConf conf, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Name == conf.Name);

@@ -34,7 +34,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
+        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger) :
             base(kube, requeue, cache, logger)
         {
 
@@ -45,18 +45,20 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="api"></param>
         /// <param name="id"></param>
+        /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken);
+        protected abstract Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to locate a matching API element by the given configuration.
         /// </summary>
         /// <param name="api"></param>
         /// <param name="conf"></param>
+        /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<string?> FindApi(IManagementApiClient api, TConf conf, CancellationToken cancellationToken);
+        protected abstract Task<string?> FindApi(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Performs a validation on the <paramref name="conf"/> parameter for usage in create operations.
@@ -102,7 +104,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // discover entity by name, or create
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                var entityId = await FindApi(api, entity.Spec.Conf, cancellationToken);
+                var entityId = await FindApi(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
                 if (entityId is null)
                 {
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
@@ -131,8 +133,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 await UpdateApi(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
 
             // retrieve and copy last known configuration
-            entity.Status.LastConf = await GetApi(api, entity.Status.Id, cancellationToken: cancellationToken);
+            var lastConf = await GetApi(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+            if (lastConf is null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has null API object.");
+
+            await ApplyStatus(api, entity, lastConf, cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+        }
+
+        /// <summary>
+        /// Applies any modification to the entity status just before saving it.
+        /// </summary>
+        /// <param name="api"></param>
+        /// <param name="entity"></param>
+        /// <param name="lastConf"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, IDictionary lastConf, CancellationToken cancellationToken)
+        {
+            entity.Status.LastConf = lastConf;
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -162,7 +182,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     return;
                 }
 
-                var self = await GetApi(api, entity.Status.Id, cancellationToken);
+                var self = await GetApi(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
                     Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} already been deleted, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
@@ -202,6 +222,21 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 Logger.LogInformation("Rescheduling delete after {TimeSpan}.", n);
                 Requeue(entity, n);
+            }
+            catch (RetryException e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Retry hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
+                    await DeletingWarningAsync(entity, "Retry", e.Message, cancellationToken);
+                }
+                catch (Exception e2)
+                {
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
+                }
+
+                Logger.LogInformation("Rescheduling delete after {TimeSpan}.", TimeSpan.FromMinutes(1));
+                Requeue(entity, TimeSpan.FromMinutes(1));
             }
             catch (Exception e)
             {

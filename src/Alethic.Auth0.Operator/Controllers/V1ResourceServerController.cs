@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,7 +39,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1ResourceServerController(IKubernetesClient kube, EntityRequeue<V1ResourceServer> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
+        public V1ResourceServerController(IKubernetesClient kube, EntityRequeue<V1ResourceServer> requeue, IMemoryCache cache, ILogger<V1ResourceServerController> logger) :
             base(kube, requeue, cache, logger)
         {
 
@@ -48,13 +49,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ResourceServer";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             return TransformToSystemTextJson<ResourceServer, IDictionary>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ResourceServerConf conf, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.ResourceServers.GetAllAsync(new ResourceServerGetRequest() { }, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Identifier == conf.Identifier);
@@ -78,6 +79,17 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task UpdateApi(IManagementApiClient api, string id, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, IDictionary lastConf, CancellationToken cancellationToken)
+        {
+            var identifier = (string?)lastConf["identifier"];
+            if (string.IsNullOrWhiteSpace(identifier))
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing Identifier.");
+
+            entity.Status.Identifier = identifier;
+            return base.ApplyStatus(api, entity, lastConf, cancellationToken);
         }
 
         /// <inheritdoc />

@@ -44,6 +44,7 @@ namespace Alethic.Auth0.Operator.Models
             public AuthDef? Auth { get; set; }
 
             [JsonPropertyName("conf")]
+            [Required]
             public TenantConf? Conf { get; set; }
 
         }

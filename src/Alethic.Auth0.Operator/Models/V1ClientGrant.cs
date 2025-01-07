@@ -2,7 +2,7 @@
 using System.Text.Json.Serialization;
 
 using Alethic.Auth0.Operator.Core.Models;
-using Alethic.Auth0.Operator.Core.Models.ResourceServer;
+using Alethic.Auth0.Operator.Core.Models.ClientGrant;
 
 using k8s.Models;
 
@@ -13,14 +13,14 @@ namespace Alethic.Auth0.Operator.Models
 {
 
     [EntityScope(EntityScope.Namespaced)]
-    [KubernetesEntity(Group = "kubernetes.auth0.com", ApiVersion = "v1", Kind = "ResourceServer")]
-    [KubernetesEntityShortNames("a0api")]
-    public partial class V1ResourceServer :
-        CustomKubernetesEntity<V1ResourceServer.SpecDef, V1ResourceServer.StatusDef>,
-        V1TenantEntity<V1ResourceServer.SpecDef, V1ResourceServer.StatusDef, ResourceServerConf>
+    [KubernetesEntity(Group = "kubernetes.auth0.com", ApiVersion = "v1", Kind = "ClientGrant")]
+    [KubernetesEntityShortNames("a0cgr")]
+    public partial class V1ClientGrant :
+        CustomKubernetesEntity<V1ClientGrant.SpecDef, V1ClientGrant.StatusDef>,
+        V1TenantEntity<V1ClientGrant.SpecDef, V1ClientGrant.StatusDef, ClientGrantConf>
     {
 
-        public class SpecDef : V1TenantEntitySpec<ResourceServerConf>
+        public class SpecDef : V1TenantEntitySpec<ClientGrantConf>
         {
 
             [JsonPropertyName("tenantRef")]
@@ -29,7 +29,7 @@ namespace Alethic.Auth0.Operator.Models
 
             [JsonPropertyName("conf")]
             [Required]
-            public ResourceServerConf? Conf { get; set; }
+            public ClientGrantConf? Conf { get; set; }
 
         }
 
@@ -38,9 +38,6 @@ namespace Alethic.Auth0.Operator.Models
 
             [JsonPropertyName("id")]
             public string? Id { get; set; }
-
-            [JsonPropertyName("identifier")]
-            public string? Identifier { get; set; }
 
             [JsonPropertyName("lastConf")]
             public IDictionary? LastConf { get; set; }

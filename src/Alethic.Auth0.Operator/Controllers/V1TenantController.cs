@@ -36,7 +36,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1TenantController(IKubernetesClient kube, EntityRequeue<V1Tenant> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
+        public V1TenantController(IKubernetesClient kube, EntityRequeue<V1Tenant> requeue, IMemoryCache cache, ILogger<V1TenantController> logger) :
             base(kube, requeue, cache, logger)
         {
 

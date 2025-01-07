@@ -23,6 +23,9 @@ spec:
               id:
                 nullable: true
                 type: string
+              identifier:
+                nullable: true
+                type: string
               lastConf:
                 nullable: true
                 type: object

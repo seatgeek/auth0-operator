@@ -51,7 +51,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger<V1ClientController> logger)
+        public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _kube = kube ?? throw new ArgumentNullException(nameof(kube));
@@ -80,14 +80,34 @@ namespace Alethic.Auth0.Operator.Controllers
         protected ILogger Logger => _logger;
 
         /// <summary>
+        /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
+        /// </summary>
+        /// <param name="tenantRef"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
+            if (tenant is null)
+                throw new InvalidOperationException($"Tenant reference cannot be resolved.");
+
+            return await GetTenantApiClientAsync(tenant, cancellationToken);
+        }
+
+        /// <summary>
         /// Attempts to resolve the tenant document referenced by the tenant reference.
         /// </summary>
         /// <param name="tenantRef"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<V1Tenant?> ResolveTenantRef(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        [return: NotNullIfNotNull(nameof(tenantRef))]
+        public async Task<V1Tenant?> ResolveTenantRef(V1TenantRef? tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
+            if (tenantRef is null)
+                return null;
+
             if (string.IsNullOrWhiteSpace(tenantRef.Name))
                 throw new InvalidOperationException($"Tenant reference {tenantRef} has no name.");
 
@@ -103,14 +123,18 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Attempts to resolve the tenant document referenced by the tenant reference.
+        /// Attempts to resolve the client document referenced by the client reference.
         /// </summary>
         /// <param name="clientRef"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<V1Client?> ResolveClientRef(V1ClientRef clientRef, string defaultNamespace, CancellationToken cancellationToken)
+        [return: NotNullIfNotNull(nameof(clientRef))]
+        public async Task<V1Client?> ResolveClientRef(V1ClientRef? clientRef, string defaultNamespace, CancellationToken cancellationToken)
         {
+            if (clientRef is null)
+                return null;
+
             if (string.IsNullOrWhiteSpace(clientRef.Name))
                 throw new InvalidOperationException($"Client reference has no name.");
 
@@ -126,19 +150,95 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
+        /// Attempts to resolve the client reference to client ID.
         /// </summary>
-        /// <param name="tenantRef"></param>
+        /// <param name="clientRef"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        [return: NotNullIfNotNull(nameof(clientRef))]
+        protected async Task<string?> ResolveClientRefToId(V1ClientRef? clientRef, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
-            if (tenant is null)
-                throw new InvalidOperationException($"Tenant reference cannot be resolved.");
+            if (clientRef is null)
+                return null;
 
-            return await GetTenantApiClientAsync(tenant, cancellationToken);
+            if (clientRef.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
+            {
+                return id;
+            }
+            else
+            {
+                Logger.LogDebug("Attempting to resolve ClientRef {Namespace}/{Name}.", clientRef.Namespace, clientRef.Name);
+
+                var client = await ResolveClientRef(clientRef, defaultNamespace, cancellationToken);
+                if (client is null)
+                    throw new InvalidOperationException($"Could not resolve ClientRef {clientRef}.");
+                if (string.IsNullOrWhiteSpace(client.Status.Id))
+                    throw new RetryException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconciled.");
+
+                Logger.LogDebug("Resolved ClientRef {Namespace}/{Name} to {Id}.", clientRef.Namespace, clientRef.Name, client.Status.Id);
+                return client.Status.Id;
+            }
+        }
+
+        /// <summary>
+        /// Attempts to resolve the resource server document referenced by the resource server reference.
+        /// </summary>
+        /// <param name="resourceServerRef"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        [return: NotNullIfNotNull(nameof(resourceServerRef))]
+        public async Task<V1ResourceServer?> ResolveResourceServerRef(V1ResourceServerRef? resourceServerRef, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            if (resourceServerRef is null)
+                return null;
+
+            if (string.IsNullOrWhiteSpace(resourceServerRef.Name))
+                throw new InvalidOperationException($"ResourceServer reference has no name.");
+
+            var ns = resourceServerRef.Namespace ?? defaultNamespace;
+            if (string.IsNullOrWhiteSpace(ns))
+                throw new InvalidOperationException($"ResourceServer reference has no discovered namesace.");
+
+            var resourceServer = await _kube.GetAsync<V1ResourceServer>(resourceServerRef.Name, ns, cancellationToken);
+            if (resourceServer is null)
+                throw new InvalidOperationException($"ResourceServer reference cannot be resolved.");
+
+            return resourceServer;
+        }
+
+        /// <summary>
+        /// Attempts to resolve the list of client references to client IDs.
+        /// </summary>
+        /// <param name="refs"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        [return: NotNullIfNotNull(nameof(reference))]
+        protected async Task<string?> ResolveResourceServerRefToIdentifier(V1ResourceServerRef? reference, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            if (reference is null)
+                return null;
+
+            if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
+            {
+                return id;
+            }
+            else
+            {
+                Logger.LogDebug("Attempting to resolve ResourceServer reference {Namespace}/{Name}.", reference.Namespace, reference.Name);
+
+                var resourceServer = await ResolveResourceServerRef(reference, defaultNamespace, cancellationToken);
+                if (resourceServer is null)
+                    throw new InvalidOperationException($"Could not resolve ResourceServerRef {reference}.");
+
+                if (resourceServer.Status.Identifier is null)
+                    throw new InvalidOperationException($"Referenced ResourceServer {resourceServer.Namespace()}/{resourceServer.Name()} has not been reconcilled.");
+
+                Logger.LogDebug("Resolved ResourceServer reference {Namespace}/{Name} to {Identifier}.", reference.Namespace, reference.Name, resourceServer.Status.Identifier);
+                return resourceServer.Status.Identifier;
+            }
         }
 
         /// <summary>
@@ -364,6 +464,21 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 Logger.LogInformation("Rescheduling reconcilation after {TimeSpan}.", n);
                 Requeue(entity, n);
+            }
+            catch (RetryException e)
+            {
+                try
+                {
+                    Logger.LogError(e, "Retry hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
+                    await DeletingWarningAsync(entity, "Retry", e.Message, cancellationToken);
+                }
+                catch (Exception e2)
+                {
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
+                }
+
+                Logger.LogInformation("Rescheduling delete after {TimeSpan}.", TimeSpan.FromMinutes(1));
+                Requeue(entity, TimeSpan.FromMinutes(1));
             }
             catch (Exception e)
             {

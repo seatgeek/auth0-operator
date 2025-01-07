@@ -46,7 +46,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1ConnectionController(IKubernetesClient kube, EntityRequeue<V1Connection> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
+        public V1ConnectionController(IKubernetesClient kube, EntityRequeue<V1Connection> requeue, IMemoryCache cache, ILogger<V1ConnectionController> logger) :
             base(kube, requeue, cache, logger)
         {
 
@@ -56,7 +56,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Connection";
 
         /// <inheritdoc />
-        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task<IDictionary?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
             if (self == null)
@@ -92,7 +92,7 @@ namespace Alethic.Auth0.Operator.Controllers
         };
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, CancellationToken cancellationToken)
+        protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Name == conf.Name);
@@ -128,16 +128,16 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 else
                 {
-                    Logger.LogDebug($"Attempting to resolve client reference {i.Namespace}/{i.Name}.");
+                    Logger.LogDebug("Attempting to resolve ClientRef {Namespace}/{Name}.", i.Namespace, i.Name);
 
                     var client = await ResolveClientRef(i, defaultNamespace, cancellationToken);
                     if (client is null)
                         throw new InvalidOperationException($"Could not resolve ClientRef {i}.");
 
                     if (client.Status.Id is null)
-                        throw new InvalidOperationException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconcilled.");
+                        throw new RetryException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconciled.");
 
-                    Logger.LogDebug($"Resolved client reference {i.Namespace}/{i.Name} to {client.Status.Id}.");
+                    Logger.LogDebug("Resolved ClientRef {Namespace}/{Name} to {Id}.", i.Namespace, i.Name, client.Status.Id);
                     l.Add(client.Status.Id);
                 }
             }
