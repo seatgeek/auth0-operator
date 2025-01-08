@@ -16,8 +16,7 @@ rules:
   resources:
   - secrets
   verbs:
-  - get
-  - list
+  - '*'
 - apiGroups:
   - events.k8s.io
   resources:
