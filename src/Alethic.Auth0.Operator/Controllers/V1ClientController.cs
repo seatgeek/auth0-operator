@@ -131,7 +131,6 @@ namespace Alethic.Auth0.Operator.Controllers
             // ensure secret is up to date
             secret.StringData["clientId"] = clientId ?? "";
             secret.StringData["clientSecret"] = clientSecret;
-            secret = secret.WithOwnerReference(entity);
             secret = await Kube.UpdateAsync(secret, cancellationToken);
         }
 
