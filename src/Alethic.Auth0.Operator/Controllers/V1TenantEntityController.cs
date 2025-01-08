@@ -98,9 +98,18 @@ namespace Alethic.Auth0.Operator.Controllers
             if (entity.Spec.Conf is null)
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.");
 
-            var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            if (tenant is null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.");
+
+            var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.");
+
+            // ensure we hold a reference to the tenant
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
 
             // discover entity by name, or create
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
@@ -174,7 +183,11 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (entity.Spec.TenantRef is null)
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing a tenant reference.");
 
-                var api = await GetTenantApiClientAsync(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+                var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+                if (tenant is null)
+                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing a tenant.");
+
+                var api = await GetTenantApiClientAsync(tenant, cancellationToken);
                 if (api is null)
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.");
 

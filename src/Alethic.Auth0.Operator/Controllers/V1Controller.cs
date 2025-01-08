@@ -110,22 +110,6 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
-        /// </summary>
-        /// <param name="tenantRef"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantReference tenantRef, string defaultNamespace, CancellationToken cancellationToken)
-        {
-            var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
-            if (tenant is null)
-                throw new RetryException($"Tenant reference cannot be resolved.");
-
-            return await GetTenantApiClientAsync(tenant, cancellationToken);
-        }
-
-        /// <summary>
         /// Attempts to resolve the tenant document referenced by the tenant reference.
         /// </summary>
         /// <param name="tenantRef"></param>
