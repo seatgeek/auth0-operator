@@ -68,10 +68,6 @@ namespace Alethic.Auth0.Operator.Core.Models.Client
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Hashtable? ClientMetaData { get; set; }
 
-        [JsonPropertyName("client_secret")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? ClientSecret { get; set; }
-
         [JsonPropertyName("custom_login_page_on")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? IsCustomLoginPageOn { get; set; }

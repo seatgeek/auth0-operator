@@ -50,7 +50,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ClientGrant";
 
         /// <inheritdoc />
-        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Id == id);
@@ -61,7 +61,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (conf.ClientRef is null)
                 throw new InvalidOperationException("ClientRef is required.");
@@ -80,7 +80,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override string? ValidateCreateConf(ClientGrantConf conf)
+        protected override string? ValidateCreate(ClientGrantConf conf)
         {
             if (conf.ClientRef is null)
                 return "missing a value for ClientRef";
@@ -93,7 +93,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string> Create(IManagementApiClient api, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ClientGrantCreateRequest();
             req.ClientId = await ResolveClientRefToId(api, conf.ClientRef, defaultNamespace, cancellationToken);
@@ -110,7 +110,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ClientGrantUpdateRequest();
             req.Scope = conf.Scope?.ToList();
@@ -121,7 +121,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             return api.ClientGrants.DeleteAsync(id, cancellationToken);
         }

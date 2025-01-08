@@ -49,7 +49,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to locate a matching API element by the given configuration.
@@ -59,14 +59,14 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<string?> FindApi(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task<string?> Find(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Performs a validation on the <paramref name="conf"/> parameter for usage in create operations.
         /// </summary>
         /// <param name="conf"></param>
         /// <returns></returns>
-        protected abstract string? ValidateCreateConf(TConf conf);
+        protected abstract string? ValidateCreate(TConf conf);
 
         /// <summary>
         /// Attempts to perform a creation through the API. If successful returns the new ID value.
@@ -76,7 +76,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task<string> CreateApi(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task<string> Create(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to perform an update through the API.
@@ -87,7 +87,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task UpdateApi(IManagementApiClient api, string id, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task Update(IManagementApiClient api, string id, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
@@ -105,16 +105,16 @@ namespace Alethic.Auth0.Operator.Controllers
             // discover entity by name, or create
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                var entityId = await FindApi(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
+                var entityId = await Find(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
                 if (entityId is null)
                 {
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
 
                     // check for validation before create
-                    if (ValidateCreateConf(entity.Spec.Conf) is string msg)
+                    if (ValidateCreate(entity.Spec.Conf) is string msg)
                         throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
 
-                    entity.Status.Id = await CreateApi(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
+                    entity.Status.Id = await Create(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
@@ -131,14 +131,14 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // update specified configuration
             if (entity.Spec.Conf is { } conf)
-                await UpdateApi(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
+                await Update(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
 
             // retrieve and copy last known configuration
-            var lastConf = await GetApi(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+            var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
             if (lastConf is null)
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has null API object.");
 
-            await ApplyStatus(api, entity, lastConf, cancellationToken);
+            await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
         }
 
@@ -148,9 +148,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="api"></param>
         /// <param name="entity"></param>
         /// <param name="lastConf"></param>
+        /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, CancellationToken cancellationToken)
+        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             entity.Status.LastConf = lastConf;
             return Task.CompletedTask;
@@ -163,7 +164,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="id"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken);
+        protected abstract Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public override sealed async Task DeletedAsync(TEntity entity, CancellationToken cancellationToken)
@@ -183,14 +184,14 @@ namespace Alethic.Auth0.Operator.Controllers
                     return;
                 }
 
-                var self = await GetApi(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+                var self = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
                     Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} already been deleted, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
                     return;
                 }
 
-                await DeleteApi(api, entity.Status.Id, cancellationToken);
+                await Delete(api, entity.Status.Id, cancellationToken);
             }
             catch (ErrorApiException e)
             {

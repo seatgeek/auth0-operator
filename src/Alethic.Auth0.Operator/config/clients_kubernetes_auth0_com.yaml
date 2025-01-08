@@ -43,6 +43,16 @@ spec:
                 required:
                 - name
                 type: object
+              secretRef:
+                nullable: true
+                properties:
+                  name:
+                    nullable: false
+                    type: string
+                  namespace:
+                    nullable: false
+                    type: string
+                type: object
               conf:
                 nullable: true
                 properties:
@@ -291,9 +301,6 @@ spec:
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
-                  client_secret:
-                    nullable: true
-                    type: string
                   custom_login_page_on:
                     nullable: true
                     type: boolean

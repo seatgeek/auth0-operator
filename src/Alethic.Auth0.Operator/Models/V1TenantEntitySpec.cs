@@ -7,7 +7,7 @@ namespace Alethic.Auth0.Operator.Models
         where TConf : class
     {
 
-        V1TenantRef? TenantRef { get; set; }
+        V1TenantReference? TenantRef { get; set; }
 
     }
 

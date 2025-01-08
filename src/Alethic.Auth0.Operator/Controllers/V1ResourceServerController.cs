@@ -49,13 +49,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "ResourceServer";
 
         /// <inheritdoc />
-        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             return TransformToSystemTextJson<Hashtable>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.ResourceServers.GetAllAsync(new ResourceServerGetRequest() { }, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Identifier == conf.Identifier);
@@ -63,37 +63,37 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override string? ValidateCreateConf(ResourceServerConf conf)
+        protected override string? ValidateCreate(ResourceServerConf conf)
         {
             return null;
         }
 
         /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string> Create(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
             return self.Id;
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
         }
 
         /// <inheritdoc />
-        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, CancellationToken cancellationToken)
+        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var identifier = (string?)lastConf["identifier"];
             if (string.IsNullOrWhiteSpace(identifier))
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing Identifier.");
 
             entity.Status.Identifier = identifier;
-            return base.ApplyStatus(api, entity, lastConf, cancellationToken);
+            return base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
         }
 
         /// <inheritdoc />
-        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             return api.ResourceServers.DeleteAsync(id, cancellationToken);
         }

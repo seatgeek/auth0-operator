@@ -1,5 +1,4 @@
 ﻿using System.Collections;
-using System.Dynamic;
 using System.Text.Json.Serialization;
 
 using Alethic.Auth0.Operator.Core.Extensions;
@@ -27,7 +26,10 @@ namespace Alethic.Auth0.Operator.Models
 
             [JsonPropertyName("tenantRef")]
             [Required]
-            public V1TenantRef? TenantRef { get; set; }
+            public V1TenantReference? TenantRef { get; set; }
+
+            [JsonPropertyName("secretRef")]
+            public V1SecretReference? SecretRef { get; set; }
 
             [JsonPropertyName("conf")]
             [Required]

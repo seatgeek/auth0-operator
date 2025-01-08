@@ -1,11 +1,9 @@
 ﻿using System.Text.Json.Serialization;
 
-using KubeOps.Abstractions.Entities.Attributes;
-
 namespace Alethic.Auth0.Operator.Core.Models
 {
 
-    public class V1TenantRef
+    public class V1ClientReference
     {
 
         [JsonPropertyName("namespace")]
@@ -14,13 +12,19 @@ namespace Alethic.Auth0.Operator.Core.Models
 
         [JsonPropertyName("name")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        [Required]
         public string? Name { get; set; }
+
+        [JsonPropertyName("id")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Id { get; set; }
 
         /// <inheritdoc />
         public override string ToString()
         {
-            return $"{Namespace}/{Name}";
+            if (Id is not null)
+                return Id;
+            else
+                return $"{Namespace}/{Name}";
         }
 
     }

@@ -53,7 +53,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override string EntityTypeName => "Connection";
 
         /// <inheritdoc />
-        protected override async Task<Hashtable?> GetApi(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
             var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
             if (self == null)
@@ -75,7 +75,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> FindApi(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
             var self = list.FirstOrDefault(i => i.Name == conf.Name);
@@ -83,7 +83,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override string? ValidateCreateConf(ConnectionConf conf)
+        protected override string? ValidateCreate(ConnectionConf conf)
         {
             return null;
         }
@@ -96,7 +96,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, V1ClientRef[]? refs, string defaultNamespace, CancellationToken cancellationToken)
+        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, V1ClientReference[]? refs, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (refs is null)
                 return Array.Empty<string>();
@@ -116,7 +116,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string> CreateApi(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ConnectionCreateRequest();
             req.Name = conf.Name;
@@ -137,7 +137,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task UpdateApi(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ConnectionUpdateRequest();
             req.DisplayName = conf.DisplayName;
@@ -152,7 +152,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task DeleteApi(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             return api.Connections.DeleteAsync(id, cancellationToken);
         }

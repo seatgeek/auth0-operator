@@ -84,13 +84,39 @@ namespace Alethic.Auth0.Operator.Controllers
         protected ILogger Logger => _logger;
 
         /// <summary>
+        /// Attempts to resolve the secret document referenced by the secret reference.
+        /// </summary>
+        /// <param name="secretRef"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<V1Secret?> ResolveSecretRef(V1SecretReference? secretRef, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            if (secretRef is null)
+                return null;
+
+            if (string.IsNullOrWhiteSpace(secretRef.Name))
+                throw new InvalidOperationException($"Secret reference {secretRef} has no name.");
+
+            var ns = secretRef.NamespaceProperty ?? defaultNamespace;
+            if (string.IsNullOrWhiteSpace(ns))
+                throw new InvalidOperationException($"Secret reference {secretRef} has no discovered namesace.");
+
+            var secret = await _kube.GetAsync<V1Secret>(secretRef.Name, ns, cancellationToken);
+            if (secret is null)
+                return null;
+
+            return secret;
+        }
+
+        /// <summary>
         /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant reference.
         /// </summary>
         /// <param name="tenantRef"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantRef tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        public async Task<IManagementApiClient> GetTenantApiClientAsync(V1TenantReference tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             var tenant = await ResolveTenantRef(tenantRef, defaultNamespace, cancellationToken);
             if (tenant is null)
@@ -106,7 +132,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<V1Tenant?> ResolveTenantRef(V1TenantRef? tenantRef, string defaultNamespace, CancellationToken cancellationToken)
+        public async Task<V1Tenant?> ResolveTenantRef(V1TenantReference? tenantRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (tenantRef is null)
                 return null;
@@ -133,7 +159,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<V1Client?> ResolveClientRef(IManagementApiClient api, V1ClientRef? clientRef, string defaultNamespace, CancellationToken cancellationToken)
+        public async Task<V1Client?> ResolveClientRef(IManagementApiClient api, V1ClientReference? clientRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (clientRef is null)
                 return null;
@@ -160,7 +186,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected async Task<string?> ResolveClientRefToId(IManagementApiClient api, V1ClientRef? clientRef, string defaultNamespace, CancellationToken cancellationToken)
+        protected async Task<string?> ResolveClientRefToId(IManagementApiClient api, V1ClientReference? clientRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (clientRef is null)
                 return null;
@@ -188,7 +214,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<V1ResourceServer?> ResolveResourceServerRef(IManagementApiClient api, V1ResourceServerRef? resourceServerRef, string defaultNamespace, CancellationToken cancellationToken)
+        public async Task<V1ResourceServer?> ResolveResourceServerRef(IManagementApiClient api, V1ResourceServerReference? resourceServerRef, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (resourceServerRef is null)
                 return null;
@@ -215,7 +241,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected async Task<string?> ResolveResourceServerRefToIdentifier(IManagementApiClient api, V1ResourceServerRef? reference, string defaultNamespace, CancellationToken cancellationToken)
+        protected async Task<string?> ResolveResourceServerRefToIdentifier(IManagementApiClient api, V1ResourceServerReference? reference, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (reference is null)
                 return null;

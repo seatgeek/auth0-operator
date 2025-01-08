@@ -11,12 +11,12 @@ namespace Alethic.Auth0.Operator.Core.Models.ClientGrant
         [JsonPropertyName("clientRef")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [Required]
-        public V1ClientRef? ClientRef { get; set; }
+        public V1ClientReference? ClientRef { get; set; }
 
         [JsonPropertyName("audience")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [Required]
-        public V1ResourceServerRef? Audience { get; set; }
+        public V1ResourceServerReference? Audience { get; set; }
 
         [JsonPropertyName("organization_usage")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

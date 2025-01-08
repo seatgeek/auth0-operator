@@ -3,7 +3,7 @@
 namespace Alethic.Auth0.Operator.Core.Models
 {
 
-    public class V1ClientRef
+    public class V1ResourceServerReference
     {
 
         [JsonPropertyName("namespace")]
@@ -17,6 +17,10 @@ namespace Alethic.Auth0.Operator.Core.Models
         [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Id { get; set; }
+
+        [JsonPropertyName("identifier")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Identifier { get; set; }
 
         /// <inheritdoc />
         public override string ToString()
