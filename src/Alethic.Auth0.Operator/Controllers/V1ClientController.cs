@@ -54,6 +54,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
+            var z = await api.Clients.GetAsync(id, cancellationToken: cancellationToken);
             return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
@@ -109,7 +110,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        async Task ApplySecret(V1Client entity, string? clientId, string clientSecret, string defaultNamespace, CancellationToken cancellationToken)
+        async Task ApplySecret(V1Client entity, string? clientId, string? clientSecret, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (entity.Spec.SecretRef is null)
                 return;
@@ -119,18 +120,24 @@ namespace Alethic.Auth0.Operator.Controllers
             if (secret is null)
                 secret = await Kube.CreateAsync(
                     new V1Secret(
-                        metadata: new V1ObjectMeta(namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, name: entity.Spec.SecretRef.Name),
-                        stringData: new Dictionary<string, string>()
-                        {
-                            ["clientId"] = clientId ?? "",
-                            ["clientSecret"] = clientSecret,
-                        })
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, name: entity.Spec.SecretRef.Name))
                         .WithOwnerReference(entity),
                     cancellationToken);
 
-            // ensure secret is up to date
-            secret.StringData["clientId"] = clientId ?? "";
-            secret.StringData["clientSecret"] = clientSecret;
+            // update client ID value
+            if (clientId is not null)
+            {
+                secret.StringData = new Dictionary<string, string>();
+                secret.StringData["clientId"] = clientId;
+            }
+
+            // update client secret value
+            if (clientSecret is not null)
+            {
+                secret.StringData = new Dictionary<string, string>();
+                secret.StringData["clientSecret"] = clientSecret;
+            }
+
             secret = await Kube.UpdateAsync(secret, cancellationToken);
         }
 
