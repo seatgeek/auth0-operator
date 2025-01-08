@@ -95,6 +95,8 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(clientSecret) == false)
                 await ApplySecret(entity, clientId, clientSecret, defaultNamespace, cancellationToken);
 
+            lastConf.Remove("client_id");
+            lastConf.Remove("client_secret");
             await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
         }
 
