@@ -124,19 +124,14 @@ namespace Alethic.Auth0.Operator.Controllers
                         .WithOwnerReference(entity),
                     cancellationToken);
 
-            // update client ID value
+            // apply client ID and client secret
+            secret.StringData ??= new Dictionary<string, string>();
+            secret.StringData["clientId"] = null;
+            secret.StringData["clientSecret"] = null;
             if (clientId is not null)
-            {
-                secret.StringData = new Dictionary<string, string>();
                 secret.StringData["clientId"] = clientId;
-            }
-
-            // update client secret value
             if (clientSecret is not null)
-            {
-                secret.StringData = new Dictionary<string, string>();
                 secret.StringData["clientSecret"] = clientSecret;
-            }
 
             secret = await Kube.UpdateAsync(secret, cancellationToken);
         }
