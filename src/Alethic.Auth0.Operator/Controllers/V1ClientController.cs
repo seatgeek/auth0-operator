@@ -12,6 +12,8 @@ using Alethic.Auth0.Operator.Models;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 
+using IdentityModel;
+
 using k8s.Models;
 
 using KubeOps.Abstractions.Controller;
@@ -124,16 +126,19 @@ namespace Alethic.Auth0.Operator.Controllers
                         .WithOwnerReference(entity),
                     cancellationToken);
 
-            // apply client ID and client secret
-            secret.StringData ??= new Dictionary<string, string>();
-            secret.StringData["clientId"] = null;
-            secret.StringData["clientSecret"] = null;
-            if (clientId is not null)
-                secret.StringData["clientId"] = clientId;
-            if (clientSecret is not null)
-                secret.StringData["clientSecret"] = clientSecret;
+            // only apply actual values if we are the owner
+            if (secret.IsOwnedBy(entity))
+            {
+                secret.StringData ??= new Dictionary<string, string>();
+                secret.StringData["clientId"] = null;
+                secret.StringData["clientSecret"] = null;
+                if (clientId is not null)
+                    secret.StringData["clientId"] = clientId;
+                if (clientSecret is not null)
+                    secret.StringData["clientSecret"] = clientSecret;
 
-            secret = await Kube.UpdateAsync(secret, cancellationToken);
+                secret = await Kube.UpdateAsync(secret, cancellationToken);
+            }
         }
 
         /// <inheritdoc />
