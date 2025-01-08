@@ -65,12 +65,18 @@ metadata:
 spec:
   tenantRef:
     name: example-tenant
+  secretRef:
+    name: example-client-secret
   conf:
     name: example-client
     app_type: spa
     grant_types:
       - client_credentials
 ```
+
+## Client Secret
+
+The Client resource supports an optional `secretRef` field which can point to either an existing secret (not implemented) or the name of a secret to be created with the extraction of the `client_id` and `client_secret` values from the app.
 
 ## ResourceServer
 
