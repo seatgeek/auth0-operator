@@ -28,6 +28,7 @@ Since the entire API is derived from the Auth0 Management API their documentatio
 
 - [x] kubernetes.auth0.com/v1:Tenant `a0tenant`
 - [x] kubernetes.auth0.com/v1:Client `a0app`
+- [x] kubernetes.auth0.com/v1:ClientGrant `a0cgr`
 - [x] kubernetes.auth0.com/v1:ResourceServer `a0api`
 - [x] kubernetes.auth0.com/v1:Connection `a0con`
 
@@ -51,7 +52,9 @@ spec:
   name: example-tenant
 ```
 
-### Client
+### Client (App)
+
+https://auth0.com/docs/get-started/applications
 
 ```
 apiVersion: kubernetes.auth0.com/v1
@@ -60,10 +63,56 @@ metadata:
   name: example-client
   namespace: example
 spec:
-  conf:
-    allowed_clients: []
-    app_type: spa
-    name: example-client
   tenantRef:
     name: example-tenant
+  conf:
+    name: example-client
+    app_type: spa
+    grant_types:
+      - client_credentials
+```
+
+## ResourceServer
+
+https://auth0.com/docs/get-started/apis
+
+```
+apiVersion: kubernetes.auth0.com/v1
+kind: ResourceServer
+metadata:
+  name: example-api
+  namespace: example
+spec:
+  tenantRef:
+    name: example-tenant
+  conf:
+    identifier: https://example.com/
+    name: Example API
+    allow_offline_access: false
+    skip_consent_for_verifiable_first_party_clients: true
+    token_lifetime: 86400
+    token_lifetime_for_web: 7200
+    signing_alg: RS256
+    token_dialect: access_token
+```
+
+### ClientGrant
+
+Grants permission for a Client to access a ResourceServer.
+
+```
+apiVersion: kubernetes.auth0.com/v1
+kind: ClientGrant
+metadata:
+  name: example-app-api
+  namespace: example
+spec:
+  tenantRef:
+    name: example-tenant
+  conf:
+    clientRef:
+      name: example-client
+    audience:
+      name: example-api
+    scope: []
 ```
