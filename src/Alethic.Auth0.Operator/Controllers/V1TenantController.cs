@@ -64,7 +64,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()}: updating the enable_sso flag is not allowed.");
 
                 // push update to Auth0
-                settings = await api.TenantSettings.UpdateAsync(TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf), cancellationToken);
+                var req = TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf);
+                req.Flags.EnableSSO = null;
+                settings = await api.TenantSettings.UpdateAsync(req, cancellationToken);
             }
 
             // retrieve and copy applied settings to status
