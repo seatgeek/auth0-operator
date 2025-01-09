@@ -119,15 +119,9 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ConnectionCreateRequest();
-            req.Name = conf.Name;
+            await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Strategy = conf.Strategy;
-            req.DisplayName = conf.DisplayName;
             req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
-            req.Metadata = conf.Metadata;
-            req.Realms = conf.Realms;
-            req.IsDomainConnection = conf.IsDomainConnection ?? false;
-            req.ShowAsButton = conf.ShowAsButton;
-            req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
 
             var self = await api.Connections.CreateAsync(req, cancellationToken);
             if (self is null)
@@ -140,15 +134,30 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Update(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ConnectionUpdateRequest();
-            req.DisplayName = conf.DisplayName;
+            await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+
+            await api.Connections.UpdateAsync(id, req, cancellationToken);
+        }
+
+        /// <summary>
+        /// Applies the specified configuration to the request object.
+        /// </summary>
+        /// <param name="api"></param>
+        /// <param name="req"></param>
+        /// <param name="conf"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        async Task ApplyConfToRequest(IManagementApiClient api, ConnectionBase req, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            req.Name = conf.Name;
+            req.DisplayName = conf.DisplayName;
             req.Metadata = conf.Metadata;
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
             req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
-
-            await api.Connections.UpdateAsync(id, req, cancellationToken);
         }
 
         /// <inheritdoc />
