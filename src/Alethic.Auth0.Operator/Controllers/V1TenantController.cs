@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Dynamic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -53,12 +52,23 @@ namespace Alethic.Auth0.Operator.Controllers
             if (api == null)
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}:{entity.Name()} failed to retrieve API client.");
 
-            // update specified configuration
+            var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
+            if (settings is null)
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cannot be loaded from API.");
+
+            // configuration was specified
             if (entity.Spec.Conf is { } conf)
-                await api.TenantSettings.UpdateAsync(TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf), cancellationToken);
+            {
+                // verify that no changes to enable_sso are being made
+                if (conf.Flags != null && conf.Flags.EnableSSO != null && settings.Flags.EnableSSO != null && conf.Flags.EnableSSO != settings.Flags.EnableSSO)
+                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()}: updating the enable_sso flag is not allowed.");
+
+                // push update to Auth0
+                settings = await api.TenantSettings.UpdateAsync(TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf), cancellationToken);
+            }
 
             // retrieve and copy applied settings to status
-            var settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
+            settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
             entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
