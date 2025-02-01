@@ -135,8 +135,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var req = new ConnectionUpdateRequest();
             await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
+            req.Name = null;
             req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
-
             await api.Connections.UpdateAsync(id, req, cancellationToken);
         }
 
