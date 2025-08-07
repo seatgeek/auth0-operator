@@ -94,6 +94,34 @@ namespace Alethic.Auth0.Operator.Core.Models.Tenant
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? TrustAzureAdfsEmailVerifiedConnectionProperty { get; set; }
 
+        [JsonPropertyName("dashboard_log_streams_next")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? DashboardLogStreamsNext { get; set; }
+
+        [JsonPropertyName("dashboard_insights_view")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? DashboardInsightsView { get; set; }
+
+        [JsonPropertyName("disable_fields_map_fix")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? DisableFieldsMapFix { get; set; }
+
+        [JsonPropertyName("mfa_show_factor_list_on_enrollment")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? MfaShowFactorListOnEnrollment { get; set; }
+
+        [JsonPropertyName("improved_signup_bot_detection_in_classic")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? ImprovedSignupBotDetectionInClassic { get; set; }
+
+        [JsonPropertyName("genai_trial")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? GenaiTrial { get; set; }
+
+        [JsonPropertyName("custom_domains_provisioning")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? CustomDomainsProvisioning { get; set; }
+
     }
 
 }
