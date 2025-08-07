@@ -31,6 +31,9 @@ namespace Alethic.Auth0.Operator.Models
             [JsonPropertyName("secretRef")]
             public V1SecretReference? SecretRef { get; set; }
 
+            [JsonPropertyName("init")]
+            public ClientConf? Init { get; set; }
+
             [JsonPropertyName("conf")]
             [Required]
             public ClientConf? Conf { get; set; }

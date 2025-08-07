@@ -119,11 +119,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
 
-                    // check for validation before create
-                    if (ValidateCreate(entity.Spec.Conf) is string msg)
+                    // validate configuration version used for initialization
+                    var init = entity.Spec.Init ?? entity.Spec.Conf;
+                    if (ValidateCreate(init) is string msg)
                         throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
 
-                    entity.Status.Id = await Create(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
+                    entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }

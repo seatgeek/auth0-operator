@@ -28,6 +28,10 @@ namespace Alethic.Auth0.Operator.Models
             [Required]
             public V1TenantReference? TenantRef { get; set; }
 
+            [JsonPropertyName("init")]
+            [Required]
+            public ConnectionConf? Init { get; set; }
+
             [JsonPropertyName("conf")]
             [Required]
             public ConnectionConf? Conf { get; set; }

@@ -28,6 +28,9 @@ namespace Alethic.Auth0.Operator.Models
             [Required]
             public V1TenantReference? TenantRef { get; set; }
 
+            [JsonPropertyName("init")]
+            public ResourceServerConf? Init { get; set; }
+
             [JsonPropertyName("conf")]
             [Required]
             public ResourceServerConf? Conf { get; set; }
