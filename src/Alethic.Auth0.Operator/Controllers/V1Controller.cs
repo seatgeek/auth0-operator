@@ -130,7 +130,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var tenant = await _kube.GetAsync<V1Tenant>(tenantRef.Name, ns, cancellationToken);
             if (tenant is null)
-                throw new InvalidOperationException($"Tenant reference {tenantRef} cannot be resolved.");
+                throw new RetryException($"Tenant reference {tenantRef} cannot be resolved.");
 
             return tenant;
         }
@@ -280,13 +280,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 var secret = _kube.Get<V1Secret>(secretRef.Name, secretRef.NamespaceProperty ?? tenant.Namespace());
                 if (secret == null)
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing secret.");
+                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing secret.");
 
                 if (secret.Data.TryGetValue("clientId", out var clientIdBuf) == false)
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientId value on secret.");
+                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientId value on secret.");
 
                 if (secret.Data.TryGetValue("clientSecret", out var clientSecretBuf) == false)
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientSecret value on secret.");
+                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientSecret value on secret.");
 
                 // decode secret values
                 var clientId = Encoding.UTF8.GetString(clientIdBuf);
@@ -296,7 +296,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var auth = new AuthenticationApiClient(new Uri($"https://{domain}"));
                 var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest() { Audience = $"https://{domain}/api/v2/", ClientId = clientId, ClientSecret = clientSecret }, cancellationToken);
                 if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} failed to retrieve management API token.");
+                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} failed to retrieve management API token.");
 
                 // contact API using token and domain
                 var api = new ManagementApiClient(authToken.AccessToken, new Uri($"https://{domain}/api/v2/"));
