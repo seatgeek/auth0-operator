@@ -18,8 +18,11 @@
     <ItemGroup>
         <PackageReference Include="Auth0.AuthenticationApi" Version="7.39.0" />
         <PackageReference Include="Auth0.ManagementApi" Version="7.39.0" />
-        <PackageReference Include="KubeOps.Generator" Version="9.1.6-alethic.5" />
-        <PackageReference Include="KubeOps.Operator" Version="9.1.6-alethic.5" />
+        <PackageReference Include="KubeOps.Generator" Version="9.11.1">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="KubeOps.Operator" Version="9.11.1" />
         <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.0" />
         <PackageReference Include="System.Text.Json" Version="9.0.0" />
     </ItemGroup>

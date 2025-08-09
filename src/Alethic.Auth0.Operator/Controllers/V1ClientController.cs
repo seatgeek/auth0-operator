@@ -1,8 +1,6 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,8 +9,6 @@ using Alethic.Auth0.Operator.Models;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
-
-using IdentityModel;
 
 using k8s.Models;
 
@@ -56,7 +52,6 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var z = await api.Clients.GetAsync(id, cancellationToken: cancellationToken);
             return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
         }
 
