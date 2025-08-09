@@ -24,6 +24,9 @@ namespace Alethic.Auth0.Operator.Models
         public class SpecDef : V1TenantEntitySpec<ClientConf>
         {
 
+            [JsonPropertyName("policy")]
+            public V1EntityPolicyType[]? Policy { get; set; }
+
             [JsonPropertyName("tenantRef")]
             [Required]
             public V1TenantReference? TenantRef { get; set; }

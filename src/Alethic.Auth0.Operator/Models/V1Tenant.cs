@@ -36,6 +36,9 @@ namespace Alethic.Auth0.Operator.Models
 
             }
 
+            [JsonPropertyName("policy")]
+            public V1EntityPolicyType[]? Policy { get; set; }
+
             [JsonPropertyName("name")]
             [Required]
             public string Name { get; set; } = "";

@@ -6,6 +6,11 @@
     {
 
         /// <summary>
+        /// Set of operations allowed with the entity.
+        /// </summary>
+        V1EntityPolicyType[]? Policy { get; set; }
+
+        /// <summary>
         /// Version of configuration used for initial creation.
         /// </summary>
         TConf? Init { get; set; }

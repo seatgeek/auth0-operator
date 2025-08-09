@@ -31,6 +31,15 @@ spec:
           spec:
             nullable: false
             properties:
+              policy:
+                items:
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                nullable: true
+                type: array
               tenantRef:
                 nullable: true
                 properties:
@@ -42,6 +51,57 @@ spec:
                     type: string
                 required:
                 - name
+                type: object
+              init:
+                nullable: true
+                properties:
+                  name:
+                    nullable: true
+                    type: string
+                  display_name:
+                    nullable: true
+                    type: string
+                  strategy:
+                    nullable: true
+                    type: string
+                  options:
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  provisioning_ticket_url:
+                    nullable: true
+                    type: string
+                  metadata:
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  realms:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                  enabled_clients:
+                    items:
+                      properties:
+                        namespace:
+                          nullable: true
+                          type: string
+                        name:
+                          nullable: true
+                          type: string
+                        id:
+                          nullable: true
+                          type: string
+                      type: object
+                    nullable: true
+                    type: array
+                  show_as_button:
+                    nullable: true
+                    type: boolean
+                  is_domain_connection:
+                    nullable: true
+                    type: boolean
                 type: object
               conf:
                 nullable: true
@@ -96,6 +156,7 @@ spec:
                 type: object
             required:
             - tenantRef
+            - init
             - conf
             type: object
         type: object

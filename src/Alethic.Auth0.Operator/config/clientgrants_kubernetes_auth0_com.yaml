@@ -31,6 +31,15 @@ spec:
           spec:
             nullable: false
             properties:
+              policy:
+                items:
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                nullable: true
+                type: array
               tenantRef:
                 nullable: true
                 properties:
@@ -42,6 +51,59 @@ spec:
                     type: string
                 required:
                 - name
+                type: object
+              init:
+                nullable: true
+                properties:
+                  clientRef:
+                    nullable: true
+                    properties:
+                      namespace:
+                        nullable: true
+                        type: string
+                      name:
+                        nullable: true
+                        type: string
+                      id:
+                        nullable: true
+                        type: string
+                    type: object
+                  audience:
+                    nullable: true
+                    properties:
+                      namespace:
+                        nullable: true
+                        type: string
+                      name:
+                        nullable: true
+                        type: string
+                      id:
+                        nullable: true
+                        type: string
+                      identifier:
+                        nullable: true
+                        type: string
+                    type: object
+                  organization_usage:
+                    enum:
+                    - deny
+                    - allow
+                    - require
+                    nullable: true
+                    type: string
+                  allow_any_organization:
+                    nullable: true
+                    type: boolean
+                  scope:
+                    items:
+                      nullable: false
+                      type: string
+                    nullable: true
+                    type: array
+                required:
+                - clientRef
+                - audience
+                - scope
                 type: object
               conf:
                 nullable: true

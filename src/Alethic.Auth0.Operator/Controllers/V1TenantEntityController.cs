@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Dynamic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -119,6 +120,13 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
 
+                    // reject creation if disallowed
+                    if (entity.HasPolicy(V1EntityPolicyType.Create) == false)
+                    {
+                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support creation.", EntityTypeName, entity.Namespace(), entity.Name());
+                        return;
+                    }
+
                     // validate configuration version used for initialization
                     var init = entity.Spec.Init ?? entity.Spec.Conf;
                     if (ValidateCreate(init) is string msg)
@@ -139,9 +147,16 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
 
-            // update specified configuration
-            if (entity.Spec.Conf is { } conf)
-                await Update(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
+            // reject update if disallowed
+            if (entity.HasPolicy(V1EntityPolicyType.Update) == false)
+            {
+                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support update.", EntityTypeName, entity.Namespace(), entity.Name());
+            }
+            else
+            {
+                if (entity.Spec.Conf is { } conf)
+                    await Update(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
+            }
 
             // retrieve and copy last known configuration
             var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
@@ -205,14 +220,22 @@ namespace Alethic.Auth0.Operator.Controllers
                     return;
                 }
 
-                await Delete(api, entity.Status.Id, cancellationToken);
+                // reject update if disallowed
+                if (entity.HasPolicy(V1EntityPolicyType.Delete) == false)
+                {
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support delete.", EntityTypeName, entity.Namespace(), entity.Name());
+                }
+                else
+                {
+                    await Delete(api, entity.Status.Id, cancellationToken);
+                }
             }
             catch (ErrorApiException e)
             {
                 try
                 {
-                    Logger.LogError(e, "API error deleting {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
-                    await DeletingWarningAsync(entity, "ApiError", e.ApiError.Message, cancellationToken);
+                    Logger.LogError(e, "API error deleting {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError?.Message);
+                    await DeletingWarningAsync(entity, "ApiError", e.ApiError?.Message ?? "", cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -224,7 +247,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     Logger.LogError(e, "Rate limit hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
-                    await DeletingWarningAsync(entity, "RateLimit", e.ApiError.Message, cancellationToken);
+                    await DeletingWarningAsync(entity, "RateLimit", e.ApiError?.Message ?? "", cancellationToken);
                 }
                 catch (Exception e2)
                 {
@@ -232,7 +255,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
 
                 // calculate next attempt time, floored to one minute
-                var n = e.RateLimit.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
+                var n = e.RateLimit?.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
                 if (n < TimeSpan.FromMinutes(1))
                     n = TimeSpan.FromMinutes(1);
 
