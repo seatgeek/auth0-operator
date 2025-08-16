@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Dynamic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -112,9 +110,10 @@ namespace Alethic.Auth0.Operator.Controllers
             var an = md.EnsureAnnotations();
             an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
 
-            // discover entity by name, or create
+            // we have not resolved a remote entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
+                // find existing remote entity
                 var entityId = await Find(api, entity.Spec.Conf, entity.Namespace(), cancellationToken);
                 if (entityId is null)
                 {
@@ -132,6 +131,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     if (ValidateCreate(init) is string msg)
                         throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
 
+                    // create new entity and associate
                     entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
@@ -139,30 +139,38 @@ namespace Alethic.Auth0.Operator.Controllers
                 else
                 {
                     entity.Status.Id = entityId;
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} loaded with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} found with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
             }
 
+            // at this point we must have a reference to an entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
 
-            // reject update if disallowed
-            if (entity.HasPolicy(V1EntityPolicyType.Update) == false)
+            // attempt to retrieve existing entity
+            var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+            if (lastConf is null)
             {
-                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support update.", EntityTypeName, entity.Namespace(), entity.Name());
+                // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
+                entity.Status.LastConf = null;
+                entity.Status.Id = null;
+                entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
             }
-            else
+
+            // apply updates if allowed
+            if (entity.HasPolicy(V1EntityPolicyType.Update))
             {
                 if (entity.Spec.Conf is { } conf)
                     await Update(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
             }
+            else
+            {
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} does not support update.", EntityTypeName, entity.Namespace(), entity.Name());
+            }
 
-            // retrieve and copy last known configuration
-            var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
-            if (lastConf is null)
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has null API object.");
-
+            // apply new configuration
             await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
         }
