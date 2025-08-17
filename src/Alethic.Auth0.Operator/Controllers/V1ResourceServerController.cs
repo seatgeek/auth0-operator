@@ -55,7 +55,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> Find(IManagementApiClient api, V1ResourceServer.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, V1ResourceServer entity, V1ResourceServer.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
         {
             var conf = spec.Init ?? spec.Conf;
             if (conf is null)

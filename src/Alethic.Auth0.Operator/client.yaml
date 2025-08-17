@@ -1,9 +1,0 @@
-apiVersion: kubernetes.auth0.com/v1
-kind: Client
-metadata:
-  name: trailmates-dev1-client
-spec:
-  tenantRef:
-    name: trailmates-dev1
-  conf:
-    name: trailmates-dev1-client

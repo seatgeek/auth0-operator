@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -10,7 +11,6 @@ using Alethic.Auth0.Operator.Models;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 
-using k8s;
 using k8s.Models;
 
 using KubeOps.Abstractions.Controller;
@@ -57,15 +57,23 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> Find(IManagementApiClient api, V1Client.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, V1Client entity, V1Client.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
         {
             if (spec.Find is not null)
             {
                 if (spec.Find.ClientId is string clientId)
                 {
-                    var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id" }, cancellationToken: cancellationToken);
-                    var self = list.FirstOrDefault(i => i.ClientId == clientId);
-                    return self?.ClientId;
+                    try
+                    {
+                        var client = await api.Clients.GetAsync(clientId, cancellationToken: cancellationToken);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
+                        return client.ClientId;
+                    }
+                    catch (Exception)
+                    {
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        return null;
+                    }
                 }
 
                 return null;
