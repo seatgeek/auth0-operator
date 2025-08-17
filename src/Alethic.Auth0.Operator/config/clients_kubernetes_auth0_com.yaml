@@ -62,6 +62,13 @@ spec:
                     nullable: false
                     type: string
                 type: object
+              find:
+                nullable: true
+                properties:
+                  clientId:
+                    nullable: true
+                    type: string
+                type: object
               init:
                 nullable: true
                 properties:
