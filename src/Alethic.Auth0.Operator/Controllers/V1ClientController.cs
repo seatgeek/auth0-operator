@@ -1,12 +1,14 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models.Client;
 using Alethic.Auth0.Operator.Models;
 
+using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 
@@ -52,15 +54,48 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
+            try
+            {
+                return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id, cancellationToken: cancellationToken));
+            }
+            catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
+            {
+                return null;
+            }
         }
 
         /// <inheritdoc />
-        protected override async Task<string?> Find(IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task<string?> Find(IManagementApiClient api, V1Client entity, V1Client.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
-            var self = list.FirstOrDefault(i => i.Name == conf.Name);
-            return self?.ClientId;
+            if (spec.Find is not null)
+            {
+                if (spec.Find.ClientId is string clientId)
+                {
+                    try
+                    {
+                        var client = await api.Clients.GetAsync(clientId, cancellationToken: cancellationToken);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
+                        return client.ClientId;
+                    }
+                    catch (ErrorApiException)
+                    {
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        return null;
+                    }
+                }
+
+                return null;
+            }
+            else
+            {
+                var conf = spec.Init ?? spec.Conf;
+                if (conf is null)
+                    return null;
+
+                var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
+                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                return self?.ClientId;
+            }
         }
 
         /// <inheritdoc />

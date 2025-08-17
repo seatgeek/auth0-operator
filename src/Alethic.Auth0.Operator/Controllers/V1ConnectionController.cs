@@ -10,6 +10,7 @@ using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Connection;
 using Alethic.Auth0.Operator.Models;
 
+using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 using Auth0.ManagementApi.Paging;
@@ -55,23 +56,30 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
-            if (self == null)
-                return null;
+            try
+            {
+                var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
+                if (self == null)
+                    return null;
 
-            var dict = new Hashtable();
-            dict["id"] = self.Id;
-            dict["name"] = self.Name;
-            dict["display_name"] = self.DisplayName;
-            dict["strategy"] = self.Strategy;
-            dict["realms"] = self.Realms;
-            dict["is_domain_connection"] = self.IsDomainConnection;
-            dict["show_as_button"] = self.ShowAsButton;
-            dict["provisioning_ticket_url"] = self.ProvisioningTicketUrl;
-            dict["enabled_clients"] = self.EnabledClients;
-            dict["options"] = TransformToSystemTextJson<Hashtable?>(self.Options);
-            dict["metadata"] = TransformToSystemTextJson<Hashtable?>(self.Metadata);
-            return dict;
+                var dict = new Hashtable();
+                dict["id"] = self.Id;
+                dict["name"] = self.Name;
+                dict["display_name"] = self.DisplayName;
+                dict["strategy"] = self.Strategy;
+                dict["realms"] = self.Realms;
+                dict["is_domain_connection"] = self.IsDomainConnection;
+                dict["show_as_button"] = self.ShowAsButton;
+                dict["provisioning_ticket_url"] = self.ProvisioningTicketUrl;
+                dict["enabled_clients"] = self.EnabledClients;
+                dict["options"] = TransformToSystemTextJson<Hashtable?>(self.Options);
+                dict["metadata"] = TransformToSystemTextJson<Hashtable?>(self.Metadata);
+                return dict;
+            }
+            catch (ErrorApiException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return null;
+            }
         }
 
         /// <inheritdoc />
