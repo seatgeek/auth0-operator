@@ -114,6 +114,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // we have not resolved a remote entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
+                Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} has no Status.Id, checking if entity exists in Auth0", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
                 // find existing remote entity
                 var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
                 if (entityId is null)
@@ -150,10 +151,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
 
             // attempt to retrieve existing entity
+            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
             var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
             if (lastConf is null)
             {
                 // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
+                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
                 entity.Status.LastConf = null;
                 entity.Status.Id = null;
                 entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
@@ -174,6 +177,10 @@ namespace Alethic.Auth0.Operator.Controllers
             // apply new configuration
             await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+            
+            // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
+            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in 5 minutes", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+            Requeue(entity, TimeSpan.FromMinutes(5));
         }
 
         /// <summary>
