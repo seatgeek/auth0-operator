@@ -74,14 +74,14 @@ namespace Alethic.Auth0.Operator.Controllers
             entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
-            Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
+            Logger.LogInformation("{UtcTimestamp} - Reconciled {EntityTypeName} {Namespace}/{Name}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
             await ReconcileSuccessAsync(entity, cancellationToken);
         }
 
         /// <inheritdoc />
         public override Task DeletedAsync(V1Tenant entity, CancellationToken cancellationToken)
         {
-            Logger.LogWarning("Unsupported operation deleting entity {Entity}.", entity);
+            Logger.LogWarning("{UtcTimestamp} - Unsupported operation deleting entity {Entity}.", UtcTimestamp, entity);
             return Task.CompletedTask;
         }
 

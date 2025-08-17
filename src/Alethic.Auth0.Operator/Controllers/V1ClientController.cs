@@ -75,12 +75,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     try
                     {
                         var client = await api.Clients.GetAsync(clientId, "client_id,name", cancellationToken: cancellationToken);
-                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
+                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
                         return client.ClientId;
                     }
                     catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
                     {
-                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), clientId);
                         return null;
                     }
                 }
@@ -152,7 +152,7 @@ namespace Alethic.Auth0.Operator.Controllers
             var secret = await ResolveSecretRef(entity.Spec.SecretRef, entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
             if (secret is null)
             {
-                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret = await Kube.CreateAsync(
                     new V1Secret(
                         metadata: new V1ObjectMeta(namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, name: entity.Spec.SecretRef.Name))
@@ -163,7 +163,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // only apply actual values if we are the owner
             if (secret.IsOwnedBy(entity))
             {
-                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret.StringData ??= new Dictionary<string, string>();
                 secret.StringData["clientId"] = null;
                 secret.StringData["clientSecret"] = null;
