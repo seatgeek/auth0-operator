@@ -16,6 +16,7 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -27,6 +28,8 @@ namespace Alethic.Auth0.Operator.Controllers
         where TConf : class
     {
 
+        readonly IOptionsMonitor<ReconciliationConfig> _reconciliationConfig;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -34,10 +37,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger) :
+        /// <param name="reconciliationConfig"></param>
+        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
             base(kube, requeue, cache, logger)
         {
-
+            _reconciliationConfig = reconciliationConfig ?? throw new ArgumentNullException(nameof(reconciliationConfig));
         }
 
         /// <summary>
@@ -179,8 +183,9 @@ namespace Alethic.Auth0.Operator.Controllers
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
             
             // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
-            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in 5 minutes", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
-            Requeue(entity, TimeSpan.FromMinutes(5));
+            var interval = _reconciliationConfig.CurrentValue.Interval;
+            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
+            Requeue(entity, interval);
         }
 
         /// <summary>

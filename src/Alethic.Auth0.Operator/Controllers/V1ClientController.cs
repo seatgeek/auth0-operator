@@ -23,6 +23,7 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -43,8 +44,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1ClientController(IKubernetesClient kube, EntityRequeue<V1Client> requeue, IMemoryCache cache, ILogger<V1ClientController> logger) :
-            base(kube, requeue, cache, logger)
+        /// <param name="reconciliationConfig"></param>
+        public V1ClientController(IKubernetesClient kube, EntityRequeue<V1Client> requeue, IMemoryCache cache, ILogger<V1ClientController> logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
+            base(kube, requeue, cache, logger, reconciliationConfig)
         {
 
         }
