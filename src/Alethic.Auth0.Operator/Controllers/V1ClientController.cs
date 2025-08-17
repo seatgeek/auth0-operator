@@ -74,7 +74,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     try
                     {
-                        var client = await api.Clients.GetAsync(clientId, cancellationToken: cancellationToken);
+                        var client = await api.Clients.GetAsync(clientId, "client_id,name", cancellationToken: cancellationToken);
                         Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
                         return client.ClientId;
                     }
