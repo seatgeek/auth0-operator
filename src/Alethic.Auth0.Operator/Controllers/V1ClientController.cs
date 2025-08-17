@@ -179,9 +179,11 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return api.Clients.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} deleting client from Auth0 with ID: {ClientId} (reason: Kubernetes entity deleted)", UtcTimestamp, EntityTypeName, id);
+            await api.Clients.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}", UtcTimestamp, EntityTypeName, id);
         }
 
     }

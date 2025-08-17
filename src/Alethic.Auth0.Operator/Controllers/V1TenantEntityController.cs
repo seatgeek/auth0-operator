@@ -230,25 +230,27 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 {
-                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete (reason: entity was never successfully created in Auth0).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
                     return;
                 }
 
                 var self = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
-                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} already been deleted, skipping delete.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} with ID {Id} not found in Auth0, skipping delete (reason: already deleted externally).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     return;
                 }
 
-                // reject update if disallowed
+                // reject deletion if disallowed by policy
                 if (entity.HasPolicy(V1EntityPolicyType.Delete) == false)
                 {
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} does not support delete.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} does not support delete (reason: Delete policy not enabled).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
                 }
                 else
                 {
+                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} initiating deletion from Auth0 with ID: {Id} (reason: Kubernetes entity was deleted)", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     await Delete(api, entity.Status.Id, cancellationToken);
+                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} deletion completed successfully", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
                 }
             }
             catch (ErrorApiException e)
