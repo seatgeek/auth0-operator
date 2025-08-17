@@ -77,7 +77,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
                         return client.ClientId;
                     }
-                    catch (ErrorApiException)
+                    catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
                     {
                         Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
                         return null;
