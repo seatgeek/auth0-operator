@@ -107,16 +107,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 return null;
             }
-            else
-            {
-                var conf = spec.Init ?? spec.Conf;
-                if (conf is null)
-                    return null;
 
-                var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
-                var self = list.FirstOrDefault(i => i.Name == conf.Name);
-                return self?.Id;
-            }
+            // No find field specified - connections will be created new
+            return null;
         }
 
         /// <inheritdoc />
