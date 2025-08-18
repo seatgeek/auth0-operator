@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Controllers;
 using Alethic.Auth0.Operator.Models;
 
+using k8s.Models;
 using KubeOps.Abstractions.Finalizer;
 
 using Microsoft.Extensions.Logging;
