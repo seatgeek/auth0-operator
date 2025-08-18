@@ -16,7 +16,6 @@ namespace Alethic.Auth0.Operator.Models
         public V1EntityPolicyType[] GetPolicy() => Spec.Policy ?? [
             V1EntityPolicyType.Create,
             V1EntityPolicyType.Update,
-            V1EntityPolicyType.Delete,
         ];
 
         /// <summary>
