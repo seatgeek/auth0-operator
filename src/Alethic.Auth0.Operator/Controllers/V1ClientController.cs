@@ -123,6 +123,12 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Update(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} updating client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
+
+            if (conf.ClientMetaData != null)
+            {
+                await ApplyClientMetadataReplacement(api, id, conf, defaultNamespace, cancellationToken);
+            }
+
             await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
             Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully updated client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
         }
@@ -138,6 +144,60 @@ namespace Alethic.Auth0.Operator.Controllers
             lastConf.Remove("client_id");
             lastConf.Remove("client_secret");
             await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
+        }
+
+        /// <summary>
+        /// Applies client metadata replacement to ensure removed keys are deleted from Auth0.
+        /// </summary>
+        /// <param name="api"></param>
+        /// <param name="id"></param>
+        /// <param name="conf"></param>
+        /// <param name="defaultNamespace"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        async Task ApplyClientMetadataReplacement(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} handling client_metadata replacement for client {ClientId}", UtcTimestamp, EntityTypeName, id);
+
+            // Get current client to see existing metadata
+            var currentClientData = await Get(api, id, defaultNamespace, cancellationToken);
+            if (currentClientData != null && currentClientData.ContainsKey("client_metadata"))
+            {
+                var currentMetadata = currentClientData["client_metadata"] as Hashtable;
+                if (currentMetadata != null && currentMetadata.Count > 0)
+                {
+                    // Create a merged metadata that explicitly nulls out removed keys
+                    var mergedMetadata = new Hashtable();
+
+                    // First, add null values for any existing keys that are not in the new spec
+                    foreach (var existingKey in currentMetadata.Keys)
+                    {
+                        if (existingKey != null && !conf.ClientMetaData!.ContainsKey(existingKey))
+                        {
+                            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} removing metadata key '{MetadataKey}' from client {ClientId}", UtcTimestamp, EntityTypeName, existingKey, id);
+                            mergedMetadata[existingKey] = null;
+                        }
+                    }
+
+                    // Then add all the desired metadata
+                    foreach (var key in conf.ClientMetaData!.Keys)
+                    {
+                        if (key != null)
+                        {
+                            mergedMetadata[key] = conf.ClientMetaData[key];
+                        }
+                    }
+
+                    // Create a temporary config with the merged metadata for the update
+                    var tempConf = new ClientConf
+                    {
+                        ClientMetaData = mergedMetadata
+                    };
+
+                    await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(tempConf), cancellationToken);
+                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} applied metadata cleanup for client {ClientId}", UtcTimestamp, EntityTypeName, id);
+                }
+            }
         }
 
         /// <summary>
