@@ -88,13 +88,35 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string?> Find(IManagementApiClient api, V1Connection entity, V1Connection.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var conf = spec.Init ?? spec.Conf;
-            if (conf is null)
-                return null;
+            if (spec.Find is not null)
+            {
+                if (spec.Find.ConnectionId is string connectionId)
+                {
+                    try
+                    {
+                        var connection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
+                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} found existing connection: {Name}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), connection.Name);
+                        return connection.Id;
+                    }
+                    catch (ErrorApiException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} could not find connection with id {ConnectionId}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), connectionId);
+                        return null;
+                    }
+                }
 
-            var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
-            var self = list.FirstOrDefault(i => i.Name == conf.Name);
-            return self?.Id;
+                return null;
+            }
+            else
+            {
+                var conf = spec.Init ?? spec.Conf;
+                if (conf is null)
+                    return null;
+
+                var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
+                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                return self?.Id;
+            }
         }
 
         /// <inheritdoc />
