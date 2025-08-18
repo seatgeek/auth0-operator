@@ -113,14 +113,18 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} creating client in Auth0 with name: {ClientName}", UtcTimestamp, EntityTypeName, conf.Name);
             var self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf), cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, self.ClientId, conf.Name);
             return self.ClientId;
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} updating client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
             await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully updated client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
         }
 
         /// <inheritdoc />

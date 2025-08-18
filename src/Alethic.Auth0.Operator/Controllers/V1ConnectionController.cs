@@ -133,6 +133,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} creating connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}", UtcTimestamp, EntityTypeName, conf.Name, conf.Strategy);
             var req = new ConnectionCreateRequest();
             await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Strategy = conf.Strategy;
@@ -142,17 +143,20 @@ namespace Alethic.Auth0.Operator.Controllers
             if (self is null)
                 throw new InvalidOperationException();
 
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully created connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", UtcTimestamp, EntityTypeName, self.Id, conf.Name, conf.Strategy);
             return self.Id;
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} updating connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", UtcTimestamp, EntityTypeName, id, conf.Name, conf.Strategy);
             var req = new ConnectionUpdateRequest();
             await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Name = null;
             req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
             await api.Connections.UpdateAsync(id, req, cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully updated connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", UtcTimestamp, EntityTypeName, id, conf.Name, conf.Strategy);
         }
 
         /// <summary>
@@ -176,9 +180,11 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return api.Connections.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} deleting connection from Auth0 with ID: {ConnectionId} (reason: Kubernetes entity deleted)", UtcTimestamp, EntityTypeName, id);
+            await api.Connections.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", UtcTimestamp, EntityTypeName, id);
         }
 
     }
