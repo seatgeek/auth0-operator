@@ -138,7 +138,10 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var clientId = (string?)lastConf["client_id"];
             var clientSecret = (string?)lastConf["client_secret"];
-            if (string.IsNullOrWhiteSpace(clientSecret) == false)
+
+            // Always attempt to apply secret if secretRef is specified, regardless of whether we have the clientSecret value
+            // This ensures secret resources are created for existing clients even when Auth0 API doesn't return the secret
+            if (entity.Spec.SecretRef is not null)
                 await ApplySecret(entity, clientId, clientSecret, defaultNamespace, cancellationToken);
 
             lastConf.Remove("client_id");
@@ -231,14 +234,40 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret.StringData ??= new Dictionary<string, string>();
-                secret.StringData["clientId"] = null;
-                secret.StringData["clientSecret"] = null;
+
+                // Always set clientId if available
                 if (clientId is not null)
+                {
                     secret.StringData["clientId"] = clientId;
+                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                }
+                else if (!secret.StringData.ContainsKey("clientId"))
+                {
+                    // Initialize empty clientId field if not present and no value available
+                    secret.StringData["clientId"] = "";
+                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                }
+
+                // Handle clientSecret - for existing clients, Auth0 API doesn't return the secret
                 if (clientSecret is not null)
+                {
                     secret.StringData["clientSecret"] = clientSecret;
+                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                }
+                else if (!secret.StringData.ContainsKey("clientSecret"))
+                {
+                    // Initialize empty clientSecret field if not present and no value available
+                    // Note: For existing clients, Auth0 API doesn't return the secret value for security reasons
+                    secret.StringData["clientSecret"] = "";
+                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                }
 
                 secret = await Kube.UpdateAsync(secret, cancellationToken);
+                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+            }
+            else
+            {
+                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} exists but is not owned by this client, skipping update", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
             }
         }
 
