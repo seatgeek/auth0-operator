@@ -21,15 +21,8 @@ namespace Alethic.Auth0.Operator
             builder.Services.AddKubernetesOperator().RegisterComponents();
             builder.Services.AddMemoryCache();
 
-            builder.Services.Configure<ReconciliationConfig>(config =>
-            {
-                config.Interval = TimeSpan.FromSeconds(30);
-
-                if (int.TryParse(Environment.GetEnvironmentVariable("RECONCILIATION_INTERVAL_SECONDS"), out var seconds))
-                {
-                    config.Interval = TimeSpan.FromSeconds(seconds);
-                }
-            });
+            builder.Services.Configure<ReconciliationConfig>(
+                builder.Configuration.GetSection("ReconciliationConfig"));
 
             builder.Logging.AddSimpleConsole(options =>
             {
