@@ -118,17 +118,17 @@ namespace Alethic.Auth0.Operator.Controllers
             // we have not resolved a remote entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} has no Status.Id, checking if entity exists in Auth0", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} has no Status.Id, checking if entity exists in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
                 // find existing remote entity
                 var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
                 if (entityId is null)
                 {
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} could not be located, creating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} could not be located, creating.", EntityTypeName, entity.Namespace(), entity.Name());
 
                     // reject creation if disallowed
                     if (entity.HasPolicy(V1EntityPolicyType.Create) == false)
                     {
-                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} does not support creation.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support creation.", EntityTypeName, entity.Namespace(), entity.Name());
                         return;
                     }
 
@@ -139,13 +139,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     // create new entity and associate
                     entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} created with {Id}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
                 else
                 {
                     entity.Status.Id = entityId;
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} found with {Id}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} found with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
                 }
             }
@@ -155,12 +155,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
 
             // attempt to retrieve existing entity
-            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
             var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
             if (lastConf is null)
             {
                 // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
-                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", EntityTypeName, entity.Namespace(), entity.Name());
                 entity.Status.LastConf = null;
                 entity.Status.Id = null;
                 entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
@@ -175,16 +175,16 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} does not support update.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} does not support update.", EntityTypeName, entity.Namespace(), entity.Name());
             }
 
             // apply new configuration
             await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
-            
+
             // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
             var interval = _reconciliationConfig.CurrentValue.Interval;
-            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
+            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
             Requeue(entity, interval);
         }
 
@@ -230,51 +230,51 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 {
-                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete (reason: entity was never successfully created in Auth0).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete (reason: entity was never successfully created in Auth0).", EntityTypeName, entity.Namespace(), entity.Name());
                     return;
                 }
 
                 var self = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
-                    Logger.LogWarning("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} with ID {Id} not found in Auth0, skipping delete (reason: already deleted externally).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} with ID {Id} not found in Auth0, skipping delete (reason: already deleted externally).", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     return;
                 }
 
                 // reject deletion if disallowed by policy
                 if (entity.HasPolicy(V1EntityPolicyType.Delete) == false)
                 {
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} does not support delete (reason: Delete policy not enabled).", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support delete (reason: Delete policy not enabled).", EntityTypeName, entity.Namespace(), entity.Name());
                 }
                 else
                 {
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} initiating deletion from Auth0 with ID: {Id} (reason: Kubernetes entity was deleted)", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} initiating deletion from Auth0 with ID: {Id} (reason: Kubernetes entity was deleted)", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     await Delete(api, entity.Status.Id, cancellationToken);
-                    Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {Namespace}/{Name} deletion completed successfully", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} deletion completed successfully", EntityTypeName, entity.Namespace(), entity.Name());
                 }
             }
             catch (ErrorApiException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - API error deleting {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError?.Message);
+                    Logger.LogError(e, "API error deleting {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError?.Message);
                     await DeletingWarningAsync(entity, "ApiError", e.ApiError?.Message ?? "", cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
             }
             catch (RateLimitApiException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Rate limit hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Rate limit hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
                     await DeletingWarningAsync(entity, "RateLimit", e.ApiError?.Message ?? "", cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 // calculate next attempt time, floored to one minute
@@ -282,34 +282,34 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (n < TimeSpan.FromMinutes(1))
                     n = TimeSpan.FromMinutes(1);
 
-                Logger.LogInformation("{UtcTimestamp} - Rescheduling delete after {TimeSpan}.", UtcTimestamp, n);
+                Logger.LogInformation("Rescheduling delete after {TimeSpan}.", n);
                 Requeue(entity, n);
             }
             catch (RetryException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Retry hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Retry hit deleting {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
                     await DeletingWarningAsync(entity, "Retry", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
-                Logger.LogInformation("{UtcTimestamp} - Rescheduling delete after {TimeSpan}.", UtcTimestamp, TimeSpan.FromMinutes(1));
+                Logger.LogInformation("Rescheduling delete after {TimeSpan}.", TimeSpan.FromMinutes(1));
                 Requeue(entity, TimeSpan.FromMinutes(1));
             }
             catch (Exception e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Unexpected exception deleting {EntityTypeName} {EntityNamespace}/{EntityName}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Unexpected exception deleting {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
                     await DeletingWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 throw;

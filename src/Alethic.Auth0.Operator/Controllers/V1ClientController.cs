@@ -77,12 +77,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     try
                     {
                         var client = await api.Clients.GetAsync(clientId, "client_id,name", cancellationToken: cancellationToken);
-                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
                         return client.ClientId;
                     }
                     catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
                     {
-                        Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
                         return null;
                     }
                 }
@@ -113,16 +113,16 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} creating client in Auth0 with name: {ClientName}", UtcTimestamp, EntityTypeName, conf.Name);
+            Logger.LogInformation("{EntityTypeName} creating client in Auth0 with name: {ClientName}", EntityTypeName, conf.Name);
             var self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf), cancellationToken);
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, self.ClientId, conf.Name);
+            Logger.LogInformation("{EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName}", EntityTypeName, self.ClientId, conf.Name);
             return self.ClientId;
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} updating client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
+            Logger.LogInformation("{EntityTypeName} updating client in Auth0 with ID: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
 
             if (conf.ClientMetaData != null)
             {
@@ -130,7 +130,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully updated client in Auth0 with ID: {ClientId} and name: {ClientName}", UtcTimestamp, EntityTypeName, id, conf.Name);
+            Logger.LogInformation("{EntityTypeName} successfully updated client in Auth0 with ID: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
         }
 
         /// <inheritdoc />
@@ -160,7 +160,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         async Task ApplyClientMetadataReplacement(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} handling client_metadata replacement for client {ClientId}", UtcTimestamp, EntityTypeName, id);
+            Logger.LogDebug("{EntityTypeName} handling client_metadata replacement for client {ClientId}", EntityTypeName, id);
 
             // Get current client to see existing metadata
             var currentClientData = await Get(api, id, defaultNamespace, cancellationToken);
@@ -177,7 +177,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     {
                         if (existingKey != null && !conf.ClientMetaData!.ContainsKey(existingKey))
                         {
-                            Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} removing metadata key '{MetadataKey}' from client {ClientId}", UtcTimestamp, EntityTypeName, existingKey, id);
+                            Logger.LogDebug("{EntityTypeName} removing metadata key '{MetadataKey}' from client {ClientId}", EntityTypeName, existingKey, id);
                             mergedMetadata[existingKey] = null;
                         }
                     }
@@ -198,7 +198,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     };
 
                     await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(tempConf), cancellationToken);
-                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} applied metadata cleanup for client {ClientId}", UtcTimestamp, EntityTypeName, id);
+                    Logger.LogDebug("{EntityTypeName} applied metadata cleanup for client {ClientId}", EntityTypeName, id);
                 }
             }
         }
@@ -221,7 +221,7 @@ namespace Alethic.Auth0.Operator.Controllers
             var secret = await ResolveSecretRef(entity.Spec.SecretRef, entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
             if (secret is null)
             {
-                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret = await Kube.CreateAsync(
                     new V1Secret(
                         metadata: new V1ObjectMeta(namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, name: entity.Spec.SecretRef.Name))
@@ -232,51 +232,51 @@ namespace Alethic.Auth0.Operator.Controllers
             // only apply actual values if we are the owner
             if (secret.IsOwnedBy(entity))
             {
-                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret.StringData ??= new Dictionary<string, string>();
 
                 // Always set clientId if available
                 if (clientId is not null)
                 {
                     secret.StringData["clientId"] = clientId;
-                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 }
                 else if (!secret.StringData.ContainsKey("clientId"))
                 {
                     // Initialize empty clientId field if not present and no value available
                     secret.StringData["clientId"] = "";
-                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 }
 
                 // Handle clientSecret - for existing clients, Auth0 API doesn't return the secret
                 if (clientSecret is not null)
                 {
                     secret.StringData["clientSecret"] = clientSecret;
-                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 }
                 else if (!secret.StringData.ContainsKey("clientSecret"))
                 {
                     // Initialize empty clientSecret field if not present and no value available
                     // Note: For existing clients, Auth0 API doesn't return the secret value for security reasons
                     secret.StringData["clientSecret"] = "";
-                    Logger.LogDebug("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 }
 
                 secret = await Kube.UpdateAsync(secret, cancellationToken);
-                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
             }
             else
             {
-                Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} exists but is not owned by this client, skipping update", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} exists but is not owned by this client, skipping update", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
             }
         }
 
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} deleting client from Auth0 with ID: {ClientId} (reason: Kubernetes entity deleted)", UtcTimestamp, EntityTypeName, id);
+            Logger.LogInformation("{EntityTypeName} deleting client from Auth0 with ID: {ClientId} (reason: Kubernetes entity deleted)", EntityTypeName, id);
             await api.Clients.DeleteAsync(id, cancellationToken);
-            Logger.LogInformation("{UtcTimestamp} - {EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}", UtcTimestamp, EntityTypeName, id);
+            Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}", EntityTypeName, id);
         }
 
     }

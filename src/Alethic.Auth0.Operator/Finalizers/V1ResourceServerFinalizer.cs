@@ -29,26 +29,23 @@ namespace Alethic.Auth0.Operator.Finalizers
             _logger = logger ?? throw new System.ArgumentNullException(nameof(logger));
         }
 
-        /// <summary>
-        /// Gets the current UTC timestamp formatted for logging.
-        /// </summary>
-        protected static string UtcTimestamp => System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
 
         /// <inheritdoc />
         public async Task FinalizeAsync(V1ResourceServer entity, CancellationToken cancellationToken)
         {
             try
             {
-                _logger.LogInformation("{UtcTimestamp} - ResourceServer finalizer starting cleanup for {Namespace}/{Name}", UtcTimestamp, entity.Namespace(), entity.Name());
+                _logger.LogInformation("ResourceServer finalizer starting cleanup for {Namespace}/{Name}", entity.Namespace(), entity.Name());
 
                 // Call the controller's DeletedAsync method to perform Auth0 cleanup
                 await _controller.DeletedAsync(entity, cancellationToken);
 
-                _logger.LogInformation("{UtcTimestamp} - ResourceServer finalizer completed cleanup for {Namespace}/{Name}", UtcTimestamp, entity.Namespace(), entity.Name());
+                _logger.LogInformation("ResourceServer finalizer completed cleanup for {Namespace}/{Name}", entity.Namespace(), entity.Name());
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "{UtcTimestamp} - ResourceServer finalizer failed for {Namespace}/{Name}: {Message}", UtcTimestamp, entity.Namespace(), entity.Name(), ex.Message);
+                _logger.LogError(ex, "ResourceServer finalizer failed for {Namespace}/{Name}: {Message}", entity.Namespace(), entity.Name(), ex.Message);
                 throw;
             }
         }

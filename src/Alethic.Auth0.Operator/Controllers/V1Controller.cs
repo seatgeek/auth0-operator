@@ -83,10 +83,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         protected ILogger Logger => _logger;
 
-        /// <summary>
-        /// Gets the current UTC timestamp formatted for logging.
-        /// </summary>
-        protected static string UtcTimestamp => DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
 
         /// <summary>
         /// Attempts to resolve the secret document referenced by the secret reference.
@@ -183,7 +180,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (clientRef.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
                 return id;
 
-            Logger.LogDebug("{UtcTimestamp} - Attempting to resolve ClientRef {Namespace}/{Name}.", UtcTimestamp, clientRef.Namespace, clientRef.Name);
+            Logger.LogDebug("Attempting to resolve ClientRef {Namespace}/{Name}.", clientRef.Namespace, clientRef.Name);
 
             var client = await ResolveClientRef(api, clientRef, defaultNamespace, cancellationToken);
             if (client is null)
@@ -191,7 +188,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(client.Status.Id))
                 throw new RetryException($"Referenced Client {client.Namespace()}/{client.Name()} has not been reconciled.");
 
-            Logger.LogDebug("{UtcTimestamp} - Resolved ClientRef {Namespace}/{Name} to {Id}.", UtcTimestamp, clientRef.Namespace, clientRef.Name, client.Status.Id);
+            Logger.LogDebug("Resolved ClientRef {Namespace}/{Name} to {Id}.", clientRef.Namespace, clientRef.Name, client.Status.Id);
             return client.Status.Id;
         }
 
@@ -249,7 +246,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 return self.Identifier;
             }
 
-            Logger.LogDebug("{UtcTimestamp} - Attempting to resolve ResourceServer reference {Namespace}/{Name}.", UtcTimestamp, reference.Namespace, reference.Name);
+            Logger.LogDebug("Attempting to resolve ResourceServer reference {Namespace}/{Name}.", reference.Namespace, reference.Name);
 
             var resourceServer = await ResolveResourceServerRef(api, reference, defaultNamespace, cancellationToken);
             if (resourceServer is null)
@@ -258,7 +255,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (resourceServer.Status.Identifier is null)
                 throw new RetryException($"Referenced ResourceServer {resourceServer.Namespace()}/{resourceServer.Name()} has not been reconcilled.");
 
-            Logger.LogDebug("{UtcTimestamp} - Resolved ResourceServer reference {Namespace}/{Name} to {Identifier}.", UtcTimestamp, reference.Namespace, reference.Name, resourceServer.Status.Identifier);
+            Logger.LogDebug("Resolved ResourceServer reference {Namespace}/{Name} to {Identifier}.", reference.Namespace, reference.Name, resourceServer.Status.Identifier);
             return resourceServer.Status.Identifier;
         }
 
@@ -441,7 +438,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                Logger.LogInformation("{UtcTimestamp} - Reconciling {EntityTypeName} {Namespace}/{Name}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformation("Reconciling {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
 
                 if (entity.Spec.Conf == null)
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing configuration.");
@@ -449,31 +446,31 @@ namespace Alethic.Auth0.Operator.Controllers
                 // does the actual work of reconciling
                 await Reconcile(entity, cancellationToken);
 
-                Logger.LogInformation("{UtcTimestamp} - Reconciled {EntityTypeName} {Namespace}/{Name}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
                 await ReconcileSuccessAsync(entity, cancellationToken);
             }
             catch (ErrorApiException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - API error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
+                    Logger.LogError(e, "API error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.ApiError.Message);
                     await ReconcileWarningAsync(entity, "ApiError", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
             }
             catch (RateLimitApiException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Rate limit hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Rate limit hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
                     await ReconcileWarningAsync(entity, "RateLimit", e.ApiError.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 // calculate next attempt time, floored to one minute
@@ -481,34 +478,34 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (n < TimeSpan.FromMinutes(1))
                     n = TimeSpan.FromMinutes(1);
 
-                Logger.LogInformation("{UtcTimestamp} - Rescheduling reconcilation after {TimeSpan}.", UtcTimestamp, n);
+                Logger.LogInformation("Rescheduling reconcilation after {TimeSpan}.", n);
                 Requeue(entity, n);
             }
             catch (RetryException e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Retry hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Retry hit reconciling {EntityTypeName} {EntityNamespace}/{EntityName}", EntityTypeName, entity.Namespace(), entity.Name());
                     await DeletingWarningAsync(entity, "Retry", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
-                Logger.LogInformation("{UtcTimestamp} - Rescheduling reconcilation after {TimeSpan}.", UtcTimestamp, TimeSpan.FromMinutes(1));
+                Logger.LogInformation("Rescheduling reconcilation after {TimeSpan}.", TimeSpan.FromMinutes(1));
                 Requeue(entity, TimeSpan.FromMinutes(1));
             }
             catch (Exception e)
             {
                 try
                 {
-                    Logger.LogError(e, "{UtcTimestamp} - Unexpected exception reconciling {EntityTypeName} {EntityNamespace}/{EntityName}.", UtcTimestamp, EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogError(e, "Unexpected exception reconciling {EntityTypeName} {EntityNamespace}/{EntityName}.", EntityTypeName, entity.Namespace(), entity.Name());
                     await ReconcileWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCritical(e2, "{UtcTimestamp} - Unexpected exception creating event.", UtcTimestamp);
+                    Logger.LogCritical(e2, "Unexpected exception creating event.");
                 }
 
                 throw;
