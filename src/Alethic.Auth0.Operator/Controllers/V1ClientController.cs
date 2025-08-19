@@ -136,13 +136,14 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var clientId = (string?)lastConf["client_id"];
-            var clientSecret = (string?)lastConf["client_secret"];
-
             // Always attempt to apply secret if secretRef is specified, regardless of whether we have the clientSecret value
             // This ensures secret resources are created for existing clients even when Auth0 API doesn't return the secret
             if (entity.Spec.SecretRef is not null)
+            {
+                var clientId = (string?)lastConf["client_id"];
+                var clientSecret = (string?)lastConf["client_secret"];
                 await ApplySecret(entity, clientId, clientSecret, defaultNamespace, cancellationToken);
+            }
 
             lastConf.Remove("client_id");
             lastConf.Remove("client_secret");
