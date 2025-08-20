@@ -35,7 +35,6 @@ namespace Alethic.Auth0.Operator.Models
             public ConnectionFind? Find { get; set; }
 
             [JsonPropertyName("init")]
-            [Required]
             public ConnectionConf? Init { get; set; }
 
             [JsonPropertyName("conf")]
