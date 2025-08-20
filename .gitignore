@@ -253,3 +253,6 @@ ModelManifest.xml
 
 # Mono
 .mono/
+
+# Docker
+Dockerfile.local

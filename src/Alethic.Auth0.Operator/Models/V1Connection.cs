@@ -31,6 +31,9 @@ namespace Alethic.Auth0.Operator.Models
             [Required]
             public V1TenantReference? TenantRef { get; set; }
 
+            [JsonPropertyName("find")]
+            public ConnectionFind? Find { get; set; }
+
             [JsonPropertyName("init")]
             [Required]
             public ConnectionConf? Init { get; set; }

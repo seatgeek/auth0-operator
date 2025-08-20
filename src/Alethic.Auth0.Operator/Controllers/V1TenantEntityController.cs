@@ -16,6 +16,7 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -27,6 +28,8 @@ namespace Alethic.Auth0.Operator.Controllers
         where TConf : class
     {
 
+        readonly IOptionsMonitor<ReconciliationConfig> _reconciliationConfig;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -34,10 +37,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger) :
+        /// <param name="reconciliationConfig"></param>
+        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
             base(kube, requeue, cache, logger)
         {
-
+            _reconciliationConfig = reconciliationConfig ?? throw new ArgumentNullException(nameof(reconciliationConfig));
         }
 
         /// <summary>
@@ -114,6 +118,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // we have not resolved a remote entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} has no Status.Id, checking if entity exists in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
                 // find existing remote entity
                 var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
                 if (entityId is null)
@@ -150,10 +155,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
 
             // attempt to retrieve existing entity
+            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
             var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
             if (lastConf is null)
             {
                 // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
+                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", EntityTypeName, entity.Namespace(), entity.Name());
                 entity.Status.LastConf = null;
                 entity.Status.Id = null;
                 entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
@@ -174,6 +181,11 @@ namespace Alethic.Auth0.Operator.Controllers
             // apply new configuration
             await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+
+            // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
+            var interval = _reconciliationConfig.CurrentValue.Interval;
+            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
+            Requeue(entity, interval);
         }
 
         /// <summary>
@@ -218,25 +230,27 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 {
-                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} has no known ID, skipping delete (reason: entity was never successfully created in Auth0).", EntityTypeName, entity.Namespace(), entity.Name());
                     return;
                 }
 
                 var self = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
-                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} already been deleted, skipping delete.", EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} with ID {Id} not found in Auth0, skipping delete (reason: already deleted externally).", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     return;
                 }
 
-                // reject update if disallowed
+                // reject deletion if disallowed by policy
                 if (entity.HasPolicy(V1EntityPolicyType.Delete) == false)
                 {
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support delete.", EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} does not support delete (reason: Delete policy not enabled).", EntityTypeName, entity.Namespace(), entity.Name());
                 }
                 else
                 {
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} initiating deletion from Auth0 with ID: {Id} (reason: Kubernetes entity was deleted)", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
                     await Delete(api, entity.Status.Id, cancellationToken);
+                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} deletion completed successfully", EntityTypeName, entity.Namespace(), entity.Name());
                 }
             }
             catch (ErrorApiException e)

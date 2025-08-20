@@ -25,6 +25,7 @@ using KubeOps.KubernetesClient;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -45,8 +46,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        public V1ConnectionController(IKubernetesClient kube, EntityRequeue<V1Connection> requeue, IMemoryCache cache, ILogger<V1ConnectionController> logger) :
-            base(kube, requeue, cache, logger)
+        /// <param name="reconciliationConfig"></param>
+        public V1ConnectionController(IKubernetesClient kube, EntityRequeue<V1Connection> requeue, IMemoryCache cache, ILogger<V1ConnectionController> logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
+            base(kube, requeue, cache, logger, reconciliationConfig)
         {
 
         }
@@ -86,13 +88,39 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string?> Find(IManagementApiClient api, V1Connection entity, V1Connection.SpecDef spec, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var conf = spec.Init ?? spec.Conf;
-            if (conf is null)
-                return null;
+            if (spec.Find is not null)
+            {
+                if (spec.Find.ConnectionId is string connectionId)
+                {
+                    try
+                    {
+                        var connection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing connection: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), connection.Name);
+                        return connection.Id;
+                    }
+                    catch (ErrorApiException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find connection with id {ConnectionId}.", EntityTypeName, entity.Namespace(), entity.Name(), connectionId);
+                        return null;
+                    }
+                }
 
-            var list = await api.Connections.GetAllAsync(new GetConnectionsRequest() { Fields = "id,name" }, pagination: (PaginationInfo?)null, cancellationToken: cancellationToken);
-            var self = list.FirstOrDefault(i => i.Name == conf.Name);
-            return self?.Id;
+                return null;
+            }
+            else
+            {
+                var conf = spec.Init ?? spec.Conf;
+                if (conf is null || string.IsNullOrEmpty(conf.Name))
+                    return null;
+
+                var list = await api.Connections.GetAllAsync(new GetConnectionsRequest(), (PaginationInfo?)null, cancellationToken);
+                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                if (self is not null)
+                {
+                    Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing connection by name: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                }
+                return self?.Id;
+            }
         }
 
         /// <inheritdoc />
@@ -131,6 +159,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{EntityTypeName} creating connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, conf.Name, conf.Strategy);
             var req = new ConnectionCreateRequest();
             await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Strategy = conf.Strategy;
@@ -140,17 +169,20 @@ namespace Alethic.Auth0.Operator.Controllers
             if (self is null)
                 throw new InvalidOperationException();
 
+            Logger.LogInformation("{EntityTypeName} successfully created connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, self.Id, conf.Name, conf.Strategy);
             return self.Id;
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformation("{EntityTypeName} updating connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
             var req = new ConnectionUpdateRequest();
             await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
             req.Name = null;
             req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
             await api.Connections.UpdateAsync(id, req, cancellationToken);
+            Logger.LogInformation("{EntityTypeName} successfully updated connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
         }
 
         /// <summary>
@@ -174,9 +206,11 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
+        protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            return api.Connections.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{EntityTypeName} deleting connection from Auth0 with ID: {ConnectionId} (reason: Kubernetes entity deleted)", EntityTypeName, id);
+            await api.Connections.DeleteAsync(id, cancellationToken);
+            Logger.LogInformation("{EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", EntityTypeName, id);
         }
 
     }

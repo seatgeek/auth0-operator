@@ -74,7 +74,6 @@ namespace Alethic.Auth0.Operator.Controllers
             entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
-            Logger.LogInformation("Reconciled {EntityTypeName} {Namespace}/{Name}.", EntityTypeName, entity.Namespace(), entity.Name());
             await ReconcileSuccessAsync(entity, cancellationToken);
         }
 
