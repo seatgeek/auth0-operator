@@ -52,18 +52,18 @@ spec:
               value: "simple"
             - name: Logging__Console__FormatterOptions__TimestampFormat
               value: "yyyy-MM-dd HH:mm:ss "
-            {{- if .Values.options.namespace }}
+{{ if .Values.options.namespace }}
             - name: Auth0__Operator__Namespace
               value: {{ .Values.options.namespace | quote }}
-            {{- end }}
-            {{- if .Values.options.reconciliation.interval }}
+{{ end }}
+{{ if .Values.options.reconciliation.interval }}
             - name: Auth0__Operator__Reconciliation__Interval
               value: {{ .Values.options.reconciliation.interval | quote }}
-            {{- end }}
-            {{- range .Values.operator.env }}
+{{ end }}
+{{ range .Values.operator.env }}
             - name: {{ .name | quote}}
-            - value: {{ .name | quote }}
-            {{- end }}
+              value: {{ .name | quote }}
+{{ end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
           {{- with .Values.operator.containerSecurityContext }}
           securityContext: {{- toYaml . | nindent 12 }}
