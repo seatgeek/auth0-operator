@@ -84,4 +84,7 @@ operator:
 # Various configuration options.
 options:
     # Limit operation to the single specified namespace. This can be used to install a namespace-specific instance of the operator.
-    namespace:
+    # NOT YET SUPORTED
+    #namespace:
+  reconcillation:
+    interval:  

@@ -50,9 +50,13 @@ spec:
             {{- range .Values.operator.env }}
             - {{ . }}
             {{- end }}
-            {{- if not .Values.options.namespace }}
+            {{- if .Values.options.namespace }}
             - name: Auth0__Operator__Namespace
               value: {{ .Values.options.namespace | quote }}
+            {{- end }}
+            {{- if .Values.options.reconciliation.interval }}
+            - name: Auth0__Operator__Reconciliation__Interval
+              value: {{ .Values.options.reconciliation.interval | quote }}
             {{- end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
           {{- with .Values.operator.containerSecurityContext }}
