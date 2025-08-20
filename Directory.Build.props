@@ -20,9 +20,9 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Package Info">
-        <RepositoryUrl Condition=" '$(RepositoryUrl)' == '' ">https://github.com/alethic/auth0-operator.git</RepositoryUrl>
+        <RepositoryUrl Condition=" '$(RepositoryUrl)' == '' ">https://github.com/seatgeek/auth0-operator.git</RepositoryUrl>
         <RepositoryType Condition=" '$(RepositoryType)' == '' ">git</RepositoryType>
-        <PackageProjectUrl Condition=" '$(PackageProjectUrl)' == '' ">https://github.com/alethic/auth0-operator</PackageProjectUrl>
+        <PackageProjectUrl Condition=" '$(PackageProjectUrl)' == '' ">https://github.com/seatgeek/auth0-operator</PackageProjectUrl>
         <PackageVersion Condition=" '$(PackageVersion)' == '' ">$(Version)</PackageVersion>
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>

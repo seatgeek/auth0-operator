@@ -8,7 +8,7 @@ It automates the deployment, configuration, and management of Auth0 resources, s
 
 ### Installation
 
-`helm install -n auth0 auth0 oci://ghcr.io/alethic/auth0-operator`
+`helm install -n auth0 auth0 oci://ghcr.io/seatgeek/auth0-operator`
 
 ## Usage
 
