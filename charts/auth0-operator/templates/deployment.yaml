@@ -62,7 +62,7 @@ spec:
 {{ end }}
 {{ range .Values.operator.env }}
             - name: {{ .name | quote}}
-              value: {{ .name | quote }}
+              value: {{ .value | quote }}
 {{ end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
           {{- with .Values.operator.containerSecurityContext }}
