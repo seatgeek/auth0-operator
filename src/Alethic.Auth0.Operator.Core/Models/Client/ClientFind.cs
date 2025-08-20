@@ -6,7 +6,7 @@ namespace Alethic.Auth0.Operator.Core.Models.Client
     public partial class ClientFind
     {
 
-        [JsonPropertyName("clientId")]
+        [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ClientId { get; set; }
 
