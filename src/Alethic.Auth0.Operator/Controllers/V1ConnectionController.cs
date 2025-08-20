@@ -107,9 +107,20 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 return null;
             }
+            else
+            {
+                var conf = spec.Init ?? spec.Conf;
+                if (conf is null || string.IsNullOrEmpty(conf.Name))
+                    return null;
 
-            // No find field specified - connections will be created new
-            return null;
+                var list = await api.Connections.GetAllAsync(new GetConnectionsRequest(), (PaginationInfo?)null, cancellationToken);
+                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                if (self is not null)
+                {
+                    Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing connection by name: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                }
+                return self?.Id;
+            }
         }
 
         /// <inheritdoc />
