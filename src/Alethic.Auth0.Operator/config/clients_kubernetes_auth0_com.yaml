@@ -65,7 +65,7 @@ spec:
               find:
                 nullable: true
                 properties:
-                  clientId:
+                  client_id:
                     nullable: true
                     type: string
                 type: object
