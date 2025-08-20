@@ -47,9 +47,11 @@ spec:
           image: {{ .Values.operator.image.repository }}:{{ .Values.operator.image.digest | default .Values.operator.image.tag | default $.Chart.AppVersion }}
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
           env:
-            {{- range .Values.operator.env }}
-            - {{ . }}
-            {{- end }}
+            # By default we want to use a formatter more suited to Kubernetes.
+            - name: Logging__Console__FormatterName
+              value: "simple"
+            - name: Logging__Console__FormatterOptions__TimestampFormat
+              value: "yyyy-MM-dd HH:mm:ss "
             {{- if .Values.options.namespace }}
             - name: Auth0__Operator__Namespace
               value: {{ .Values.options.namespace | quote }}
@@ -57,6 +59,10 @@ spec:
             {{- if .Values.options.reconciliation.interval }}
             - name: Auth0__Operator__Reconciliation__Interval
               value: {{ .Values.options.reconciliation.interval | quote }}
+            {{- end }}
+            {{- range .Values.operator.env }}
+            - name: {{ .name | quote}}
+            - value: {{ .name | quote }}
             {{- end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
           {{- with .Values.operator.containerSecurityContext }}

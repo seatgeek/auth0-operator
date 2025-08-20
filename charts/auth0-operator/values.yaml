@@ -1,9 +1,5 @@
 operator:
-  env:
-    - name: Logging__Console__FormatterName
-      value: "simple"
-    - name: Logging__Console__FormatterOptions__TimestampFormat
-      value: "yyyy-MM-dd HH:mm:ss "
+  env: []
 
   # An array of additional annotations to be applied to the operator service account
   serviceAccountAnnotations: []
