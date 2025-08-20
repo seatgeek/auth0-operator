@@ -18,7 +18,6 @@ namespace Alethic.Auth0.Operator
             var builder = Host.CreateApplicationBuilder(args);
             builder.Services.AddKubernetesOperator().RegisterComponents();
             builder.Services.AddMemoryCache();
-            builder.Services.AddScoped<OperatorPostConfigure>();
             builder.Services.Configure<OperatorOptions>(builder.Configuration.GetSection("Auth0:Operator"));
 
             var app = builder.Build();

@@ -41,9 +41,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="requeue"></param>
         /// <param name="cache"></param>
         /// <param name="logger"></param>
-        /// <param name="reconciliationConfig"></param>
-        public V1ResourceServerController(IKubernetesClient kube, EntityRequeue<V1ResourceServer> requeue, IMemoryCache cache, ILogger<V1ResourceServerController> logger, IOptionsMonitor<ReconciliationOptions> reconciliationConfig) :
-            base(kube, requeue, cache, logger, reconciliationConfig)
+        /// <param name="options"></param>
+        public V1ResourceServerController(IKubernetesClient kube, EntityRequeue<V1ResourceServer> requeue, IMemoryCache cache, ILogger<V1ResourceServerController> logger, IOptions<OperatorOptions> options) :
+            base(kube, requeue, cache, logger, options)
         {
 
         }

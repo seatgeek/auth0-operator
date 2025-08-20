@@ -6,13 +6,14 @@
 
         /// <summary>
         /// Limit the operator to resources within the specified namespace.
+        /// TODO
         /// </summary>
-        public string Namespace { get; set; }
+        public string? Namespace { get; set; }
 
         /// <summary>
         /// Options related to reconciliation of resources.
         /// </summary>
-        public ReconciliationOptions Reconciliation { get; set; }
+        public ReconciliationOptions Reconciliation { get; set; } = new ReconciliationOptions();
 
     }
 
