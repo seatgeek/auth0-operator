@@ -61,7 +61,7 @@ spec:
               value: {{ .Values.options.reconciliation.interval | quote }}
 {{ end }}
 {{ range .Values.operator.env }}
-            - name: {{ .name | quote}}
+            - name: {{ .name | quote }}
               value: {{ .value | quote }}
 {{ end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
