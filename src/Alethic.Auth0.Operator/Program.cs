@@ -24,10 +24,14 @@ namespace Alethic.Auth0.Operator
             builder.Services.Configure<ReconciliationConfig>(
                 builder.Configuration.GetSection("ReconciliationConfig"));
 
-            builder.Logging.AddSimpleConsole(options =>
+            // Allows default .NET console output when running manually
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ENABLE_SIMPLE_CONSOLE_LOGGING")))
             {
-                options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
-            });
+                builder.Logging.AddSimpleConsole(options =>
+                {
+                    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+                });
+            }
 
             var app = builder.Build();
             return app.RunAsync();
