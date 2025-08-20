@@ -83,4 +83,4 @@ options:
     # NOT YET SUPORTED
     #namespace:
   reconciliation:
-    interval:  
+    interval:
