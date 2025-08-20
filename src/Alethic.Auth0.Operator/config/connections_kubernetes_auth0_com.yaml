@@ -163,7 +163,6 @@ spec:
                 type: object
             required:
             - tenantRef
-            - init
             - conf
             type: object
         type: object
