@@ -6,9 +6,9 @@ version: 0.0.0
 appVersion: "0.0.0"
 keywords:
   - auth0
-home: https://github.com/alethic/auth0-operator
+home: https://github.com/seatgeek/auth0-operator
 sources:
-  - https://github.com/alethic/auth0-operator
+  - https://github.com/seatgeek/auth0-operator
 maintainers:
-  - name: Jerome Haltom
-    email: jhaltom@alethic.solutions
+  - name: SeatGeek Infrastructure Team
+    email: infrastructure@seatgeek.com
