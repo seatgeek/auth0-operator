@@ -86,5 +86,5 @@ options:
     # Limit operation to the single specified namespace. This can be used to install a namespace-specific instance of the operator.
     # NOT YET SUPORTED
     #namespace:
-  reconcillation:
+  reconciliation:
     interval:  
