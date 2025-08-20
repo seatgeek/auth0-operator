@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Controllers;
 using Alethic.Auth0.Operator.Models;
 
-using k8s.Models;
 using KubeOps.Abstractions.Finalizer;
 
 namespace Alethic.Auth0.Operator.Finalizers
@@ -24,12 +23,9 @@ namespace Alethic.Auth0.Operator.Finalizers
             _controller = controller ?? throw new System.ArgumentNullException(nameof(controller));
         }
 
-
-
         /// <inheritdoc />
         public async Task FinalizeAsync(V1Connection entity, CancellationToken cancellationToken)
         {
-            // Call the controller's DeletedAsync method to perform Auth0 cleanup
             await _controller.DeletedAsync(entity, cancellationToken);
         }
 
