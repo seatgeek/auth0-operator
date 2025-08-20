@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Models;
+using Alethic.Auth0.Operator.Options;
 
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
@@ -28,7 +29,7 @@ namespace Alethic.Auth0.Operator.Controllers
         where TConf : class
     {
 
-        readonly IOptionsMonitor<ReconciliationConfig> _reconciliationConfig;
+        readonly IOptionsMonitor<ReconciliationOptions> _reconciliationConfig;
 
         /// <summary>
         /// Initializes a new instance.
@@ -38,7 +39,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cache"></param>
         /// <param name="logger"></param>
         /// <param name="reconciliationConfig"></param>
-        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
+        public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger, IOptionsMonitor<ReconciliationOptions> reconciliationConfig) :
             base(kube, requeue, cache, logger)
         {
             _reconciliationConfig = reconciliationConfig ?? throw new ArgumentNullException(nameof(reconciliationConfig));

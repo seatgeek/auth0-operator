@@ -46,9 +46,14 @@ spec:
         - name: {{ .Chart.Name }}
           image: {{ .Values.operator.image.repository }}:{{ .Values.operator.image.digest | default .Values.operator.image.tag | default $.Chart.AppVersion }}
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
-          {{- with .Values.operator.env }}
-          env: {{- toYaml . | nindent 12 }}
-          {{- end }}
+          env:
+            {{- range .Values.operator.env }}
+            - {{ . }}
+            {{- end }}
+            {{- if not .Values.options.namespace }}
+            - name: Auth0__Operator__Namespace
+              value: {{ .Values.options.namespace | quote }}
+            {{- end }}
           resources: {{- toYaml .Values.operator.resources | nindent 12 }}
           {{- with .Values.operator.containerSecurityContext }}
           securityContext: {{- toYaml . | nindent 12 }}

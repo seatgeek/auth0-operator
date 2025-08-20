@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models.ClientGrant;
 using Alethic.Auth0.Operator.Models;
+using Alethic.Auth0.Operator.Options;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
@@ -43,7 +44,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cache"></param>
         /// <param name="logger"></param>
         /// <param name="reconciliationConfig"></param>
-        public V1ClientGrantController(IKubernetesClient kube, EntityRequeue<V1ClientGrant> requeue, IMemoryCache cache, ILogger<V1ClientGrantController> logger, IOptionsMonitor<ReconciliationConfig> reconciliationConfig) :
+        public V1ClientGrantController(IKubernetesClient kube, EntityRequeue<V1ClientGrant> requeue, IMemoryCache cache, ILogger<V1ClientGrantController> logger, IOptionsMonitor<ReconciliationOptions> reconciliationConfig) :
             base(kube, requeue, cache, logger, reconciliationConfig)
         {
 
