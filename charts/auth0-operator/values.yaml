@@ -1,8 +1,8 @@
 operator:
   # An array of environment variables to pass to the Operator deployment.
   env:
-    - name: ENABLE_SIMPLE_CONSOLE_LOGGING
-      value: "true"
+    - name: Logging__Console__FormatterName
+      value: "simple"
   # An array of additional annotations to be applied to the operator service account
   serviceAccountAnnotations: []
   # additional labels to be applied to operator resources
