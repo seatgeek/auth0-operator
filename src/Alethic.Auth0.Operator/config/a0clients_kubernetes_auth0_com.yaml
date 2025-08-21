@@ -1,16 +1,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: clients.kubernetes.auth0.com
+  name: a0clients.kubernetes.auth0.com
 spec:
   group: kubernetes.auth0.com
   names:
     kind: A0Client
     listKind: A0ClientList
-    plural: clients
+    plural: a0clients
     shortNames:
     - a0app
-    singular: client
+    singular: a0client
   scope: Namespaced
   versions:
   - name: v1

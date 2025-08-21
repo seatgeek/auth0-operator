@@ -1,16 +1,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: tenants.kubernetes.auth0.com
+  name: a0tenants.kubernetes.auth0.com
 spec:
   group: kubernetes.auth0.com
   names:
     kind: A0Tenant
     listKind: A0TenantList
-    plural: tenants
+    plural: a0tenants
     shortNames:
     - a0tenant
-    singular: tenant
+    singular: a0tenant
   scope: Namespaced
   versions:
   - name: v1
