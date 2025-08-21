@@ -23,7 +23,6 @@ using KubeOps.Abstractions.Controller;
 using KubeOps.Abstractions.Entities;
 using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
-using KubeOps.KubernetesClient.LabelSelectors;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
