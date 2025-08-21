@@ -40,6 +40,30 @@ dotnet test src/Alethic.Auth0.Operator.Tests/
 dotnet build Alethic.Auth0.Operator.dist.msbuildproj
 ```
 
+### Generating CRDs and Operator Resources
+The project uses KubeOps CLI to generate Custom Resource Definitions and other Kubernetes resources from C# entity models.
+
+#### Prerequisites
+```bash
+# Restore the KubeOps CLI tool (version must match project dependencies)
+dotnet tool restore
+```
+
+#### Generate all operator resources (CRDs, RBAC, Deployment, etc.)
+```bash
+# Generate to a custom output directory
+dotnet kubeops generate operator auth0-operator src/Alethic.Auth0.Operator/Alethic.Auth0.Operator.csproj --out ./generated
+
+# Generate directly to config directory (overwrites existing files)
+dotnet kubeops generate operator auth0-operator src/Alethic.Auth0.Operator/Alethic.Auth0.Operator.csproj --out src/Alethic.Auth0.Operator/config --clear-out
+```
+
+**Important Notes:**
+- Must target the **project file** (`Alethic.Auth0.Operator.csproj`), not the solution file
+- KubeOps CLI version in `.config/dotnet-tools.json` must match the KubeOps NuGet package versions
+- Generated CRDs will use `a0*` plural names (e.g., `a0clients`, `a0connections`) based on the `A0*` Kind names in the C# models
+- Use `--clear-out` to remove existing files before generation
+
 ### Container operations
 The project supports container builds through MSBuild targets. The main operator image is built as `auth0-operator-image`.
 

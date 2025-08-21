@@ -24,21 +24,69 @@ Other resources, such as `Client`, `ResourceServer`, etc, must have a `spec.tena
 
 Since the entire API is derived from the Auth0 Management API their documentation is relevant: [Auth0 Management API](https://auth0.com/docs/api/management/v2).
 
+## Development
+
+### Generating CRDs and Kubernetes Resources
+
+This project uses **KubeOps CLI** to automatically generate Custom Resource Definitions (CRDs) and other Kubernetes resources from C# entity models.
+
+#### Prerequisites
+```bash
+# Restore the KubeOps CLI tool (ensure version matches project dependencies)
+dotnet tool restore
+```
+
+#### Generate Resources
+```bash
+# Generate all operator resources (CRDs, RBAC, Deployment, etc.) to custom directory
+dotnet kubeops generate operator auth0-operator src/Alethic.Auth0.Operator/Alethic.Auth0.Operator.csproj --out ./generated
+
+# Generate directly to config directory (overwrites existing files)
+dotnet kubeops generate operator auth0-operator src/Alethic.Auth0.Operator/Alethic.Auth0.Operator.csproj --out src/Alethic.Auth0.Operator/config --clear-out
+```
+
+#### When to Use KubeOps Generation
+- **After modifying C# entity models** (adding/removing properties, changing attributes)
+- **When updating KubernetesEntity attributes** (Kind names, API versions, etc.)
+- **Before releasing** to ensure CRDs match code definitions
+- **When onboarding new resources** to the operator
+
+#### What to Avoid
+- ❌ **Don't target the solution file** (`Alethic.Auth0.Operator.sln`) - causes assembly loading errors
+- ❌ **Don't manually edit generated CRDs** - changes will be overwritten on next generation
+- ❌ **Don't mix KubeOps CLI versions** - ensure CLI version matches NuGet package versions in project
+- ❌ **Don't forget `--clear-out`** when regenerating to config directory
+
+#### Generated Output
+KubeOps generates:
+- **CRDs** with `a0*` plural names (e.g., `a0clients`, `a0connections`) 
+- **RBAC** rules (ClusterRole, ClusterRoleBinding)
+- **Deployment** configuration
+- **Service Account** definitions
+- **Kustomization** file for deployment
+
+#### Troubleshooting
+If generation fails:
+1. Ensure project builds successfully: `dotnet build Alethic.Auth0.Operator.sln`
+2. Check KubeOps CLI version matches project dependencies
+3. Use project file targeting, not solution file
+4. Verify all entity models have proper `[KubernetesEntity]` attributes
+
 ## Supported Resources
 
-- [x] kubernetes.auth0.com/v1:Tenant `a0tenant`
-- [x] kubernetes.auth0.com/v1:Client `a0app`
-- [x] kubernetes.auth0.com/v1:ClientGrant `a0cgr`
-- [x] kubernetes.auth0.com/v1:ResourceServer `a0api`
-- [x] kubernetes.auth0.com/v1:Connection `a0con`
+- [x] kubernetes.auth0.com/v1:A0Tenant `a0tenant`
+- [x] kubernetes.auth0.com/v1:A0Client `a0app`  
+- [x] kubernetes.auth0.com/v1:A0ClientGrant `a0cgr`
+- [x] kubernetes.auth0.com/v1:A0ResourceServer `a0api`
+- [x] kubernetes.auth0.com/v1:A0Connection `a0con`
 
 ## Examples
 
 ### Tenant
 
-```
+```yaml
 apiVersion: kubernetes.auth0.com/v1
-kind: Tenant
+kind: A0Tenant
 metadata:
   name: example-tenant
   namespace: example
@@ -56,9 +104,9 @@ spec:
 
 https://auth0.com/docs/get-started/applications
 
-```
+```yaml
 apiVersion: kubernetes.auth0.com/v1
-kind: Client
+kind: A0Client
 metadata:
   name: example-client
   namespace: example
@@ -82,9 +130,9 @@ The Client resource supports an optional `secretRef` field which can point to ei
 
 https://auth0.com/docs/get-started/apis
 
-```
+```yaml
 apiVersion: kubernetes.auth0.com/v1
-kind: ResourceServer
+kind: A0ResourceServer
 metadata:
   name: example-api
   namespace: example
@@ -106,9 +154,9 @@ spec:
 
 Grants permission for a Client to access a ResourceServer.
 
-```
+```yaml
 apiVersion: kubernetes.auth0.com/v1
-kind: ClientGrant
+kind: A0ClientGrant
 metadata:
   name: example-app-api
   namespace: example
