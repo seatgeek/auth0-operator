@@ -256,3 +256,7 @@ ModelManifest.xml
 
 # Docker
 Dockerfile.local
+
+# Claude
+.claude/settings.local.json
+claude/tasks/
