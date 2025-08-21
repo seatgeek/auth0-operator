@@ -6,11 +6,11 @@ resources:
 - operator-role.yaml
 - operator-role-binding.yaml
 - deployment.yaml
-- clients_kubernetes_auth0_com.yaml
-- clientgrants_kubernetes_auth0_com.yaml
-- connections_kubernetes_auth0_com.yaml
-- resourceservers_kubernetes_auth0_com.yaml
-- tenants_kubernetes_auth0_com.yaml
+- a0clients_kubernetes_auth0_com.yaml
+- a0clientgrants_kubernetes_auth0_com.yaml
+- a0connections_kubernetes_auth0_com.yaml
+- a0resourceservers_kubernetes_auth0_com.yaml
+- a0tenants_kubernetes_auth0_com.yaml
 - namespace.yaml
 images:
 - name: operator
