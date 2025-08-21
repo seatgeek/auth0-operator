@@ -1,16 +1,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: connections.kubernetes.auth0.com
+  name: a0connections.kubernetes.auth0.com
 spec:
   group: kubernetes.auth0.com
   names:
     kind: A0Connection
     listKind: A0ConnectionList
-    plural: connections
+    plural: a0connections
     shortNames:
     - a0con
-    singular: connection
+    singular: a0connection
   scope: Namespaced
   versions:
   - name: v1

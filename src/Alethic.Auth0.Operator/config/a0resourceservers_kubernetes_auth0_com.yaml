@@ -1,16 +1,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: resourceservers.kubernetes.auth0.com
+  name: a0resourceservers.kubernetes.auth0.com
 spec:
   group: kubernetes.auth0.com
   names:
     kind: A0ResourceServer
     listKind: A0ResourceServerList
-    plural: resourceservers
+    plural: a0resourceservers
     shortNames:
     - a0api
-    singular: resourceserver
+    singular: a0resourceserver
   scope: Namespaced
   versions:
   - name: v1
