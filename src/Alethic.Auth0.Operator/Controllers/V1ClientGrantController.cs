@@ -50,7 +50,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override string EntityTypeName => "ClientGrant";
+        protected override string EntityTypeName => "A0ClientGrant";
 
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)

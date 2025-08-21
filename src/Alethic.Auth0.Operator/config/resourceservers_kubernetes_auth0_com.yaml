@@ -5,8 +5,8 @@ metadata:
 spec:
   group: kubernetes.auth0.com
   names:
-    kind: ResourceServer
-    listKind: ResourceServerList
+    kind: A0ResourceServer
+    listKind: A0ResourceServerList
     plural: resourceservers
     shortNames:
     - a0api

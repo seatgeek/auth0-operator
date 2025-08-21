@@ -5,8 +5,8 @@ metadata:
 spec:
   group: kubernetes.auth0.com
   names:
-    kind: ClientGrant
-    listKind: ClientGrantList
+    kind: A0ClientGrant
+    listKind: A0ClientGrantList
     plural: clientgrants
     shortNames:
     - a0cgr
