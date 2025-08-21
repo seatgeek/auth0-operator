@@ -1,6 +1,6 @@
 {{- if .Values.options.namespace }}
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: auth0-operator-role-binding
   labels: {{- include "auth0-operator.labels" . | nindent 4 }}
