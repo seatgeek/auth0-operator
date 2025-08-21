@@ -121,17 +121,21 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{EntityTypeName} updating client in Auth0 with ID: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
+            Logger.LogInformation("{EntityTypeName} updating client in Auth0 with id: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
 
-            if (conf.ClientMetaData != null)
-            {
-                await ApplyClientMetadataReplacement(api, id, conf, defaultNamespace, cancellationToken);
-            }
+            // transform initial request
+            var req = TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf);
 
-            await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf), cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully updated client in Auth0 with ID: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
+            // explicitely null out missing metadata if previously present
+            if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null)
+                foreach (string key in (Hashtable)last["client_metadata"]!)
+                    if (conf.ClientMetaData.ContainsKey(key) == false)
+                        req.ClientMetaData[key] = null;
+
+            await api.Clients.UpdateAsync(id, req, cancellationToken);
+            Logger.LogInformation("{EntityTypeName} successfully updated client in Auth0 with id: {ClientId} and name: {ClientName}", EntityTypeName, id, conf.Name);
         }
 
         /// <inheritdoc />
@@ -149,60 +153,6 @@ namespace Alethic.Auth0.Operator.Controllers
             lastConf.Remove("client_id");
             lastConf.Remove("client_secret");
             await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
-        }
-
-        /// <summary>
-        /// Applies client metadata replacement to ensure removed keys are deleted from Auth0.
-        /// </summary>
-        /// <param name="api"></param>
-        /// <param name="id"></param>
-        /// <param name="conf"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        async Task ApplyClientMetadataReplacement(IManagementApiClient api, string id, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
-        {
-            Logger.LogDebug("{EntityTypeName} handling client_metadata replacement for client {ClientId}", EntityTypeName, id);
-
-            // Get current client to see existing metadata
-            var currentClientData = await Get(api, id, defaultNamespace, cancellationToken);
-            if (currentClientData != null && currentClientData.ContainsKey("client_metadata"))
-            {
-                var currentMetadata = currentClientData["client_metadata"] as Hashtable;
-                if (currentMetadata != null && currentMetadata.Count > 0)
-                {
-                    // Create a merged metadata that explicitly nulls out removed keys
-                    var mergedMetadata = new Hashtable();
-
-                    // First, add null values for any existing keys that are not in the new spec
-                    foreach (var existingKey in currentMetadata.Keys)
-                    {
-                        if (existingKey != null && !conf.ClientMetaData!.ContainsKey(existingKey))
-                        {
-                            Logger.LogDebug("{EntityTypeName} removing metadata key '{MetadataKey}' from client {ClientId}", EntityTypeName, existingKey, id);
-                            mergedMetadata[existingKey] = null;
-                        }
-                    }
-
-                    // Then add all the desired metadata
-                    foreach (var key in conf.ClientMetaData!.Keys)
-                    {
-                        if (key != null)
-                        {
-                            mergedMetadata[key] = conf.ClientMetaData[key];
-                        }
-                    }
-
-                    // Create a temporary config with the merged metadata for the update
-                    var tempConf = new ClientConf
-                    {
-                        ClientMetaData = mergedMetadata
-                    };
-
-                    await api.Clients.UpdateAsync(id, TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(tempConf), cancellationToken);
-                    Logger.LogDebug("{EntityTypeName} applied metadata cleanup for client {ClientId}", EntityTypeName, id);
-                }
-            }
         }
 
         /// <summary>

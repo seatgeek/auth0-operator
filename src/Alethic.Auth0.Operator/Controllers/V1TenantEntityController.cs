@@ -88,11 +88,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="api"></param>
         /// <param name="id"></param>
+        /// <param name="last"></param>
         /// <param name="conf"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task Update(IManagementApiClient api, string id, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
@@ -119,7 +120,8 @@ namespace Alethic.Auth0.Operator.Controllers
             // we have not resolved a remote entity
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} has no Status.Id, checking if entity exists in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} has not yet been reconciled, checking if entity exists in Auth0.", EntityTypeName, entity.Namespace(), entity.Name());
+
                 // find existing remote entity
                 var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
                 if (entityId is null)
@@ -172,7 +174,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (entity.HasPolicy(V1EntityPolicyType.Update))
             {
                 if (entity.Spec.Conf is { } conf)
-                    await Update(api, entity.Status.Id, conf, entity.Namespace(), cancellationToken);
+                    await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), cancellationToken);
             }
             else
             {
