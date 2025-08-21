@@ -5,8 +5,8 @@ metadata:
 spec:
   group: kubernetes.auth0.com
   names:
-    kind: Tenant
-    listKind: TenantList
+    kind: A0Tenant
+    listKind: A0TenantList
     plural: tenants
     shortNames:
     - a0tenant

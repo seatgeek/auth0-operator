@@ -48,11 +48,11 @@ Helm chart is available at `charts/auth0-operator/` and published to `oci://ghcr
 
 ## Supported Auth0 Resources
 
-- **Tenant** (`kubernetes.auth0.com/v1:Tenant`) - Auth0 tenant configuration
-- **Client** (`kubernetes.auth0.com/v1:Client`) - Auth0 applications  
-- **ClientGrant** (`kubernetes.auth0.com/v1:ClientGrant`) - Permissions between clients and resource servers
-- **ResourceServer** (`kubernetes.auth0.com/v1:ResourceServer`) - APIs in Auth0
-- **Connection** (`kubernetes.auth0.com/v1:Connection`) - Identity providers and databases
+- **A0Tenant** (`kubernetes.auth0.com/v1:A0Tenant`) - Auth0 tenant configuration
+- **A0Client** (`kubernetes.auth0.com/v1:A0Client`) - Auth0 applications  
+- **A0ClientGrant** (`kubernetes.auth0.com/v1:A0ClientGrant`) - Permissions between clients and resource servers
+- **A0ResourceServer** (`kubernetes.auth0.com/v1:A0ResourceServer`) - APIs in Auth0
+- **A0Connection** (`kubernetes.auth0.com/v1:A0Connection`) - Identity providers and databases
 
 ## Configuration Requirements
 

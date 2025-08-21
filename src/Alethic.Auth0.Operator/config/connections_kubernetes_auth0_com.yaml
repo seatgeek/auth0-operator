@@ -5,8 +5,8 @@ metadata:
 spec:
   group: kubernetes.auth0.com
   names:
-    kind: Connection
-    listKind: ConnectionList
+    kind: A0Connection
+    listKind: A0ConnectionList
     plural: connections
     shortNames:
     - a0con

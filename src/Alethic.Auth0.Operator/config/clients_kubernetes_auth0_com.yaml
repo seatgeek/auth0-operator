@@ -5,8 +5,8 @@ metadata:
 spec:
   group: kubernetes.auth0.com
   names:
-    kind: Client
-    listKind: ClientList
+    kind: A0Client
+    listKind: A0ClientList
     plural: clients
     shortNames:
     - a0app
