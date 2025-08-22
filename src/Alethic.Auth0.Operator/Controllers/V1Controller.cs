@@ -496,6 +496,7 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
+                    Logger.LogError(e, "Unexpected error reconciling {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.Message);
                     await ReconcileWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
