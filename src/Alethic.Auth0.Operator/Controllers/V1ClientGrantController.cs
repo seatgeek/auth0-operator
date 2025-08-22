@@ -55,12 +55,20 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
-            var self = list.FirstOrDefault(i => i.Id == id);
-            if (self == null)
-                return null;
+            try
+            {
+                var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
+                var self = list.FirstOrDefault(i => i.Id == id);
+                if (self == null)
+                    return null;
 
-            return TransformToSystemTextJson<Hashtable>(self);
+                return TransformToSystemTextJson<Hashtable>(self);
+            }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id, e.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
