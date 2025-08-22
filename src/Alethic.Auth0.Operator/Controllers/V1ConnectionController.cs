@@ -83,6 +83,11 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 return null;
             }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id, e.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />

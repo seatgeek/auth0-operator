@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -65,6 +66,11 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 return null;
             }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id, e.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -129,7 +135,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // explicitely null out missing metadata if previously present
             if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null)
-                foreach (string key in (Hashtable)last["client_metadata"]!)
+                foreach (string key in ((Hashtable)last["client_metadata"]!).Keys)
                     if (conf.ClientMetaData.ContainsKey(key) == false)
                         req.ClientMetaData[key] = null;
 
@@ -165,12 +171,14 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         async Task ApplySecret(V1Client entity, string? clientId, string? clientSecret, string defaultNamespace, CancellationToken cancellationToken)
         {
-            if (entity.Spec.SecretRef is null)
-                return;
+            try
+            {
+                if (entity.Spec.SecretRef is null)
+                    return;
 
-            // find existing secret or create
-            var secret = await ResolveSecretRef(entity.Spec.SecretRef, entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
-            if (secret is null)
+                // find existing secret or create
+                var secret = await ResolveSecretRef(entity.Spec.SecretRef, entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
+                if (secret is null)
             {
                 Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                 secret = await Kube.CreateAsync(
@@ -219,6 +227,12 @@ namespace Alethic.Auth0.Operator.Controllers
             else
             {
                 Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} exists but is not owned by this client, skipping update", EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+            }
+            }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Error applying secret for {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), e.Message);
+                throw;
             }
         }
 

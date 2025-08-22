@@ -54,7 +54,15 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
         {
-            return TransformToSystemTextJson<Hashtable>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
+            try
+            {
+                return TransformToSystemTextJson<Hashtable>(await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken));
+            }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id, e.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
