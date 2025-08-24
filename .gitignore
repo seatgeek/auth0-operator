@@ -260,3 +260,4 @@ Dockerfile.local
 # Claude
 .claude/settings.local.json
 claude/tasks/
+claude/tasks/
