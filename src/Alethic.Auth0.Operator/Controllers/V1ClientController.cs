@@ -13,6 +13,7 @@ using Alethic.Auth0.Operator.Options;
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
+using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -146,7 +147,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
                     EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
 
-                var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
+                var list = await GetAllClientsWithPagination(api, new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken);
+                Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} searched {Count} clients for name-based lookup", 
+                    EntityTypeName, entity.Namespace(), entity.Name(), list.Count);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
                 
                 if (self != null)
@@ -219,6 +222,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Gets the list of Auth0 clients with caching for callback URL searches.
+        /// Retrieves all clients across all pages, not just the first page.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
         /// <param name="cancellationToken">Cancellation token</param>
@@ -229,21 +233,73 @@ namespace Alethic.Auth0.Operator.Controllers
             
             if (_clientCache.TryGetValue(cacheKey, out IList<Client>? cachedClients) && cachedClients != null)
             {
-                Logger.LogDebug("Using cached client list for callback URL search");
+                Logger.LogDebug("Using cached client list for callback URL search ({Count} clients)", cachedClients.Count);
                 return cachedClients;
             }
 
-            Logger.LogDebug("Fetching client list for callback URL search");
-            var clients = await api.Clients.GetAllAsync(new GetClientsRequest() 
+            Logger.LogDebug("Fetching all client pages for callback URL search");
+            var allClients = await GetAllClientsWithPagination(api, new GetClientsRequest() 
             { 
                 Fields = "client_id,name,callbacks",
                 IncludeFields = true 
-            }, cancellationToken: cancellationToken);
+            }, cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} clients across all pages for callback URL search", allClients.Count);
 
             // Cache for 30 seconds to avoid repeated API calls during reconciliation
-            _clientCache.Set(cacheKey, clients, TimeSpan.FromSeconds(30));
+            _clientCache.Set(cacheKey, allClients, TimeSpan.FromSeconds(30));
             
-            return clients;
+            return allClients;
+        }
+
+        /// <summary>
+        /// Retrieves all Auth0 clients across all pages using pagination.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="request">GetClientsRequest with field selection</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Complete list of all clients across all pages</returns>
+        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, GetClientsRequest request, CancellationToken cancellationToken)
+        {
+            var allClients = new List<Client>();
+            var page = 0;
+            const int perPage = 100; // Maximum page size allowed by Auth0 API
+            IPagedList<Client> clients;
+            
+            Logger.LogDebug("Starting paginated client retrieval with request fields: {Fields}", request.Fields ?? "all");
+            
+            do
+            {
+                try
+                {
+                    var pagination = new PaginationInfo(page, perPage, true);
+                    clients = await api.Clients.GetAllAsync(request, pagination, cancellationToken);
+                    
+                    allClients.AddRange(clients);
+                    
+                    Logger.LogDebug("Retrieved page {Page}: {Count} clients (total so far: {Total})", 
+                        page, clients.Count, allClients.Count);
+                    
+                    page++;
+                    
+                    // Add small delay between pages to respect rate limits, but only if there are more pages
+                    if (clients.Paging != null && clients.Paging.Start + clients.Paging.Length < clients.Paging.Total)
+                    {
+                        await Task.Delay(50, cancellationToken); // 50ms delay between pages
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger.LogError(e, "Error retrieving clients page {Page}: {Message}", page, e.Message);
+                    throw;
+                }
+                
+            } while (clients.Paging != null && clients.Paging.Start + clients.Paging.Length < clients.Paging.Total);
+            
+            Logger.LogInformation("Completed paginated client retrieval: {TotalClients} clients across {TotalPages} pages", 
+                allClients.Count, page);
+            
+            return allClients;
         }
 
         /// <summary>
