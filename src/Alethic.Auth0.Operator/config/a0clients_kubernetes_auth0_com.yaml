@@ -18,7 +18,6 @@ spec:
       openAPIV3Schema:
         properties:
           status:
-            nullable: false
             properties:
               id:
                 nullable: true
@@ -29,7 +28,6 @@ spec:
                 x-kubernetes-preserve-unknown-fields: true
             type: object
           spec:
-            nullable: false
             properties:
               policy:
                 items:
@@ -56,16 +54,22 @@ spec:
                 nullable: true
                 properties:
                   name:
-                    nullable: false
                     type: string
                   namespace:
-                    nullable: false
                     type: string
                 type: object
               find:
                 nullable: true
                 properties:
                   client_id:
+                    nullable: true
+                    type: string
+                  callback_urls:
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  callback_url_match_mode:
                     nullable: true
                     type: string
                 type: object
@@ -276,25 +280,21 @@ spec:
                     type: object
                   allowed_clients:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   allowed_logout_urls:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   allowed_origins:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   web_origins:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -303,13 +303,11 @@ spec:
                     type: string
                   callbacks:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   client_aliases:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -347,7 +345,6 @@ spec:
                     type: string
                   grant_types:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -369,7 +366,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -379,7 +375,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -389,7 +384,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -399,7 +393,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -409,7 +402,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -419,7 +411,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -470,7 +461,6 @@ spec:
                     properties:
                       backchannel_logout_urls:
                         items:
-                          nullable: false
                           type: string
                         nullable: true
                         type: array
@@ -503,7 +493,6 @@ spec:
                           type: string
                         scopes:
                           items:
-                            nullable: false
                             type: string
                           nullable: true
                           type: array
@@ -799,25 +788,21 @@ spec:
                     type: object
                   allowed_clients:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   allowed_logout_urls:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   allowed_origins:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   web_origins:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -826,13 +811,11 @@ spec:
                     type: string
                   callbacks:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
                   client_aliases:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -870,7 +853,6 @@ spec:
                     type: string
                   grant_types:
                     items:
-                      nullable: false
                       type: string
                     nullable: true
                     type: array
@@ -892,7 +874,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -902,7 +883,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -912,7 +892,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -922,7 +901,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -932,7 +910,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -942,7 +919,6 @@ spec:
                             properties:
                               actions:
                                 items:
-                                  nullable: false
                                   type: string
                                 nullable: true
                                 type: array
@@ -993,7 +969,6 @@ spec:
                     properties:
                       backchannel_logout_urls:
                         items:
-                          nullable: false
                           type: string
                         nullable: true
                         type: array
@@ -1026,7 +1001,6 @@ spec:
                           type: string
                         scopes:
                           items:
-                            nullable: false
                             type: string
                           nullable: true
                           type: array

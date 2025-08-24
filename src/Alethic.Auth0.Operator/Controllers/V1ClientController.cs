@@ -38,6 +38,8 @@ namespace Alethic.Auth0.Operator.Controllers
         IEntityController<V1Client>
     {
 
+        readonly IMemoryCache _clientCache;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -49,7 +51,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public V1ClientController(IKubernetesClient kube, EntityRequeue<V1Client> requeue, IMemoryCache cache, ILogger<V1ClientController> logger, IOptions<OperatorOptions> options) :
             base(kube, requeue, cache, logger, options)
         {
-
+            _clientCache = cache;
         }
 
         /// <inheritdoc />
@@ -78,32 +80,193 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (spec.Find is not null)
             {
+                // Log the beginning of find operation with all criteria
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} starting client lookup with find criteria: ClientId={ClientId}, CallbackUrls=[{CallbackUrls}], MatchMode={MatchMode}",
+                    EntityTypeName, entity.Namespace(), entity.Name(), 
+                    spec.Find.ClientId ?? "null",
+                    spec.Find.CallbackUrls != null ? string.Join(", ", spec.Find.CallbackUrls) : "null",
+                    spec.Find.CallbackUrlMatchMode ?? "strict");
+
                 if (spec.Find.ClientId is string clientId)
                 {
+                    Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} initiating client_id lookup: {ClientId}", 
+                        EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                    
                     try
                     {
                         var client = await api.Clients.GetAsync(clientId, "client_id,name", cancellationToken: cancellationToken);
-                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} found existing client: {Name}", EntityTypeName, entity.Namespace(), entity.Name(), client.Name);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} client_id lookup SUCCESSFUL - found existing client: {Name} (ClientId: {ClientId})", 
+                            EntityTypeName, entity.Namespace(), entity.Name(), client.Name, client.ClientId);
                         return client.ClientId;
                     }
                     catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
                     {
-                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} could not find client with id {ClientId}.", EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} client_id lookup FAILED - could not find client with id {ClientId}", 
+                            EntityTypeName, entity.Namespace(), entity.Name(), clientId);
                         return null;
                     }
                 }
 
+                if (spec.Find.CallbackUrls is { Length: > 0 } callbackUrls)
+                {
+                    Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} initiating callback URL lookup: URLs=[{CallbackUrls}], Mode={MatchMode}",
+                        EntityTypeName, entity.Namespace(), entity.Name(), 
+                        string.Join(", ", callbackUrls), 
+                        spec.Find.CallbackUrlMatchMode ?? "strict");
+                    
+                    var result = await FindByCallbackUrls(api, entity, callbackUrls, spec.Find.CallbackUrlMatchMode, cancellationToken);
+                    
+                    if (result != null)
+                    {
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} callback URL lookup SUCCESSFUL - found client with id: {ClientId}",
+                            EntityTypeName, entity.Namespace(), entity.Name(), result);
+                    }
+                    else
+                    {
+                        Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} callback URL lookup FAILED - no matching client found",
+                            EntityTypeName, entity.Namespace(), entity.Name());
+                    }
+                    
+                    return result;
+                }
+
+                Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} find operation completed - no valid lookup criteria provided",
+                    EntityTypeName, entity.Namespace(), entity.Name());
                 return null;
             }
             else
             {
+                Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} no find criteria specified - falling back to name-based lookup",
+                    EntityTypeName, entity.Namespace(), entity.Name());
+                
                 var conf = spec.Init ?? spec.Conf;
                 if (conf is null)
                     return null;
 
+                Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
+                    EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+
                 var list = await api.Clients.GetAllAsync(new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken: cancellationToken);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                
+                if (self != null)
+                {
+                    Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} name-based lookup SUCCESSFUL - found client: {ClientName} (ClientId: {ClientId})",
+                        EntityTypeName, entity.Namespace(), entity.Name(), conf.Name, self.ClientId);
+                }
+                else
+                {
+                    Logger.LogInformation("{EntityTypeName} {EntityNamespace}/{EntityName} name-based lookup FAILED - no client found with name: {ClientName}",
+                        EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                }
+                
                 return self?.ClientId;
+            }
+        }
+
+        /// <summary>
+        /// Finds an Auth0 client by callback URLs using loose or strict matching mode.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Kubernetes entity for logging</param>
+        /// <param name="targetCallbackUrls">Array of callback URLs to match</param>
+        /// <param name="matchMode">Matching mode: "loose" (partial match) or "strict" (all URLs must match)</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Client ID if found, null otherwise</returns>
+        private async Task<string?> FindByCallbackUrls(IManagementApiClient api, V1Client entity, string[] targetCallbackUrls, string? matchMode, CancellationToken cancellationToken)
+        {
+            // Validate callback URLs
+            foreach (var url in targetCallbackUrls)
+            {
+                if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+                {
+                    Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} invalid callback URL format: {CallbackUrl}", 
+                        EntityTypeName, entity.Namespace(), entity.Name(), url);
+                    return null;
+                }
+            }
+
+            var isStrictMode = !string.Equals(matchMode, "loose", StringComparison.OrdinalIgnoreCase);
+            var modeName = isStrictMode ? "strict" : "loose";
+            
+            Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} executing callback URL search with {Mode} mode matching against Auth0 clients", 
+                EntityTypeName, entity.Namespace(), entity.Name(), modeName);
+
+            var clients = await GetClientsForCallbackSearch(api, cancellationToken);
+
+            var matchingClients = clients.Where(client => HasMatchingCallbackUrls(client, targetCallbackUrls, isStrictMode)).ToList();
+
+            if (matchingClients.Count == 0)
+            {
+                Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} no clients matched callback URL criteria ({Mode} mode)", 
+                    EntityTypeName, entity.Namespace(), entity.Name(), modeName);
+                return null;
+            }
+
+            if (matchingClients.Count > 1)
+            {
+                Logger.LogWarning("{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Using first match: {ClientName} ({ClientId})", 
+                    EntityTypeName, entity.Namespace(), entity.Name(), matchingClients.Count, modeName, 
+                    matchingClients[0].Name, matchingClients[0].ClientId);
+            }
+
+            var selectedClient = matchingClients[0];
+            Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} selected client for callback URL match ({Mode} mode): {Name} ({ClientId})", 
+                EntityTypeName, entity.Namespace(), entity.Name(), modeName, selectedClient.Name, selectedClient.ClientId);
+            
+            return selectedClient.ClientId;
+        }
+
+        /// <summary>
+        /// Gets the list of Auth0 clients with caching for callback URL searches.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>List of clients with callback-related fields</returns>
+        private async Task<IList<Client>> GetClientsForCallbackSearch(IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            var cacheKey = $"auth0_clients_callback_search_{api.GetHashCode()}";
+            
+            if (_clientCache.TryGetValue(cacheKey, out IList<Client>? cachedClients) && cachedClients != null)
+            {
+                Logger.LogDebug("Using cached client list for callback URL search");
+                return cachedClients;
+            }
+
+            Logger.LogDebug("Fetching client list for callback URL search");
+            var clients = await api.Clients.GetAllAsync(new GetClientsRequest() 
+            { 
+                Fields = "client_id,name,callbacks",
+                IncludeFields = true 
+            }, cancellationToken: cancellationToken);
+
+            // Cache for 30 seconds to avoid repeated API calls during reconciliation
+            _clientCache.Set(cacheKey, clients, TimeSpan.FromSeconds(30));
+            
+            return clients;
+        }
+
+        /// <summary>
+        /// Checks if a client has matching callback URLs based on the specified matching mode.
+        /// </summary>
+        /// <param name="client">Auth0 client to check</param>
+        /// <param name="targetUrls">Target callback URLs to match</param>
+        /// <param name="isStrictMode">True for strict mode (all URLs must match), false for loose mode (any URL match)</param>
+        /// <returns>True if the client matches, false otherwise</returns>
+        private static bool HasMatchingCallbackUrls(Client client, string[] targetUrls, bool isStrictMode)
+        {
+            if (client.Callbacks == null || client.Callbacks.Length == 0)
+                return false;
+
+            if (isStrictMode)
+            {
+                // Strict mode: ALL target URLs must be found in client's callbacks
+                return targetUrls.All(targetUrl => client.Callbacks.Contains(targetUrl));
+            }
+            else
+            {
+                // Loose mode: AT LEAST ONE target URL must be found in client's callbacks
+                return targetUrls.Any(targetUrl => client.Callbacks.Contains(targetUrl));
             }
         }
 

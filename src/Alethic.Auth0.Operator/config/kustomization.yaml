@@ -1,7 +1,9 @@
-namespace: seatgeek.auth0.operator-system
-namePrefix: seatgeek.auth0.operator-
-commonLabels:
-  operator: seatgeek.auth0.operator
+namespace: auth0-operator-system
+namePrefix: auth0-operator-
+labels:
+- includeSelectors: true
+  pairs:
+    operator: auth0-operator
 resources:
 - operator-role.yaml
 - operator-role-binding.yaml
