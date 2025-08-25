@@ -1,15 +1,18 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models.ResourceServer;
+using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
+using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -34,6 +37,8 @@ namespace Alethic.Auth0.Operator.Controllers
         IEntityController<V1ResourceServer>
     {
 
+        readonly IMemoryCache _resourceServerCache;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -45,7 +50,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public V1ResourceServerController(IKubernetesClient kube, EntityRequeue<V1ResourceServer> requeue, IMemoryCache cache, ILogger<V1ResourceServerController> logger, IOptions<OperatorOptions> options) :
             base(kube, requeue, cache, logger, options)
         {
-
+            _resourceServerCache = cache;
         }
 
         /// <inheritdoc />
@@ -79,7 +84,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} searching Auth0 for resource server with identifier {Identifier}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Identifier);
-            var list = await api.ResourceServers.GetAllAsync(new ResourceServerGetRequest() { }, cancellationToken: cancellationToken);
+            var list = await GetAllResourceServersWithPagination(api, cancellationToken);
             var self = list.FirstOrDefault(i => i.Identifier == conf.Identifier);
             
             if (self != null)
@@ -134,6 +139,24 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} deleting resource server from Auth0 with ID {Id}", EntityTypeName, id);
             await api.ResourceServers.DeleteAsync(id, cancellationToken);
             Logger.LogInformation("{EntityTypeName} successfully deleted resource server from Auth0 with ID {Id}", EntityTypeName, id);
+        }
+
+        /// <summary>
+        /// Retrieves all Auth0 resource servers across all pages using pagination with caching.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Complete list of all resource servers</returns>
+        private async Task<List<ResourceServer>> GetAllResourceServersWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            return await Auth0PaginationHelper.GetAllWithPaginationAsync(
+                _resourceServerCache,
+                Logger,
+                api,
+                new ResourceServerGetRequest(),
+                api.ResourceServers.GetAllAsync,
+                "resource_servers",
+                cancellationToken);
         }
 
     }
