@@ -309,9 +309,11 @@ namespace Alethic.Auth0.Operator.Controllers
                 // contact API using token and domain
                 var api = new ManagementApiClient(authToken.AccessToken, new Uri($"https://{domain}/api/v2/"));
 
-                // cache API client for 1 minute
-                entry.SetAbsoluteExpiration(TimeSpan.FromMinutes(1));
-                Logger.LogInformation("Successfully created and cached Auth0 API client for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
+                // cache API client using actual token expiration (typically 24 hours)
+                // Use 90% of the token lifetime to ensure we refresh before expiration
+                var cacheExpiration = TimeSpan.FromSeconds(authToken.ExpiresIn * 0.9);
+                entry.SetAbsoluteExpiration(cacheExpiration);
+                Logger.LogInformation("Successfully created and cached Auth0 API client for tenant {TenantNamespace}/{TenantName} with cache expiration in {CacheExpirationMinutes} minutes", tenant.Namespace(), tenant.Name(), cacheExpiration.TotalMinutes);
                 return (IManagementApiClient)api;
             });
 
