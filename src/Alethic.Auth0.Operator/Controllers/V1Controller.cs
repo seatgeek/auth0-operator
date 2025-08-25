@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
@@ -41,6 +42,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
+        static readonly ConcurrentDictionary<(string, string), SemaphoreSlim> _tenantSemaphores = new();
 
         readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
@@ -268,9 +270,23 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             Logger.LogInformation("Retrieving Auth0 API client for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
             
-            var api = await _cache.GetOrCreateAsync((tenant.Namespace(), tenant.Name()), async entry =>
+            var cacheKey = (tenant.Namespace(), tenant.Name());
+            
+            // Get or create a semaphore for this specific tenant to prevent race conditions
+            var semaphore = _tenantSemaphores.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+            
+            await semaphore.WaitAsync(cancellationToken);
+            try
             {
+                // Check cache again after acquiring lock
+                if (_cache.TryGetValue(cacheKey, out var existingApi) && existingApi is IManagementApiClient cachedClient)
+                {
+                    Logger.LogDebug("Successfully retrieved cached Auth0 API client for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
+                    return cachedClient;
+                }
+
                 Logger.LogInformation("Creating new Auth0 API client for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
+                
                 var domain = tenant.Spec.Auth?.Domain;
                 if (string.IsNullOrWhiteSpace(domain))
                     throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no authentication domain.");
@@ -306,25 +322,16 @@ namespace Alethic.Auth0.Operator.Controllers
                     throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} failed to retrieve management API token.");
                 }
 
-                // contact API using token and domain
                 var api = new ManagementApiClient(authToken.AccessToken, new Uri($"https://{domain}/api/v2/"));
-
-                // cache API client using actual token expiration (typically 24 hours)
-                // Use 90% of the token lifetime to ensure we refresh before expiration
                 var cacheExpiration = TimeSpan.FromSeconds(authToken.ExpiresIn * 0.9);
-                entry.SetAbsoluteExpiration(cacheExpiration);
-                Logger.LogInformation("Successfully created and cached Auth0 API client for tenant {TenantNamespace}/{TenantName} with cache expiration in {CacheExpirationMinutes} minutes", tenant.Namespace(), tenant.Name(), cacheExpiration.TotalMinutes);
+                _cache.Set(cacheKey, api, cacheExpiration);
+                
                 return (IManagementApiClient)api;
-            });
-
-            if (api is null)
-            {
-                Logger.LogError("API client is null after cache operation for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
-                throw new InvalidOperationException("Cannot retrieve tenant API client.");
             }
-
-            Logger.LogInformation("Successfully retrieved Auth0 API client for tenant {TenantNamespace}/{TenantName}", tenant.Namespace(), tenant.Name());
-            return api;
+            finally
+            {
+                semaphore.Release();
+            }
         }
 
         /// <summary>
