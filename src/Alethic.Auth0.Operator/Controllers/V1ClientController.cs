@@ -157,7 +157,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     "{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
                     EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
 
-                var list = await GetAllClientsWithPagination(api, new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken);
+                var list = await GetAllClientsWithPagination(api, cancellationToken);
                 Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} searched {Count} clients for name-based lookup",
                     EntityTypeName, entity.Namespace(), entity.Name(), list.Count);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
@@ -210,7 +210,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 "{EntityTypeName} {EntityNamespace}/{EntityName} executing callback URL search with {Mode} mode matching against Auth0 clients",
                 EntityTypeName, entity.Namespace(), entity.Name(), modeName);
 
-            var clients = await GetClientsForCallbackSearch(api, cancellationToken);
+            var clients = await GetAllClientsWithPagination(api, cancellationToken);
 
             var matchingClients = clients
                 .Where(client => HasMatchingCallbackUrls(client, targetCallbackUrls, isStrictMode)).ToList();
@@ -240,54 +240,39 @@ namespace Alethic.Auth0.Operator.Controllers
             return selectedClient.ClientId;
         }
 
+
         /// <summary>
-        /// Gets the list of Auth0 clients with caching for callback URL searches.
-        /// Retrieves all clients across all pages, not just the first page.
+        /// Retrieves all Auth0 clients across all pages using pagination with caching.
+        /// Always fetches client_id, name, and callbacks fields and caches for 5 minutes.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>List of clients with callback-related fields</returns>
-        private async Task<IList<Client>> GetClientsForCallbackSearch(IManagementApiClient api,
-            CancellationToken cancellationToken)
+        /// <returns>Complete list of all clients with client_id, name, and callbacks fields</returns>
+        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
         {
-            var cacheKey = $"auth0_clients_callback_search_{api.GetHashCode()}";
-
-            if (_clientCache.TryGetValue(cacheKey, out IList<Client>? cachedClients) && cachedClients != null)
+            // Create cache key based on API client to ensure tenant isolation
+            var cacheKey = $"auth0_clients_all_{api.GetHashCode()}";
+            
+            // Check cache first
+            if (_clientCache.TryGetValue(cacheKey, out List<Client>? cachedClients) && cachedClients != null)
             {
-                Logger.LogDebug("Using cached client list for callback URL search");
+                Logger.LogDebug("Using cached client list with {Count} clients", cachedClients.Count);
                 return cachedClients;
             }
 
-            Logger.LogDebug("Fetching all client pages for callback URL search");
-            var allClients = await GetAllClientsWithPagination(api, new GetClientsRequest()
-            { 
-                Fields = "client_id,name,callbacks",
-                IncludeFields = true 
-            }, cancellationToken);
-
-            Logger.LogDebug("Retrieved {Count} clients across all pages for callback URL search", allClients.Count);
-
-            // Cache for 30 seconds to avoid repeated API calls during reconciliation
-            _clientCache.Set(cacheKey, allClients, TimeSpan.FromSeconds(30));
-
-            return allClients;
-        }
-
-        /// <summary>
-        /// Retrieves all Auth0 clients across all pages using pagination.
-        /// </summary>
-        /// <param name="api">Auth0 Management API client</param>
-        /// <param name="request">GetClientsRequest with field selection</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Complete list of all clients across all pages</returns>
-        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, GetClientsRequest request, CancellationToken cancellationToken)
-        {
+            // Fetch from Auth0 API with all needed fields
             var allClients = new List<Client>();
             var page = 0;
             const int perPage = 100; // Maximum page size allowed by Auth0 API
             IPagedList<Client> clients;
 
-            Logger.LogDebug("Starting paginated client retrieval with request fields: {Fields}", request.Fields ?? "all");
+            Logger.LogDebug("Fetching all clients from Auth0 API with fields: client_id, name, callbacks");
+
+            var request = new GetClientsRequest()
+            { 
+                Fields = "client_id,name,callbacks",
+                IncludeFields = true 
+            };
 
             do
             {
@@ -319,6 +304,10 @@ namespace Alethic.Auth0.Operator.Controllers
 
             Logger.LogInformation("Completed paginated client retrieval: {TotalClients} clients across {TotalPages} pages",
                 allClients.Count, page);
+
+            var cacheDurationMinutes = 5;
+            Logger.LogDebug("Caching {Count} clients for {CacheDurationMinutes} minutes", allClients.Count, cacheDurationMinutes);
+            _clientCache.Set(cacheKey, allClients, TimeSpan.FromMinutes(cacheDurationMinutes));
 
             return allClients;
         }
