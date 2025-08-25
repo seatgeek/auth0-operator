@@ -227,9 +227,9 @@ namespace Alethic.Auth0.Operator.Controllers
             if (matchingClients.Count > 1)
             {
                 Logger.LogWarning(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Using first match: {ClientName} ({ClientId})",
+                    "{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Target URLs: {TargetUrls}. Using first match: {ClientName} ({ClientId})",
                     EntityTypeName, entity.Namespace(), entity.Name(), matchingClients.Count, modeName,
-                    matchingClients[0].Name, matchingClients[0].ClientId);
+                    string.Join(", ", targetCallbackUrls), matchingClients[0].Name, matchingClients[0].ClientId);
             }
 
             var selectedClient = matchingClients[0];
