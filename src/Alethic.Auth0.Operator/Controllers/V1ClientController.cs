@@ -6,6 +6,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Core.Models.Client;
+using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
 using Auth0.Core.Exceptions;
@@ -157,7 +158,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     "{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
                     EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
 
-                var list = await GetAllClientsWithPagination(api, new GetClientsRequest() { Fields = "client_id,name" }, cancellationToken);
+                var list = await GetAllClientsWithPagination(api, cancellationToken);
                 Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} searched {Count} clients for name-based lookup",
                     EntityTypeName, entity.Namespace(), entity.Name(), list.Count);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
@@ -210,7 +211,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 "{EntityTypeName} {EntityNamespace}/{EntityName} executing callback URL search with {Mode} mode matching against Auth0 clients",
                 EntityTypeName, entity.Namespace(), entity.Name(), modeName);
 
-            var clients = await GetClientsForCallbackSearch(api, cancellationToken);
+            var clients = await GetAllClientsWithPagination(api, cancellationToken);
 
             var matchingClients = clients
                 .Where(client => HasMatchingCallbackUrls(client, targetCallbackUrls, isStrictMode)).ToList();
@@ -226,9 +227,9 @@ namespace Alethic.Auth0.Operator.Controllers
             if (matchingClients.Count > 1)
             {
                 Logger.LogWarning(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Using first match: {ClientName} ({ClientId})",
+                    "{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Target URLs: {TargetUrls}. Using first match: {ClientName} ({ClientId})",
                     EntityTypeName, entity.Namespace(), entity.Name(), matchingClients.Count, modeName,
-                    matchingClients[0].Name, matchingClients[0].ClientId);
+                    string.Join(", ", targetCallbackUrls), matchingClients[0].Name, matchingClients[0].ClientId);
             }
 
             var selectedClient = matchingClients[0];
@@ -240,87 +241,30 @@ namespace Alethic.Auth0.Operator.Controllers
             return selectedClient.ClientId;
         }
 
+
         /// <summary>
-        /// Gets the list of Auth0 clients with caching for callback URL searches.
-        /// Retrieves all clients across all pages, not just the first page.
+        /// Retrieves all Auth0 clients across all pages using pagination with caching.
+        /// Always fetches client_id, name, and callbacks fields and caches for 5 minutes.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>List of clients with callback-related fields</returns>
-        private async Task<IList<Client>> GetClientsForCallbackSearch(IManagementApiClient api,
-            CancellationToken cancellationToken)
+        /// <returns>Complete list of all clients with client_id, name, and callbacks fields</returns>
+        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
         {
-            var cacheKey = $"auth0_clients_callback_search_{api.GetHashCode()}";
-
-            if (_clientCache.TryGetValue(cacheKey, out IList<Client>? cachedClients) && cachedClients != null)
-            {
-                Logger.LogDebug("Using cached client list for callback URL search");
-                return cachedClients;
-            }
-
-            Logger.LogDebug("Fetching all client pages for callback URL search");
-            var allClients = await GetAllClientsWithPagination(api, new GetClientsRequest()
+            var request = new GetClientsRequest()
             { 
                 Fields = "client_id,name,callbacks",
                 IncludeFields = true 
-            }, cancellationToken);
+            };
 
-            Logger.LogDebug("Retrieved {Count} clients across all pages for callback URL search", allClients.Count);
-
-            // Cache for 30 seconds to avoid repeated API calls during reconciliation
-            _clientCache.Set(cacheKey, allClients, TimeSpan.FromSeconds(30));
-
-            return allClients;
-        }
-
-        /// <summary>
-        /// Retrieves all Auth0 clients across all pages using pagination.
-        /// </summary>
-        /// <param name="api">Auth0 Management API client</param>
-        /// <param name="request">GetClientsRequest with field selection</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Complete list of all clients across all pages</returns>
-        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, GetClientsRequest request, CancellationToken cancellationToken)
-        {
-            var allClients = new List<Client>();
-            var page = 0;
-            const int perPage = 100; // Maximum page size allowed by Auth0 API
-            IPagedList<Client> clients;
-
-            Logger.LogDebug("Starting paginated client retrieval with request fields: {Fields}", request.Fields ?? "all");
-
-            do
-            {
-                try
-                {
-                    var pagination = new PaginationInfo(page, perPage, true);
-                    clients = await api.Clients.GetAllAsync(request, pagination, cancellationToken);
-
-                    allClients.AddRange(clients);
-
-                    Logger.LogDebug("Retrieved page {Page}: {Count} clients (total so far: {Total})",
-                        page, clients.Count, allClients.Count);
-
-                    page++;
-
-                    // Add small delay between pages to respect rate limits, but only if there are more pages
-                    if (clients.Paging != null && clients.Paging.Start + clients.Paging.Length < clients.Paging.Total)
-                    {
-                        await Task.Delay(50, cancellationToken); // 50ms delay between pages
-                    }
-                }
-                catch (Exception e)
-                {
-                    Logger.LogError(e, "Error retrieving clients page {Page}: {Message}", page, e.Message);
-                    throw;
-                }
-
-            } while (clients.Paging != null && clients.Paging.Start + clients.Paging.Length < clients.Paging.Total);
-
-            Logger.LogInformation("Completed paginated client retrieval: {TotalClients} clients across {TotalPages} pages",
-                allClients.Count, page);
-
-            return allClients;
+            return await Auth0PaginationHelper.GetAllWithPaginationAsync(
+                _clientCache,
+                Logger,
+                api,
+                request,
+                api.Clients.GetAllAsync,
+                "clients",
+                cancellationToken);
         }
 
         /// <summary>
@@ -416,6 +360,55 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Checks if secret data needs to be updated by comparing existing values with desired values.
+        /// </summary>
+        /// <param name="secret">The existing secret</param>
+        /// <param name="desiredClientId">Desired clientId value</param>
+        /// <param name="desiredClientSecret">Desired clientSecret value</param>
+        /// <returns>True if update is needed, false if data is already correct</returns>
+        bool IsSecretUpdateNeeded(V1Secret secret, string? desiredClientId, string? desiredClientSecret)
+        {
+            // Check StringData first (takes precedence over Data)
+            var currentClientId = secret.StringData?.TryGetValue("clientId", out var existingClientId) == true ? existingClientId : null;
+            var currentClientSecret = secret.StringData?.TryGetValue("clientSecret", out var existingClientSecret) == true ? existingClientSecret : null;
+
+            // If StringData is null or empty, check base64-encoded Data
+            if (secret.StringData?.ContainsKey("clientId") != true && secret.Data?.ContainsKey("clientId") == true)
+            {
+                try
+                {
+                    var clientIdBytes = secret.Data["clientId"];
+                    currentClientId = System.Text.Encoding.UTF8.GetString(clientIdBytes);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("Failed to decode existing clientId from secret data: {Message}", ex.Message);
+                    return true; // If we can't decode, assume update is needed
+                }
+            }
+
+            if (secret.StringData?.ContainsKey("clientSecret") != true && secret.Data?.ContainsKey("clientSecret") == true)
+            {
+                try
+                {
+                    var clientSecretBytes = secret.Data["clientSecret"];
+                    currentClientSecret = System.Text.Encoding.UTF8.GetString(clientSecretBytes);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("Failed to decode existing clientSecret from secret data: {Message}", ex.Message);
+                    return true; // If we can't decode, assume update is needed
+                }
+            }
+
+            // Compare values (treat null and empty string as equivalent)
+            var clientIdChanged = !string.Equals(currentClientId ?? "", desiredClientId ?? "", StringComparison.Ordinal);
+            var clientSecretChanged = !string.Equals(currentClientSecret ?? "", desiredClientSecret ?? "", StringComparison.Ordinal);
+
+            return clientIdChanged || clientSecretChanged;
+        }
+
+        /// <summary>
         /// Applies the client secret.
         /// </summary>
         /// <param name="entity"></param>
@@ -452,50 +445,64 @@ namespace Alethic.Auth0.Operator.Controllers
                 // only apply actual values if we are the owner
                 if (secret.IsOwnedBy(entity))
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating.",
-                        EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    secret.StringData ??= new Dictionary<string, string>();
+                    var updateNeeded = IsSecretUpdateNeeded(secret, clientId, clientSecret);
 
-                    // Always set clientId if available
-                    if (clientId is not null)
+                    if (updateNeeded)
                     {
-                        secret.StringData["clientId"] = clientId;
-                        Logger.LogDebug(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId",
+                        Logger.LogInformation(
+                            "{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating due to data changes.",
                             EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    }
-                    else if (!secret.StringData.ContainsKey("clientId"))
-                    {
-                        // Initialize empty clientId field if not present and no value available
-                        secret.StringData["clientId"] = "";
-                        Logger.LogDebug(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    }
+                        
+                        secret.StringData ??= new Dictionary<string, string>();
 
-                    // Handle clientSecret - for existing clients, Auth0 API doesn't return the secret
-                    if (clientSecret is not null)
-                    {
-                        secret.StringData["clientSecret"] = clientSecret;
-                        Logger.LogDebug(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    }
-                    else if (!secret.StringData.ContainsKey("clientSecret"))
-                    {
-                        // Initialize empty clientSecret field if not present and no value available
-                        // Note: For existing clients, Auth0 API doesn't return the secret value for security reasons
-                        secret.StringData["clientSecret"] = "";
-                        Logger.LogDebug(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    }
+                        // Always set clientId if available
+                        if (clientId is not null)
+                        {
+                            secret.StringData["clientId"] = clientId;
+                            Logger.LogDebug(
+                                "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId",
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        }
+                        else if (!secret.StringData.ContainsKey("clientId") && 
+                                (secret.Data?.ContainsKey("clientId") != true))
+                        {
+                            // Initialize empty clientId field if not present and no value available
+                            secret.StringData["clientId"] = "";
+                            Logger.LogDebug(
+                                "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}",
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        }
 
-                    secret = await Kube.UpdateAsync(secret, cancellationToken);
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
-                        EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        // Handle clientSecret - for existing clients, Auth0 API doesn't return the secret
+                        if (clientSecret is not null)
+                        {
+                            secret.StringData["clientSecret"] = clientSecret;
+                            Logger.LogDebug(
+                                "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret",
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        }
+                        else if (!secret.StringData.ContainsKey("clientSecret") && 
+                                (secret.Data?.ContainsKey("clientSecret") != true))
+                        {
+                            // Initialize empty clientSecret field if not present and no value available
+                            // Note: For existing clients, Auth0 API doesn't return the secret value for security reasons
+                            secret.StringData["clientSecret"] = "";
+                            Logger.LogDebug(
+                                "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)",
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        }
+
+                        secret = await Kube.UpdateAsync(secret, cancellationToken);
+                        Logger.LogInformation(
+                            "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
+                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    }
+                    else
+                    {
+                        Logger.LogDebug(
+                            "{EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} already has correct data, skipping update",
+                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    }
                 }
                 else
                 {

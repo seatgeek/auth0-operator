@@ -12,7 +12,7 @@ namespace Alethic.Auth0.Operator.Options
         /// <summary>
         /// The interval between periodic reconciliation cycles.
         /// </summary>
-        public TimeSpan Interval { get; set; } = TimeSpan.FromSeconds(30);
+        public TimeSpan Interval { get; set; } = TimeSpan.FromSeconds(60);
 
     }
 

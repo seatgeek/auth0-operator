@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Connection;
+using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
 
@@ -39,6 +40,8 @@ namespace Alethic.Auth0.Operator.Controllers
         IEntityController<V1Connection>
     {
 
+        readonly IMemoryCache _connectionCache;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -50,7 +53,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public V1ConnectionController(IKubernetesClient kube, EntityRequeue<V1Connection> requeue, IMemoryCache cache, ILogger<V1ConnectionController> logger, IOptions<OperatorOptions> options) :
             base(kube, requeue, cache, logger, options)
         {
-
+            _connectionCache = cache;
         }
 
         /// <inheritdoc />
@@ -132,7 +135,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
 
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} searching Auth0 for connection with name {ConnectionName}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
-                var list = await api.Connections.GetAllAsync(new GetConnectionsRequest(), (PaginationInfo?)null, cancellationToken);
+                var list = await GetAllConnectionsWithPagination(api, cancellationToken);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
                 if (self is not null)
                 {
@@ -234,6 +237,24 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} deleting connection from Auth0 with ID: {ConnectionId} (reason: Kubernetes entity deleted)", EntityTypeName, id);
             await api.Connections.DeleteAsync(id, cancellationToken);
             Logger.LogInformation("{EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", EntityTypeName, id);
+        }
+
+        /// <summary>
+        /// Retrieves all Auth0 connections across all pages using pagination with caching.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Complete list of all connections</returns>
+        private async Task<List<Connection>> GetAllConnectionsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            return await Auth0PaginationHelper.GetAllWithPaginationAsync(
+                _connectionCache,
+                Logger,
+                api,
+                new GetConnectionsRequest(),
+                api.Connections.GetAllAsync,
+                "connections",
+                cancellationToken);
         }
 
     }

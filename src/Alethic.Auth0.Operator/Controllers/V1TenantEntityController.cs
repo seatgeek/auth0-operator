@@ -216,17 +216,35 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
             }
 
-            // attempt to retrieve existing entity
-            Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-            var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
-            if (lastConf is null)
+            // Optimization: Check if Kubernetes spec has changed before making Auth0 API call
+            var isFirstReconciliation = entity.Status.LastConf is null;
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation;
+            Hashtable? lastConf = null;
+            
+            if (needsAuth0Fetch)
             {
-                // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", EntityTypeName, entity.Namespace(), entity.Name());
-                entity.Status.LastConf = null;
-                entity.Status.Id = null;
-                entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
-                throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
+                // Only retrieve Auth0 entity when changes are detected or it's the first time
+                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id} (reason: {Reason})", 
+                    EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id,
+                    isFirstReconciliation ? "first reconciliation" : "local configuration changes detected");
+                    
+                lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+                if (lastConf is null)
+                {
+                    // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
+                    Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", EntityTypeName, entity.Namespace(), entity.Name());
+                    entity.Status.LastConf = null;
+                    entity.Status.Id = null;
+                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
+                }
+            }
+            else
+            {
+                Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} no local configuration changes detected - skipping Auth0 API call and update", EntityTypeName, entity.Namespace(), entity.Name());
+                // Use the previously stored configuration since no changes were detected
+                lastConf = entity.Status.LastConf;
             }
 
             // apply updates if allowed
@@ -234,16 +252,37 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 if (entity.Spec.Conf is { } conf)
                 {
-                    // Check if configuration has changed by comparing with last known state
-                    var hasChanges = HasConfigurationChanged(entity.Status.LastConf, conf);
-                    if (hasChanges)
+                    // For first reconciliation, check if update is actually needed by comparing with Auth0 state
+                    // For subsequent reconciliations, we already know if changes exist from local comparison
+                    bool needsUpdate;
+                    if (isFirstReconciliation)
                     {
-                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} configuration changes detected - applying updates to Auth0", EntityTypeName, entity.Namespace(), entity.Name());
-                        await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), cancellationToken);
+                        needsUpdate = HasConfigurationChanged(lastConf, conf);
+                        if (needsUpdate)
+                        {
+                            Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} first reconciliation - configuration drift detected between Auth0 and desired state - applying updates", EntityTypeName, entity.Namespace(), entity.Name());
+                        }
+                        else
+                        {
+                            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} first reconciliation - Auth0 state matches desired state - skipping update", EntityTypeName, entity.Namespace(), entity.Name());
+                        }
                     }
                     else
                     {
-                        Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} no configuration changes detected - skipping update", EntityTypeName, entity.Namespace(), entity.Name());
+                        needsUpdate = hasLocalChanges;
+                        if (needsUpdate)
+                        {
+                            Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} local configuration changes detected - applying updates to Auth0", EntityTypeName, entity.Namespace(), entity.Name());
+                        }
+                        else
+                        {
+                            Logger.LogDebug("{EntityTypeName} {Namespace}/{Name} no local configuration changes detected - skipping update", EntityTypeName, entity.Namespace(), entity.Name());
+                        }
+                    }
+
+                    if (needsUpdate)
+                    {
+                        await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), cancellationToken);
                     }
                 }
             }
@@ -253,7 +292,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             // apply new configuration
-            await ApplyStatus(api, entity, lastConf, entity.Namespace(), cancellationToken);
+            await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
             entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
 
             // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)

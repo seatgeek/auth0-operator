@@ -1,15 +1,18 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models.ClientGrant;
+using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
+using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -35,6 +38,8 @@ namespace Alethic.Auth0.Operator.Controllers
         IEntityController<V1ClientGrant>
     {
 
+        readonly IMemoryCache _clientGrantCache;
+
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -46,7 +51,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public V1ClientGrantController(IKubernetesClient kube, EntityRequeue<V1ClientGrant> requeue, IMemoryCache cache, ILogger<V1ClientGrantController> logger, IOptions<OperatorOptions> options) :
             base(kube, requeue, cache, logger, options)
         {
-
+            _clientGrantCache = cache;
         }
 
         /// <inheritdoc />
@@ -58,7 +63,7 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 Logger.LogInformation("{EntityTypeName} fetching client grant from Auth0 with ID {Id}", EntityTypeName, id);
-                var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest(), cancellationToken: cancellationToken);
+                var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
                 var self = list.FirstOrDefault(i => i.Id == id);
                 if (self == null)
                 {
@@ -115,7 +120,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} searching Auth0 for client grant with ClientId {ClientId} and Audience {Audience}", EntityTypeName, entity.Namespace(), entity.Name(), clientId, audience);
-            var list = await api.ClientGrants.GetAllAsync(new GetClientGrantsRequest() { ClientId = clientId }, null!, cancellationToken);
+            var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
             var result = list.Where(i => i.ClientId == clientId && i.Audience == audience).Select(i => i.Id).FirstOrDefault();
             
             if (result != null)
@@ -202,6 +207,24 @@ namespace Alethic.Auth0.Operator.Controllers
                 null => null,
                 _ => throw new InvalidOperationException(),
             };
+        }
+
+        /// <summary>
+        /// Retrieves all Auth0 client grants across all pages using pagination with caching.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Complete list of all client grants</returns>
+        private async Task<List<ClientGrant>> GetAllClientGrantsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            return await Auth0PaginationHelper.GetAllWithPaginationAsync(
+                _clientGrantCache,
+                Logger,
+                api,
+                new GetClientGrantsRequest(),
+                api.ClientGrants.GetAllAsync,
+                "client_grants",
+                cancellationToken);
         }
 
     }
