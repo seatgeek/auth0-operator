@@ -329,8 +329,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var req = TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf);
 
             // explicitely null out missing metadata if previously present
-            if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null)
-                foreach (string key in ((Hashtable)last["client_metadata"]!).Keys)
+            if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null && last["client_metadata"] is Hashtable lastMetadata)
+                foreach (string key in lastMetadata.Keys)
                     if (conf.ClientMetaData.ContainsKey(key) == false)
                         req.ClientMetaData[key] = null;
 
