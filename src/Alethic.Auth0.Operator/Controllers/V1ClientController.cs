@@ -192,9 +192,24 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<string?> FindByCallbackUrls(IManagementApiClient api, V1Client entity,
             string[] targetCallbackUrls, string? matchMode, CancellationToken cancellationToken)
         {
-            // Validate callback URLs
+            if (targetCallbackUrls == null || targetCallbackUrls.Length == 0)
+            {
+                Logger.LogWarning(
+                    "{EntityTypeName} {EntityNamespace}/{EntityName} targetCallbackUrls is null or empty",
+                    EntityTypeName, entity.Namespace(), entity.Name());
+                return null;
+            }
+
             foreach (var url in targetCallbackUrls)
             {
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    Logger.LogWarning(
+                        "{EntityTypeName} {EntityNamespace}/{EntityName} callback URL is null or empty",
+                        EntityTypeName, entity.Namespace(), entity.Name());
+                    return null;
+                }
+
                 if (!Uri.TryCreate(url, UriKind.Absolute, out _))
                 {
                     Logger.LogWarning(
@@ -307,8 +322,20 @@ namespace Alethic.Auth0.Operator.Controllers
             var startTime = DateTimeOffset.UtcNow;
             Logger.LogInformation("{EntityTypeName} creating client in Auth0 with name: {ClientName}", EntityTypeName,
                 conf.Name);
-            var self = await api.Clients.CreateAsync(TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf),
-                cancellationToken);
+            
+            ClientCreateRequest createRequest;
+            try
+            {
+                createRequest = TransformToNewtonsoftJson<ClientConf, ClientCreateRequest>(conf);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to transform configuration for client creation: {Message}", 
+                    EntityTypeName, ex.Message);
+                throw;
+            }
+
+            var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
             var duration = DateTimeOffset.UtcNow - startTime;
             Logger.LogInformation(
                 "{EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName} in {Duration}ms",
@@ -326,13 +353,27 @@ namespace Alethic.Auth0.Operator.Controllers
                 id, conf.Name);
 
             // transform initial request
-            var req = TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf);
+            ClientUpdateRequest req;
+            try
+            {
+                req = TransformToNewtonsoftJson<ClientConf, ClientUpdateRequest>(conf);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to transform configuration for client update: {Message}", 
+                    EntityTypeName, ex.Message);
+                throw;
+            }
 
             // explicitely null out missing metadata if previously present
             if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null && last["client_metadata"] is Hashtable lastMetadata)
-                foreach (string key in lastMetadata.Keys)
+            {
+                // Create a defensive copy of keys to avoid potential enumeration issues
+                var keysToProcess = lastMetadata.Keys.Cast<string>().ToList();
+                foreach (string key in keysToProcess)
                     if (conf.ClientMetaData.ContainsKey(key) == false)
                         req.ClientMetaData[key] = null;
+            }
 
             await api.Clients.UpdateAsync(id, req, cancellationToken);
             var duration = DateTimeOffset.UtcNow - startTime;
@@ -349,13 +390,15 @@ namespace Alethic.Auth0.Operator.Controllers
             // This ensures secret resources are created for existing clients even when Auth0 API doesn't return the secret
             if (entity.Spec.SecretRef is not null)
             {
-                var clientId = (string?)lastConf["client_id"];
-                var clientSecret = (string?)lastConf["client_secret"];
+                var clientId = lastConf.ContainsKey("client_id") ? (string?)lastConf["client_id"] : null;
+                var clientSecret = lastConf.ContainsKey("client_secret") ? (string?)lastConf["client_secret"] : null;
                 await ApplySecret(entity, clientId, clientSecret, defaultNamespace, cancellationToken);
             }
 
-            lastConf.Remove("client_id");
-            lastConf.Remove("client_secret");
+            if (lastConf.ContainsKey("client_id"))
+                lastConf.Remove("client_id");
+            if (lastConf.ContainsKey("client_secret"))
+                lastConf.Remove("client_secret");
             await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
         }
 
@@ -377,8 +420,10 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    var clientIdBytes = secret.Data["clientId"];
-                    currentClientId = System.Text.Encoding.UTF8.GetString(clientIdBytes);
+                    if (secret.Data.TryGetValue("clientId", out var clientIdBytes) && clientIdBytes != null)
+                    {
+                        currentClientId = System.Text.Encoding.UTF8.GetString(clientIdBytes);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -391,8 +436,10 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    var clientSecretBytes = secret.Data["clientSecret"];
-                    currentClientSecret = System.Text.Encoding.UTF8.GetString(clientSecretBytes);
+                    if (secret.Data.TryGetValue("clientSecret", out var clientSecretBytes) && clientSecretBytes != null)
+                    {
+                        currentClientSecret = System.Text.Encoding.UTF8.GetString(clientSecretBytes);
+                    }
                 }
                 catch (Exception ex)
                 {
