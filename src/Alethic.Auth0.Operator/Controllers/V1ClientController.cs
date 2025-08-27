@@ -593,14 +593,28 @@ namespace Alethic.Auth0.Operator.Controllers
                 return true;
             }
             
+            string clientId = null;
+            string clientSecret = null;
+            
             // Verify that both fields clientId and clientSecret are present and non-empty
             // secret.Data contains base64-encoded byte arrays, so we need to decode them to strings
-            var clientId = Encoding.UTF8.GetString(secret.Data["clientId"]);
-            var clientSecret = Encoding.UTF8.GetString(secret.Data["clientSecret"]);
-            
-            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            if (secret.Data.TryGetValue("clientId", out var clientIdBytes) && clientIdBytes != null)
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId or clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                clientId = Encoding.UTF8.GetString(clientIdBytes);
+            }
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return true;
+            }
+
+            if (secret.Data.TryGetValue("clientSecret", out var clientSecretBytes) && clientSecretBytes != null)
+            {
+                clientSecret = Encoding.UTF8.GetString(clientSecretBytes);
+            }
+            if (string.IsNullOrWhiteSpace(clientSecret))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
                 return true;
             }
             
