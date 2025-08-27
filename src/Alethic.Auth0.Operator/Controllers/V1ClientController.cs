@@ -12,7 +12,6 @@ using Alethic.Auth0.Operator.Options;
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
-using Auth0.ManagementApi.Paging;
 using k8s.Models;
 using KubeOps.Abstractions.Controller;
 using KubeOps.Abstractions.Entities;
@@ -386,19 +385,27 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf,
             string defaultNamespace, CancellationToken cancellationToken)
         {
-            // Always attempt to apply secret if secretRef is specified, regardless of whether we have the clientSecret value
-            // This ensures secret resources are created for existing clients even when Auth0 API doesn't return the secret
-            if (entity.Spec.SecretRef is not null)
+            if (lastConf is not null)
             {
-                var clientId = lastConf.ContainsKey("client_id") ? (string?)lastConf["client_id"] : null;
-                var clientSecret = lastConf.ContainsKey("client_secret") ? (string?)lastConf["client_secret"] : null;
-                await ApplySecret(entity, clientId, clientSecret, defaultNamespace, cancellationToken);
+
+                // Always attempt to apply secret if secretRef is specified
+                // Extract the client ID and secret from the lastConf (Auth0 Management API response)
+                if (entity.Spec.SecretRef is not null)
+                {
+                    var desiredClientId = lastConf.ContainsKey("client_id") ? (string?)lastConf["client_id"] : null;
+                    var desiredClientSecret = lastConf.ContainsKey("client_secret")
+                        ? (string?)lastConf["client_secret"]
+                        : null;
+                    await ApplySecret(entity, desiredClientId, desiredClientSecret, defaultNamespace,
+                        cancellationToken);
+                }
+
+                if (lastConf.ContainsKey("client_id"))
+                    lastConf.Remove("client_id");
+                if (lastConf.ContainsKey("client_secret"))
+                    lastConf.Remove("client_secret");
             }
 
-            if (lastConf.ContainsKey("client_id"))
-                lastConf.Remove("client_id");
-            if (lastConf.ContainsKey("client_secret"))
-                lastConf.Remove("client_secret");
             await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
         }
 
@@ -448,7 +455,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
             }
 
-            // Compare values (treat null and empty string as equivalent)
             var clientIdChanged = !string.Equals(currentClientId ?? "", desiredClientId ?? "", StringComparison.Ordinal);
             var clientSecretChanged = !string.Equals(currentClientSecret ?? "", desiredClientSecret ?? "", StringComparison.Ordinal);
 
@@ -459,22 +465,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Applies the client secret.
         /// </summary>
         /// <param name="entity"></param>
-        /// <param name="clientId"></param>
-        /// <param name="clientSecret"></param>
         /// <param name="defaultNamespace"></param>
+        /// <param name="desiredClientId">The client ID from Auth0 Management API</param>
+        /// <param name="desiredClientSecret">The client secret from Auth0 Management API</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        async Task ApplySecret(V1Client entity, string? clientId, string? clientSecret, string defaultNamespace,
-            CancellationToken cancellationToken)
+        async Task ApplySecret(V1Client entity, string defaultNamespace,
+            string? desiredClientId, string? desiredClientSecret, CancellationToken cancellationToken)
         {
             try
             {
                 if (entity.Spec.SecretRef is null)
                     return;
 
-                // find existing secret or create
+                // Query the Kubernetes secret
                 var secret = await ResolveSecretRef(entity.Spec.SecretRef,
                     entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
+                var secretWasMissing = secret is null;
+                
                 if (secret is null)
                 {
                     Logger.LogInformation(
@@ -492,7 +500,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 // only apply actual values if we are the owner
                 if (secret.IsOwnedBy(entity))
                 {
-                    var updateNeeded = IsSecretUpdateNeeded(secret, clientId, clientSecret);
+                    var updateNeeded = IsSecretUpdateNeeded(secret, desiredClientId, desiredClientSecret);
 
                     if (updateNeeded)
                     {
@@ -502,52 +510,19 @@ namespace Alethic.Auth0.Operator.Controllers
                         
                         secret.StringData ??= new Dictionary<string, string>();
 
-                        // Always set clientId if available
-                        if (clientId is not null)
+                        if (desiredClientId is not null)
                         {
-                            secret.StringData["clientId"] = clientId;
-                            Logger.LogDebug(
-                                "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientId",
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                        }
-                        else if (!secret.StringData.ContainsKey("clientId") && 
-                                (secret.Data?.ContainsKey("clientId") != true))
-                        {
-                            // Initialize empty clientId field if not present and no value available
-                            secret.StringData["clientId"] = "";
-                            Logger.LogDebug(
-                                "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientId in secret {SecretName}",
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                            secret.StringData["clientId"] = desiredClientId;
                         }
 
-                        // Handle clientSecret - for existing clients, Auth0 API doesn't return the secret
-                        if (clientSecret is not null)
+                        if (desiredClientSecret is not null)
                         {
-                            secret.StringData["clientSecret"] = clientSecret;
-                            Logger.LogDebug(
-                                "{EntityTypeName} {EntityNamespace}/{EntityName} updated secret {SecretName} with clientSecret",
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                        }
-                        else if (!secret.StringData.ContainsKey("clientSecret") && 
-                                (secret.Data?.ContainsKey("clientSecret") != true))
-                        {
-                            // Initialize empty clientSecret field if not present and no value available
-                            // Note: For existing clients, Auth0 API doesn't return the secret value for security reasons
-                            secret.StringData["clientSecret"] = "";
-                            Logger.LogDebug(
-                                "{EntityTypeName} {EntityNamespace}/{EntityName} initialized empty clientSecret in secret {SecretName} (Auth0 API does not return secrets for existing clients)",
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                            secret.StringData["clientSecret"] = desiredClientSecret;
                         }
 
                         secret = await Kube.UpdateAsync(secret, cancellationToken);
                         Logger.LogInformation(
                             "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    }
-                    else
-                    {
-                        Logger.LogDebug(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} already has correct data, skipping update",
                             EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
                     }
                 }

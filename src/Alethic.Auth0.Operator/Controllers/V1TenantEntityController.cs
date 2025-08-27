@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -219,15 +220,18 @@ namespace Alethic.Auth0.Operator.Controllers
             // Optimization: Check if Kubernetes spec has changed before making Auth0 API call
             var isFirstReconciliation = entity.Status.LastConf is null;
             var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation;
+            var clientAuthSecretExists = await CheckClientAuth0SecretExists(entity, cancellationToken);
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || !clientAuthSecretExists;
             Hashtable? lastConf = null;
             
             if (needsAuth0Fetch)
             {
                 // Only retrieve Auth0 entity when changes are detected or it's the first time
+                var reason = isFirstReconciliation ? "first reconciliation" : 
+                            hasLocalChanges ? "local configuration changes detected" : 
+                            "client auth secret missing";
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id} (reason: {Reason})", 
-                    EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id,
-                    isFirstReconciliation ? "first reconciliation" : "local configuration changes detected");
+                    EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id, reason);
                     
                 lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (lastConf is null)
@@ -299,6 +303,52 @@ namespace Alethic.Auth0.Operator.Controllers
             var interval = _options.Value.Reconciliation.Interval;
             Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
             Requeue(entity, interval);
+        }
+
+        private async Task<bool> CheckClientAuth0SecretExists(TEntity entity, CancellationToken cancellationToken)
+        {
+            var secretRef = await ResolveSecretRef(new V1SecretReference { Name = $"{entity.Name()}-auth0" }, entity.Namespace(), cancellationToken);
+            
+            if (secretRef is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} missing client authentication secret.", EntityTypeName, entity.Namespace(), entity.Name());
+                return false;
+            }
+
+            var secretName = secretRef.Name();
+            var secretNamespace = secretRef.Namespace();
+            
+            if (string.IsNullOrWhiteSpace(secretName) || string.IsNullOrWhiteSpace(secretNamespace))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} has invalid client authentication secret reference.", EntityTypeName, entity.Namespace(), entity.Name());
+                return false;
+            }
+            
+            var secret = Kube.Get<V1Secret>(secretName, secretNamespace);
+            if (secret is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} not found.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return false;
+            }
+
+            if (secret.Data is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} has no data.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return false;
+            }
+            
+            // Verify that both fields clientId and clientSecret are present and non-empty
+            // secret.Data contains base64-encoded byte arrays, so we need to decode them to strings
+            var clientId = Encoding.UTF8.GetString(secret.Data["clientId"]);
+            var clientSecret = Encoding.UTF8.GetString(secret.Data["clientSecret"]);
+            
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId or clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return false;
+            }
+            
+            return true;
         }
 
         /// <summary>
