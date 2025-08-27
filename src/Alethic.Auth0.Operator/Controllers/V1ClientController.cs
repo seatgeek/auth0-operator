@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Core.Models.Client;
@@ -551,6 +552,71 @@ namespace Alethic.Auth0.Operator.Controllers
             await api.Clients.DeleteAsync(id, cancellationToken);
             Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}",
                 EntityTypeName, id);
+        }
+
+        /// <summary>
+        /// Checks if the client's Auth0 secret requires refresh by verifying the existence and validity of the secret.
+        /// </summary>
+        /// <param name="entity">The client entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>True if the secret requires refresh, false if it exists and is valid</returns>
+        private async Task<bool> ClientAuth0SecretRequiresRefresh(V1Client entity, CancellationToken cancellationToken)
+        {
+            var secretRef = await ResolveSecretRef(new V1SecretReference { Name = $"{entity.Name()}-auth0" }, entity.Namespace(), cancellationToken);
+            
+            if (secretRef is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} missing client authentication secret.", EntityTypeName, entity.Namespace(), entity.Name());
+                return true;
+            }
+
+            var secretName = secretRef.Name();
+            var secretNamespace = secretRef.Namespace();
+            secretNamespace = string.IsNullOrEmpty(secretNamespace) ? entity.Namespace() : secretNamespace;
+            
+            if (string.IsNullOrWhiteSpace(secretName) || string.IsNullOrWhiteSpace(secretNamespace))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} has invalid client authentication secret reference.", EntityTypeName, entity.Namespace(), entity.Name());
+                return true;
+            }
+            
+            var secret = Kube.Get<V1Secret>(secretName, secretNamespace);
+            if (secret is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} not found.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return true;
+            }
+
+            if (secret.Data is null)
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} has no data.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return true;
+            }
+            
+            // Verify that both fields clientId and clientSecret are present and non-empty
+            // secret.Data contains base64-encoded byte arrays, so we need to decode them to strings
+            var clientId = Encoding.UTF8.GetString(secret.Data["clientId"]);
+            var clientSecret = Encoding.UTF8.GetString(secret.Data["clientSecret"]);
+            
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            {
+                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId or clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                return true;
+            }
+            
+            return false;
+        }
+
+        /// <inheritdoc />
+        protected override async Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(V1Client entity, CancellationToken cancellationToken)
+        {
+            var secretRequiresRefresh = await ClientAuth0SecretRequiresRefresh(entity, cancellationToken);
+            if (secretRequiresRefresh)
+            {
+                return (true, "client auth0 secret requires refresh");
+            }
+
+            return (false, null);
         }
 
         /// <inheritdoc />

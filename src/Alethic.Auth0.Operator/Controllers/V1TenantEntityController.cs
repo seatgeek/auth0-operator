@@ -137,6 +137,19 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Array of field names to exclude from comparison</returns>
         protected virtual string[] GetExcludedFields() => Array.Empty<string>();
 
+        /// <summary>
+        /// Determines if the entity controller requires an Auth0 API fetch.
+        /// This method allows entity-specific controllers to provide their own logic for determining
+        /// whether an Auth0 API call should be made during reconciliation.
+        /// </summary>
+        /// <param name="entity">The entity being reconciled</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>A tuple containing whether fetch is required and the reason if it is</returns>
+        protected virtual Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(TEntity entity, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<(bool RequiresFetch, string? Reason)>((false, null));
+        }
+
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
@@ -220,8 +233,8 @@ namespace Alethic.Auth0.Operator.Controllers
             // Optimization: Check if Kubernetes spec has changed before making Auth0 API call
             var isFirstReconciliation = entity.Status.LastConf is null;
             var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
-            var clientAuthSecretExists = await CheckClientAuth0SecretExists(entity, cancellationToken);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || !clientAuthSecretExists;
+            var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
             Hashtable? lastConf = null;
             
             if (needsAuth0Fetch)
@@ -229,7 +242,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Only retrieve Auth0 entity when changes are detected or it's the first time
                 var reason = isFirstReconciliation ? "first reconciliation" : 
                             hasLocalChanges ? "local configuration changes detected" : 
-                            "client auth secret missing";
+                            entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
+                            "unknown";
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id} (reason: {Reason})", 
                     EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id, reason);
                     
@@ -305,51 +319,6 @@ namespace Alethic.Auth0.Operator.Controllers
             Requeue(entity, interval);
         }
 
-        private async Task<bool> CheckClientAuth0SecretExists(TEntity entity, CancellationToken cancellationToken)
-        {
-            var secretRef = await ResolveSecretRef(new V1SecretReference { Name = $"{entity.Name()}-auth0" }, entity.Namespace(), cancellationToken);
-            
-            if (secretRef is null)
-            {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} missing client authentication secret.", EntityTypeName, entity.Namespace(), entity.Name());
-                return false;
-            }
-
-            var secretName = secretRef.Name();
-            var secretNamespace = secretRef.Namespace();
-            
-            if (string.IsNullOrWhiteSpace(secretName) || string.IsNullOrWhiteSpace(secretNamespace))
-            {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} has invalid client authentication secret reference.", EntityTypeName, entity.Namespace(), entity.Name());
-                return false;
-            }
-            
-            var secret = Kube.Get<V1Secret>(secretName, secretNamespace);
-            if (secret is null)
-            {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} not found.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
-                return false;
-            }
-
-            if (secret.Data is null)
-            {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} has no data.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
-                return false;
-            }
-            
-            // Verify that both fields clientId and clientSecret are present and non-empty
-            // secret.Data contains base64-encoded byte arrays, so we need to decode them to strings
-            var clientId = Encoding.UTF8.GetString(secret.Data["clientId"]);
-            var clientSecret = Encoding.UTF8.GetString(secret.Data["clientSecret"]);
-            
-            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
-            {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId or clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
-                return false;
-            }
-            
-            return true;
-        }
 
         /// <summary>
         /// Applies any modification to the entity status just before saving it.
