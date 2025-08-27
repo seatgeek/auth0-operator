@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -136,6 +137,19 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Array of field names to exclude from comparison</returns>
         protected virtual string[] GetExcludedFields() => Array.Empty<string>();
 
+        /// <summary>
+        /// Determines if the entity controller requires an Auth0 API fetch.
+        /// This method allows entity-specific controllers to provide their own logic for determining
+        /// whether an Auth0 API call should be made during reconciliation.
+        /// </summary>
+        /// <param name="entity">The entity being reconciled</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>A tuple containing whether fetch is required and the reason if it is</returns>
+        protected virtual Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(TEntity entity, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<(bool RequiresFetch, string? Reason)>((false, null));
+        }
+
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
@@ -219,15 +233,19 @@ namespace Alethic.Auth0.Operator.Controllers
             // Optimization: Check if Kubernetes spec has changed before making Auth0 API call
             var isFirstReconciliation = entity.Status.LastConf is null;
             var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation;
+            var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
             Hashtable? lastConf = null;
             
             if (needsAuth0Fetch)
             {
                 // Only retrieve Auth0 entity when changes are detected or it's the first time
+                var reason = isFirstReconciliation ? "first reconciliation" : 
+                            hasLocalChanges ? "local configuration changes detected" : 
+                            entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
+                            "unknown";
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} checking if entity exists in Auth0 with ID {Id} (reason: {Reason})", 
-                    EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id,
-                    isFirstReconciliation ? "first reconciliation" : "local configuration changes detected");
+                    EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id, reason);
                     
                 lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (lastConf is null)
@@ -300,6 +318,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} scheduling next reconciliation in {IntervalSeconds}s", EntityTypeName, entity.Namespace(), entity.Name(), interval.TotalSeconds);
             Requeue(entity, interval);
         }
+
 
         /// <summary>
         /// Applies any modification to the entity status just before saving it.
