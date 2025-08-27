@@ -393,11 +393,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (entity.Spec.SecretRef is not null)
                 {
                     var desiredClientId = lastConf.ContainsKey("client_id") ? (string?)lastConf["client_id"] : null;
-                    var desiredClientSecret = lastConf.ContainsKey("client_secret")
-                        ? (string?)lastConf["client_secret"]
-                        : null;
-                    await ApplySecret(entity, desiredClientId, desiredClientSecret, defaultNamespace,
-                        cancellationToken);
+                    var desiredClientSecret = lastConf.ContainsKey("client_secret") ? (string?)lastConf["client_secret"] : null;
+
+                    if (!string.IsNullOrEmpty(desiredClientId) && !string.IsNullOrEmpty(desiredClientSecret))
+                    {
+                        await ApplySecret(entity, defaultNamespace, desiredClientId, desiredClientSecret, cancellationToken);
+                    }
                 }
 
                 if (lastConf.ContainsKey("client_id"))
@@ -481,7 +482,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Query the Kubernetes secret
                 var secret = await ResolveSecretRef(entity.Spec.SecretRef,
                     entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
-                var secretWasMissing = secret is null;
                 
                 if (secret is null)
                 {
