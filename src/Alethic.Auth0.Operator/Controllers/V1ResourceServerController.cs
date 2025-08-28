@@ -62,6 +62,7 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 Logger.LogInformation("{EntityTypeName} fetching resource server from Auth0 with ID {Id}", EntityTypeName, id);
+                LogAuth0ApiCall($"Getting Auth0 resource server with ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "retrieve_resource_server_by_id");
                 var result = await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully retrieved resource server from Auth0 with ID {Id}", EntityTypeName, id);
                 return TransformToSystemTextJson<Hashtable>(result);
@@ -109,17 +110,35 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task<string> Create(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} creating resource server in Auth0 with identifier {Identifier} and name {Name}", EntityTypeName, conf.Identifier, conf.Name);
-            var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully created resource server in Auth0 with ID {Id} and identifier {Identifier}", EntityTypeName, self.Id, self.Identifier);
-            return self.Id;
+            try
+            {
+                LogAuth0ApiCall($"Creating Auth0 resource server with identifier: {conf.Identifier}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "create_resource_server");
+                var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully created resource server in Auth0 with ID {Id} and identifier {Identifier}", EntityTypeName, self.Id, self.Identifier);
+                return self.Id;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to create resource server in Auth0 with identifier {Identifier} and name {Name}: {Message}", EntityTypeName, conf.Identifier, conf.Name, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} updating resource server in Auth0 with ID {Id} and identifier {Identifier}", EntityTypeName, id, conf.Identifier);
-            await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully updated resource server in Auth0 with ID {Id}", EntityTypeName, id);
+            try
+            {
+                LogAuth0ApiCall($"Updating Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "update_resource_server");
+                await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully updated resource server in Auth0 with ID {Id}", EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to update resource server in Auth0 with ID {Id} and identifier {Identifier}: {Message}", EntityTypeName, id, conf.Identifier, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -137,8 +156,17 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} deleting resource server from Auth0 with ID {Id}", EntityTypeName, id);
-            await api.ResourceServers.DeleteAsync(id, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully deleted resource server from Auth0 with ID {Id}", EntityTypeName, id);
+            try
+            {
+                LogAuth0ApiCall($"Deleting Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", id, "unknown", "delete_resource_server");
+                await api.ResourceServers.DeleteAsync(id, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully deleted resource server from Auth0 with ID {Id}", EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to delete resource server from Auth0 with ID {Id}: {Message}", EntityTypeName, id, ex.Message);
+                throw;
+            }
         }
 
         /// <summary>

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -213,13 +214,29 @@ namespace Alethic.Auth0.Operator.Controllers
                     // create new entity and associate
                     entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} created with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    try
+                    {
+                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update Kubernetes status after creation: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                        throw;
+                    }
                 }
                 else
                 {
                     entity.Status.Id = entityId;
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} found with {Id}", EntityTypeName, entity.Namespace(), entity.Name(), entity.Status.Id);
-                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    try
+                    {
+                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update Kubernetes status after finding entity: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                        throw;
+                    }
                 }
             }
 
@@ -254,7 +271,15 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} not found in Auth0, clearing status and scheduling recreation", EntityTypeName, entity.Namespace(), entity.Name());
                     entity.Status.LastConf = null;
                     entity.Status.Id = null;
-                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    try
+                    {
+                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update Kubernetes status during reset: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                        throw;
+                    }
                     throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
                 }
             }
@@ -311,7 +336,15 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // apply new configuration
             await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
-            entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+            try
+            {
+                entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update Kubernetes status after applying configuration: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                throw;
+            }
 
             // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
             var interval = _options.Value.Reconciliation.Interval;

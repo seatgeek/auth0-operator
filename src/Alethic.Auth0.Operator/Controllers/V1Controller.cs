@@ -32,6 +32,21 @@ using Newtonsoft.Json;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
+    /// <summary>
+    /// Represents the type of Auth0 API call being performed.
+    /// </summary>
+    public enum Auth0ApiCallType
+    {
+        /// <summary>
+        /// Read operation - fetches data from Auth0 without modifying it.
+        /// </summary>
+        Read,
+        
+        /// <summary>
+        /// Write operation - creates, updates, or deletes data in Auth0.
+        /// </summary>
+        Write
+    }
 
     public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
@@ -84,7 +99,30 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         protected ILogger Logger => _logger;
 
-
+        /// <summary>
+        /// Logs Auth0 API call information in JSON format immediately before the API call is made.
+        /// </summary>
+        /// <param name="message">The content of the log message</param>
+        /// <param name="apiCallType">The type of API call</param>
+        /// <param name="entityType">The Auth0 entity type being operated on</param>
+        /// <param name="entityName">The name of the Kubernetes entity</param>
+        /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
+        /// <param name="purpose">The purpose of this Auth0 API invocation for better observability</param>
+        protected void LogAuth0ApiCall(string message, Auth0ApiCallType apiCallType, string entityType, string entityName, string entityNamespace, string purpose)
+        {
+            var logEntry = new
+            {
+                message = message,
+                auth0ApiCallType = apiCallType.ToString().ToLowerInvariant(),
+                auth0EntityType = entityType,
+                auth0EntityName = entityName,
+                auth0EntityNamespace = entityNamespace,
+                auth0ApiCallPurpose = purpose
+            };
+            
+            var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry);
+            Logger.LogInformation("{JsonLog}", jsonLog);
+        }
 
         /// <summary>
         /// Attempts to resolve the secret document referenced by the secret reference.
@@ -240,6 +278,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
+                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");
@@ -342,16 +381,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task ReconcileSuccessAsync(TEntity entity, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Reconcile",
-                    type: "Normal",
-                    reason: "Success"),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Reconcile",
+                        type: "Normal",
+                        reason: "Success"),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes success event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block reconciliation
+            }
         }
 
         /// <summary>
@@ -364,17 +411,25 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task ReconcileWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Reconcile",
-                    type: "Warning",
-                    reason: reason,
-                    note: note),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Reconcile",
+                        type: "Warning",
+                        reason: reason,
+                        note: note),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes warning event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block reconciliation
+            }
         }
 
         /// <summary>
@@ -387,17 +442,25 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task DeletingWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Deleting",
-                    type: "Warning",
-                    reason: reason,
-                    note: note),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Deleting",
+                        type: "Warning",
+                        reason: reason,
+                        note: note),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes deleting warning event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block deletion
+            }
         }
 
         /// <summary>

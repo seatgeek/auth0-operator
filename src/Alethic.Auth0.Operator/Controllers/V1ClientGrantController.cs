@@ -159,15 +159,24 @@ namespace Alethic.Auth0.Operator.Controllers
             req.OrganizationUsage = Convert(conf.OrganizationUsage);
 
             Logger.LogInformation("{EntityTypeName} creating client grant in Auth0 for ClientId {ClientId} and Audience {Audience}", EntityTypeName, req.ClientId, req.Audience);
-            var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
-            if (self is null)
+            try
             {
-                Logger.LogError("{EntityTypeName} failed to create client grant in Auth0 - API returned null", EntityTypeName);
-                throw new InvalidOperationException();
-            }
+                LogAuth0ApiCall($"Creating Auth0 client grant", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "create_client_grant");
+                var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
+                if (self is null)
+                {
+                    Logger.LogError("{EntityTypeName} failed to create client grant in Auth0 - API returned null", EntityTypeName);
+                    throw new InvalidOperationException();
+                }
 
-            Logger.LogInformation("{EntityTypeName} successfully created client grant in Auth0 with ID {Id}", EntityTypeName, self.Id);
-            return self.Id;
+                Logger.LogInformation("{EntityTypeName} successfully created client grant in Auth0 with ID {Id}", EntityTypeName, self.Id);
+                return self.Id;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to create client grant in Auth0 for ClientId {ClientId} and Audience {Audience}: {Message}", EntityTypeName, req.ClientId, req.Audience, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -179,16 +188,34 @@ namespace Alethic.Auth0.Operator.Controllers
             req.OrganizationUsage = Convert(conf.OrganizationUsage);
 
             Logger.LogInformation("{EntityTypeName} updating client grant in Auth0 with ID {Id}", EntityTypeName, id);
-            await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully updated client grant in Auth0 with ID {Id}", EntityTypeName, id);
+            try
+            {
+                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "update_client_grant");
+                await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully updated client grant in Auth0 with ID {Id}", EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to update client grant in Auth0 with ID {Id}: {Message}", EntityTypeName, id, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} deleting client grant from Auth0 with ID {Id}", EntityTypeName, id);
-            await api.ClientGrants.DeleteAsync(id, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully deleted client grant from Auth0 with ID {Id}", EntityTypeName, id);
+            try
+            {
+                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown", "delete_client_grant");
+                await api.ClientGrants.DeleteAsync(id, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully deleted client grant from Auth0 with ID {Id}", EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to delete client grant from Auth0 with ID {Id}: {Message}", EntityTypeName, id, ex.Message);
+                throw;
+            }
         }
 
         /// <summary>
