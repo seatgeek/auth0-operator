@@ -59,6 +59,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
+                LogAuth0ApiCall($"Getting Auth0 client with ID: {id}", "read", "A0Client", id, defaultNamespace);
                 return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id,
                     cancellationToken: cancellationToken));
             }
@@ -96,6 +97,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     try
                     {
+                        LogAuth0ApiCall($"Getting Auth0 client by client ID: {clientId}", "read", "A0Client", entity.Name(), entity.Namespace());
                         var client = await api.Clients.GetAsync(clientId, "client_id,name",
                             cancellationToken: cancellationToken);
                         Logger.LogInformation(
@@ -158,6 +160,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     "{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
                     EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
 
+                LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", "read", "A0Client", entity.Name(), entity.Namespace());
                 var list = await GetAllClientsWithPagination(api, cancellationToken);
                 Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} searched {Count} clients for name-based lookup",
                     EntityTypeName, entity.Namespace(), entity.Name(), list.Count);
@@ -226,6 +229,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 "{EntityTypeName} {EntityNamespace}/{EntityName} executing callback URL search with {Mode} mode matching against Auth0 clients",
                 EntityTypeName, entity.Namespace(), entity.Name(), modeName);
 
+            LogAuth0ApiCall($"Getting all Auth0 clients for callback URL lookup", "read", "A0Client", entity.Name(), entity.Namespace());
             var clients = await GetAllClientsWithPagination(api, cancellationToken);
 
             var matchingClients = clients
@@ -337,6 +341,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
+                LogAuth0ApiCall($"Creating Auth0 client with name: {conf.Name}", "write", "A0Client", conf.Name ?? "unknown", "unknown");
                 var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
                 var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformation(
@@ -385,6 +390,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
+                LogAuth0ApiCall($"Updating Auth0 client with ID: {id} and name: {conf.Name}", "write", "A0Client", conf.Name ?? "unknown", "unknown");
                 await api.Clients.UpdateAsync(id, req, cancellationToken);
                 var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformation(
@@ -585,6 +591,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 EntityTypeName, id);
             try
             {
+                LogAuth0ApiCall($"Deleting Auth0 client with ID: {id}", "write", "A0Client", id, "unknown");
                 await api.Clients.DeleteAsync(id, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}",
                     EntityTypeName, id);

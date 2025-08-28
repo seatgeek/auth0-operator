@@ -84,7 +84,28 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         protected ILogger Logger => _logger;
 
-
+        /// <summary>
+        /// Logs Auth0 API call information in JSON format immediately before the API call is made.
+        /// </summary>
+        /// <param name="message">The content of the log message</param>
+        /// <param name="apiCallType">The type of API call (read or write)</param>
+        /// <param name="entityType">The Auth0 entity type being operated on</param>
+        /// <param name="entityName">The name of the Kubernetes entity</param>
+        /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
+        protected void LogAuth0ApiCall(string message, string apiCallType, string entityType, string entityName, string entityNamespace)
+        {
+            var logEntry = new
+            {
+                message = message,
+                auth0ApiCallType = apiCallType,
+                auth0EntityType = entityType,
+                auth0EntityName = entityName,
+                auth0EntityNamespace = entityNamespace
+            };
+            
+            var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry);
+            Logger.LogInformation("{JsonLog}", jsonLog);
+        }
 
         /// <summary>
         /// Attempts to resolve the secret document referenced by the secret reference.
@@ -240,6 +261,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
+                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", "read", "A0ResourceServer", id, defaultNamespace);
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");

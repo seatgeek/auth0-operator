@@ -62,6 +62,7 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 Logger.LogInformation("{EntityTypeName} fetching resource server from Auth0 with ID {Id}", EntityTypeName, id);
+                LogAuth0ApiCall($"Getting Auth0 resource server with ID: {id}", "read", "A0ResourceServer", id, defaultNamespace);
                 var result = await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully retrieved resource server from Auth0 with ID {Id}", EntityTypeName, id);
                 return TransformToSystemTextJson<Hashtable>(result);
@@ -111,6 +112,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} creating resource server in Auth0 with identifier {Identifier} and name {Name}", EntityTypeName, conf.Identifier, conf.Name);
             try
             {
+                LogAuth0ApiCall($"Creating Auth0 resource server with identifier: {conf.Identifier}", "write", "A0ResourceServer", conf.Name ?? "unknown", "unknown");
                 var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully created resource server in Auth0 with ID {Id} and identifier {Identifier}", EntityTypeName, self.Id, self.Identifier);
                 return self.Id;
@@ -128,6 +130,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} updating resource server in Auth0 with ID {Id} and identifier {Identifier}", EntityTypeName, id, conf.Identifier);
             try
             {
+                LogAuth0ApiCall($"Updating Auth0 resource server with ID: {id}", "write", "A0ResourceServer", conf.Name ?? "unknown", "unknown");
                 await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully updated resource server in Auth0 with ID {Id}", EntityTypeName, id);
             }
@@ -155,6 +158,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} deleting resource server from Auth0 with ID {Id}", EntityTypeName, id);
             try
             {
+                LogAuth0ApiCall($"Deleting Auth0 resource server with ID: {id}", "write", "A0ResourceServer", id, "unknown");
                 await api.ResourceServers.DeleteAsync(id, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully deleted resource server from Auth0 with ID {Id}", EntityTypeName, id);
             }

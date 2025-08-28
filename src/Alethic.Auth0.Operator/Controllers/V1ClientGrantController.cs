@@ -161,6 +161,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} creating client grant in Auth0 for ClientId {ClientId} and Audience {Audience}", EntityTypeName, req.ClientId, req.Audience);
             try
             {
+                LogAuth0ApiCall($"Creating Auth0 client grant", "write", "A0ClientGrant", "unknown", "unknown");
                 var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
                 if (self is null)
                 {
@@ -189,6 +190,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} updating client grant in Auth0 with ID {Id}", EntityTypeName, id);
             try
             {
+                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", "write", "A0ClientGrant", "unknown", "unknown");
                 await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully updated client grant in Auth0 with ID {Id}", EntityTypeName, id);
             }
@@ -205,6 +207,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} deleting client grant from Auth0 with ID {Id}", EntityTypeName, id);
             try
             {
+                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", "write", "A0ClientGrant", id, "unknown");
                 await api.ClientGrants.DeleteAsync(id, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully deleted client grant from Auth0 with ID {Id}", EntityTypeName, id);
             }
