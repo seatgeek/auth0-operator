@@ -10,6 +10,12 @@ namespace Alethic.Auth0.Operator.Extensions
     /// </summary>
     public static class ILoggerExtensions
     {
+        private const string TimestampKey = "timestamp";
+        private const string MessageKey = "message";
+        private const string ExceptionKey = "exception";
+        private const string JsonLogTemplate = "{JsonLog}";
+        private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
+        
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
             WriteIndented = false,
@@ -63,8 +69,8 @@ namespace Alethic.Auth0.Operator.Extensions
         {
             var logEntry = new Dictionary<string, object?>
             {
-                ["timestamp"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                ["message"] = message
+                [TimestampKey] = DateTimeOffset.UtcNow.ToString(TimestampFormat),
+                [MessageKey] = message
             };
 
             // Add additional structured data if provided
@@ -75,7 +81,7 @@ namespace Alethic.Auth0.Operator.Extensions
                 {
                     foreach (var kvp in dict)
                     {
-                        if (kvp.Key != "timestamp" && kvp.Key != "message") // Avoid overwriting core fields
+                        if (kvp.Key != TimestampKey && kvp.Key != MessageKey) // Avoid overwriting core fields
                         {
                             logEntry[kvp.Key] = kvp.Value;
                         }
@@ -88,7 +94,7 @@ namespace Alethic.Auth0.Operator.Extensions
                     foreach (var prop in properties)
                     {
                         var key = JsonNamingPolicy.CamelCase.ConvertName(prop.Name);
-                        if (key != "timestamp" && key != "message") // Avoid overwriting core fields
+                        if (key != TimestampKey && key != MessageKey) // Avoid overwriting core fields
                         {
                             logEntry[key] = prop.GetValue(additionalData);
                         }
@@ -99,7 +105,7 @@ namespace Alethic.Auth0.Operator.Extensions
             // Add exception details if present
             if (exception != null)
             {
-                logEntry["exception"] = new
+                logEntry[ExceptionKey] = new
                 {
                     type = exception.GetType().Name,
                     message = exception.Message,
@@ -113,19 +119,19 @@ namespace Alethic.Auth0.Operator.Extensions
             switch (logLevel)
             {
                 case LogLevel.Information:
-                    logger.LogInformation("{JsonLog}", json);
+                    logger.LogInformation(JsonLogTemplate, json);
                     break;
                 case LogLevel.Warning:
-                    logger.LogWarning(exception, "{JsonLog}", json);
+                    logger.LogWarning(exception, JsonLogTemplate, json);
                     break;
                 case LogLevel.Error:
-                    logger.LogError(exception, "{JsonLog}", json);
+                    logger.LogError(exception, JsonLogTemplate, json);
                     break;
                 case LogLevel.Debug:
-                    logger.LogDebug("{JsonLog}", json);
+                    logger.LogDebug(JsonLogTemplate, json);
                     break;
                 case LogLevel.Critical:
-                    logger.LogCritical(exception, "{JsonLog}", json);
+                    logger.LogCritical(exception, JsonLogTemplate, json);
                     break;
             }
         }
