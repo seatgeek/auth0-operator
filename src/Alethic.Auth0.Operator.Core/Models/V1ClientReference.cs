@@ -24,7 +24,7 @@ namespace Alethic.Auth0.Operator.Core.Models
             if (Id is not null)
                 return Id;
             else
-                return $"{Namespace}/{Name}";
+                return string.IsNullOrEmpty(Namespace) ? Name ?? "" : $"{Namespace}/{Name}";
         }
 
     }

@@ -20,7 +20,7 @@ namespace Alethic.Auth0.Operator.Core.Models
         /// <inheritdoc />
         public override string ToString()
         {
-            return $"{Namespace}/{Name}";
+            return string.IsNullOrEmpty(Namespace) ? Name ?? "" : $"{Namespace}/{Name}";
         }
 
     }
