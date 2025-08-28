@@ -129,11 +129,19 @@ namespace Alethic.Auth0.Operator.Controllers
                     }
 
                     Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} updating tenant settings in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
-                    // push update to Auth0
-                    var req = TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf);
-                    req.Flags.EnableSSO = null;
-                    settings = await api.TenantSettings.UpdateAsync(req, cancellationToken);
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} successfully updated tenant settings in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
+                    try
+                    {
+                        // push update to Auth0
+                        var req = TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf);
+                        req.Flags.EnableSSO = null;
+                        settings = await api.TenantSettings.UpdateAsync(req, cancellationToken);
+                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} successfully updated tenant settings in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update tenant settings in Auth0: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                        throw;
+                    }
                 }
             }
 
