@@ -335,12 +335,20 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw;
             }
 
-            var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
-            var duration = DateTimeOffset.UtcNow - startTime;
-            Logger.LogInformation(
-                "{EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName} in {Duration}ms",
-                EntityTypeName, self.ClientId, conf.Name, duration.TotalMilliseconds);
-            return self.ClientId;
+            try
+            {
+                var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
+                var duration = DateTimeOffset.UtcNow - startTime;
+                Logger.LogInformation(
+                    "{EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName} in {Duration}ms",
+                    EntityTypeName, self.ClientId, conf.Name, duration.TotalMilliseconds);
+                return self.ClientId;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to create client in Auth0 with name: {ClientName}: {Message}", EntityTypeName, conf.Name, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -375,11 +383,19 @@ namespace Alethic.Auth0.Operator.Controllers
                         req.ClientMetaData[key] = null;
             }
 
-            await api.Clients.UpdateAsync(id, req, cancellationToken);
-            var duration = DateTimeOffset.UtcNow - startTime;
-            Logger.LogInformation(
-                "{EntityTypeName} successfully updated client in Auth0 with id: {ClientId} and name: {ClientName} in {Duration}ms",
-                EntityTypeName, id, conf.Name, duration.TotalMilliseconds);
+            try
+            {
+                await api.Clients.UpdateAsync(id, req, cancellationToken);
+                var duration = DateTimeOffset.UtcNow - startTime;
+                Logger.LogInformation(
+                    "{EntityTypeName} successfully updated client in Auth0 with id: {ClientId} and name: {ClientName} in {Duration}ms",
+                    EntityTypeName, id, conf.Name, duration.TotalMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to update client in Auth0 with id: {ClientId} and name: {ClientName}: {Message}", EntityTypeName, id, conf.Name, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
@@ -489,13 +505,22 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogInformation(
                         "{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.",
                         EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
-                    secret = await Kube.CreateAsync(
-                        new V1Secret(
-                                metadata: new V1ObjectMeta(
-                                    namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace,
-                                    name: entity.Spec.SecretRef.Name))
-                            .WithOwnerReference(entity),
-                        cancellationToken);
+                    try
+                    {
+                        secret = await Kube.CreateAsync(
+                            new V1Secret(
+                                    metadata: new V1ObjectMeta(
+                                        namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace,
+                                        name: entity.Spec.SecretRef.Name))
+                                .WithOwnerReference(entity),
+                            cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "{EntityTypeName} {EntityNamespace}/{EntityName} failed to create secret {SecretName}: {Message}", 
+                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name, ex.Message);
+                        throw;
+                    }
                 }
 
                 // only apply actual values if we are the owner
@@ -521,10 +546,19 @@ namespace Alethic.Auth0.Operator.Controllers
                             secret.StringData["clientSecret"] = desiredClientSecret;
                         }
 
-                        secret = await Kube.UpdateAsync(secret, cancellationToken);
-                        Logger.LogInformation(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        try
+                        {
+                            secret = await Kube.UpdateAsync(secret, cancellationToken);
+                            Logger.LogInformation(
+                                "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError(ex, "{EntityTypeName} {EntityNamespace}/{EntityName} failed to update secret {SecretName}: {Message}", 
+                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name, ex.Message);
+                            throw;
+                        }
                     }
                 }
                 else
@@ -549,9 +583,18 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation(
                 "{EntityTypeName} deleting client from Auth0 with ID: {ClientId} (reason: Kubernetes entity deleted)",
                 EntityTypeName, id);
-            await api.Clients.DeleteAsync(id, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}",
-                EntityTypeName, id);
+            try
+            {
+                await api.Clients.DeleteAsync(id, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}",
+                    EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to delete client from Auth0 with ID: {ClientId}: {Message}", 
+                    EntityTypeName, id, ex.Message);
+                throw;
+            }
         }
 
         /// <summary>

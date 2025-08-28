@@ -342,16 +342,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task ReconcileSuccessAsync(TEntity entity, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Reconcile",
-                    type: "Normal",
-                    reason: "Success"),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Reconcile",
+                        type: "Normal",
+                        reason: "Success"),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes success event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block reconciliation
+            }
         }
 
         /// <summary>
@@ -364,17 +372,25 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task ReconcileWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Reconcile",
-                    type: "Warning",
-                    reason: reason,
-                    note: note),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Reconcile",
+                        type: "Warning",
+                        reason: reason,
+                        note: note),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes warning event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block reconciliation
+            }
         }
 
         /// <summary>
@@ -387,17 +403,25 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected async Task DeletingWarningAsync(TEntity entity, string reason, string note, CancellationToken cancellationToken)
         {
-            await _kube.CreateAsync(new Eventsv1Event(
-                    DateTime.Now,
-                    metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
-                    reportingController: "kubernetes.auth0.com/operator",
-                    reportingInstance: Dns.GetHostName(),
-                    regarding: entity.MakeObjectReference(),
-                    action: "Deleting",
-                    type: "Warning",
-                    reason: reason,
-                    note: note),
-                cancellationToken);
+            try
+            {
+                await _kube.CreateAsync(new Eventsv1Event(
+                        DateTime.Now,
+                        metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                        reportingController: "kubernetes.auth0.com/operator",
+                        reportingInstance: Dns.GetHostName(),
+                        regarding: entity.MakeObjectReference(),
+                        action: "Deleting",
+                        type: "Warning",
+                        reason: reason,
+                        note: note),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to create Kubernetes deleting warning event for {EntityTypeName} {Namespace}/{Name}: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                // Don't rethrow - event creation failure shouldn't block deletion
+            }
         }
 
         /// <summary>

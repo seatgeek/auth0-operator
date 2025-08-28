@@ -186,29 +186,45 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} creating connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, conf.Name, conf.Strategy);
-            var req = new ConnectionCreateRequest();
-            await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
-            req.Strategy = conf.Strategy;
-            req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+            try
+            {
+                var req = new ConnectionCreateRequest();
+                await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
+                req.Strategy = conf.Strategy;
+                req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
 
-            var self = await api.Connections.CreateAsync(req, cancellationToken);
-            if (self is null)
-                throw new InvalidOperationException();
+                var self = await api.Connections.CreateAsync(req, cancellationToken);
+                if (self is null)
+                    throw new InvalidOperationException();
 
-            Logger.LogInformation("{EntityTypeName} successfully created connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, self.Id, conf.Name, conf.Strategy);
-            return self.Id;
+                Logger.LogInformation("{EntityTypeName} successfully created connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, self.Id, conf.Name, conf.Strategy);
+                return self.Id;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to create connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}: {Message}", EntityTypeName, conf.Name, conf.Strategy, ex.Message);
+                throw;
+            }
         }
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} updating connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
-            var req = new ConnectionUpdateRequest();
-            await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
-            req.Name = null;
-            req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
-            await api.Connections.UpdateAsync(id, req, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully updated connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
+            try
+            {
+                var req = new ConnectionUpdateRequest();
+                await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
+                req.Name = null;
+                req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+                await api.Connections.UpdateAsync(id, req, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully updated connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to update connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}: {Message}", EntityTypeName, id, conf.Name, conf.Strategy, ex.Message);
+                throw;
+            }
         }
 
         /// <summary>
@@ -235,8 +251,16 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
             Logger.LogInformation("{EntityTypeName} deleting connection from Auth0 with ID: {ConnectionId} (reason: Kubernetes entity deleted)", EntityTypeName, id);
-            await api.Connections.DeleteAsync(id, cancellationToken);
-            Logger.LogInformation("{EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", EntityTypeName, id);
+            try
+            {
+                await api.Connections.DeleteAsync(id, cancellationToken);
+                Logger.LogInformation("{EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", EntityTypeName, id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "{EntityTypeName} failed to delete connection from Auth0 with ID: {ConnectionId}: {Message}", EntityTypeName, id, ex.Message);
+                throw;
+            }
         }
 
         /// <summary>

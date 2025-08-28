@@ -151,7 +151,15 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} retrieving final tenant settings from Auth0 for status update", EntityTypeName, entity.Namespace(), entity.Name());
                 settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
                 entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
-                entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                try
+                {
+                    entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "{EntityTypeName} {Namespace}/{Name} failed to update Kubernetes status: {Message}", EntityTypeName, entity.Namespace(), entity.Name(), ex.Message);
+                    throw;
+                }
             }
 
             Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} reconciliation completed successfully", EntityTypeName, entity.Namespace(), entity.Name());
