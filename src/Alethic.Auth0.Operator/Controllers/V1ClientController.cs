@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Core.Models.Client;
+using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
@@ -69,8 +70,11 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception e)
             {
-                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id,
-                    e.Message);
+                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    id = id,
+                    errorMessage = e.Message
+                }, e);
                 throw;
             }
         }
@@ -82,101 +86,138 @@ namespace Alethic.Auth0.Operator.Controllers
             if (spec.Find is not null)
             {
                 // Log the beginning of find operation with all criteria
-                Logger.LogInformation(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} starting client lookup with find criteria: ClientId={ClientId}, CallbackUrls=[{CallbackUrls}], MatchMode={MatchMode}",
-                    EntityTypeName, entity.Namespace(), entity.Name(),
-                    spec.Find.ClientId ?? "null",
-                    spec.Find.CallbackUrls != null ? string.Join(", ", spec.Find.CallbackUrls) : "null",
-                    spec.Find.CallbackUrlMatchMode ?? "strict");
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting client lookup with find criteria: ClientId={spec.Find.ClientId ?? "null"}, CallbackUrls=[{(spec.Find.CallbackUrls != null ? string.Join(", ", spec.Find.CallbackUrls) : "null")}], MatchMode={spec.Find.CallbackUrlMatchMode ?? "strict"}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    clientId = spec.Find.ClientId,
+                    callbackUrls = spec.Find.CallbackUrls,
+                    matchMode = spec.Find.CallbackUrlMatchMode ?? "strict"
+                });
 
                 if (spec.Find.ClientId is string clientId)
                 {
-                    Logger.LogDebug(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} initiating client_id lookup: {ClientId}",
-                        EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                    Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating client_id lookup: {clientId}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        clientId = clientId
+                    });
 
                     try
                     {
                         LogAuth0ApiCall($"Getting Auth0 client by client ID: {clientId}", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_client_by_clientid");
                         var client = await api.Clients.GetAsync(clientId, "client_id,name",
                             cancellationToken: cancellationToken);
-                        Logger.LogInformation(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} client_id lookup SUCCESSFUL - found existing client: {Name} (ClientId: {ClientId})",
-                            EntityTypeName, entity.Namespace(), entity.Name(), client.Name, client.ClientId);
+                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup SUCCESSFUL - found existing client: {client.Name} (ClientId: {client.ClientId})", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            foundClientName = client.Name,
+                            foundClientId = client.ClientId
+                        });
                         return client.ClientId;
                     }
                     catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
                     {
-                        Logger.LogWarning(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} client_id lookup FAILED - could not find client with id {ClientId}",
-                            EntityTypeName, entity.Namespace(), entity.Name(), clientId);
+                        Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup FAILED - could not find client with id {clientId}", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            searchedClientId = clientId
+                        });
                         return null;
                     }
                 }
 
                 if (spec.Find.CallbackUrls is { Length: > 0 } callbackUrls)
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} initiating callback URL lookup: URLs=[{CallbackUrls}], Mode={MatchMode}",
-                        EntityTypeName, entity.Namespace(), entity.Name(),
-                        string.Join(", ", callbackUrls),
-                        spec.Find.CallbackUrlMatchMode ?? "strict");
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating callback URL lookup: URLs=[{string.Join(", ", callbackUrls)}], Mode={spec.Find.CallbackUrlMatchMode ?? "strict"}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        callbackUrls = callbackUrls,
+                        matchMode = spec.Find.CallbackUrlMatchMode ?? "strict"
+                    });
 
                     var result = await FindByCallbackUrls(api, entity, callbackUrls, spec.Find.CallbackUrlMatchMode,
                         cancellationToken);
 
                     if (result != null)
                     {
-                        Logger.LogInformation(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} callback URL lookup SUCCESSFUL - found client with id: {ClientId}",
-                            EntityTypeName, entity.Namespace(), entity.Name(), result);
+                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup SUCCESSFUL - found client with id: {result}", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            foundClientId = result
+                        });
                     }
                     else
                     {
-                        Logger.LogInformation(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} callback URL lookup FAILED - no matching client found",
-                            EntityTypeName, entity.Namespace(), entity.Name());
+                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup FAILED - no matching client found", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name()
+                        });
                     }
 
                     return result;
                 }
 
-                Logger.LogInformation(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} find operation completed - no valid lookup criteria provided",
-                    EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} find operation completed - no valid lookup criteria provided", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
                 return null;
             }
             else
             {
-                Logger.LogDebug(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} no find criteria specified - falling back to name-based lookup",
-                    EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no find criteria specified - falling back to name-based lookup", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
 
                 var conf = spec.Init ?? spec.Conf;
                 if (conf is null)
                     return null;
 
-                Logger.LogDebug(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} initiating name-based lookup for client: {ClientName}",
-                    EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating name-based lookup for client: {conf.Name}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    clientName = conf.Name
+                });
 
                 LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
                 var list = await GetAllClientsWithPagination(api, cancellationToken);
-                Logger.LogDebug("{EntityTypeName} {EntityNamespace}/{EntityName} searched {Count} clients for name-based lookup",
-                    EntityTypeName, entity.Namespace(), entity.Name(), list.Count);
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searched {list.Count} clients for name-based lookup", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    clientCount = list.Count
+                });
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
 
                 if (self != null)
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} name-based lookup SUCCESSFUL - found client: {ClientName} (ClientId: {ClientId})",
-                        EntityTypeName, entity.Namespace(), entity.Name(), conf.Name, self.ClientId);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup SUCCESSFUL - found client: {conf.Name} (ClientId: {self.ClientId})", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        foundClientName = conf.Name,
+                        foundClientId = self.ClientId
+                    });
                 }
                 else
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} name-based lookup FAILED - no client found with name: {ClientName}",
-                        EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup FAILED - no client found with name: {conf.Name}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        searchedClientName = conf.Name
+                    });
                 }
 
                 return self?.ClientId;
@@ -197,9 +238,11 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (targetCallbackUrls == null || targetCallbackUrls.Length == 0)
             {
-                Logger.LogWarning(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} targetCallbackUrls is null or empty",
-                    EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} targetCallbackUrls is null or empty", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
                 return null;
             }
 
@@ -207,17 +250,22 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 if (string.IsNullOrWhiteSpace(url))
                 {
-                    Logger.LogWarning(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} callback URL is null or empty",
-                        EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL is null or empty", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name()
+                    });
                     return null;
                 }
 
                 if (!Uri.TryCreate(url, UriKind.Absolute, out _))
                 {
-                    Logger.LogWarning(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} invalid callback URL format: {CallbackUrl}",
-                        EntityTypeName, entity.Namespace(), entity.Name(), url);
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} invalid callback URL format: {url}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        invalidUrl = url
+                    });
                     return null;
                 }
             }
@@ -225,9 +273,12 @@ namespace Alethic.Auth0.Operator.Controllers
             var isStrictMode = !string.Equals(matchMode, "loose", StringComparison.OrdinalIgnoreCase);
             var modeName = isStrictMode ? "strict" : "loose";
 
-            Logger.LogDebug(
-                "{EntityTypeName} {EntityNamespace}/{EntityName} executing callback URL search with {Mode} mode matching against Auth0 clients",
-                EntityTypeName, entity.Namespace(), entity.Name(), modeName);
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} executing callback URL search with {modeName} mode matching against Auth0 clients", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                searchMode = modeName
+            });
 
             LogAuth0ApiCall($"Getting all Auth0 clients for callback URL lookup", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_all_clients_for_callback_lookup");
             var clients = await GetAllClientsWithPagination(api, cancellationToken);
@@ -237,25 +288,38 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (matchingClients.Count == 0)
             {
-                Logger.LogDebug(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} no clients matched callback URL criteria ({Mode} mode)",
-                    EntityTypeName, entity.Namespace(), entity.Name(), modeName);
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no clients matched callback URL criteria ({modeName} mode)", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    searchMode = modeName
+                });
                 return null;
             }
 
             if (matchingClients.Count > 1)
             {
-                Logger.LogWarning(
-                    "{EntityTypeName} {EntityNamespace}/{EntityName} found multiple clients ({Count}) matching callback URL criteria ({Mode} mode). Target URLs: {TargetUrls}. Using first match: {ClientName} ({ClientId})",
-                    EntityTypeName, entity.Namespace(), entity.Name(), matchingClients.Count, modeName,
-                    string.Join(", ", targetCallbackUrls), matchingClients[0].Name, matchingClients[0].ClientId);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found multiple clients ({matchingClients.Count}) matching callback URL criteria ({modeName} mode). Target URLs: {string.Join(", ", targetCallbackUrls)}. Using first match: {matchingClients[0].Name} ({matchingClients[0].ClientId})", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    matchingClientCount = matchingClients.Count,
+                    searchMode = modeName,
+                    targetUrls = targetCallbackUrls,
+                    selectedClientName = matchingClients[0].Name,
+                    selectedClientId = matchingClients[0].ClientId
+                });
             }
 
             var selectedClient = matchingClients[0];
-            Logger.LogDebug(
-                "{EntityTypeName} {EntityNamespace}/{EntityName} selected client for callback URL match ({Mode} mode): {Name} ({ClientId})",
-                EntityTypeName, entity.Namespace(), entity.Name(), modeName, selectedClient.Name,
-                selectedClient.ClientId);
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} selected client for callback URL match ({modeName} mode): {selectedClient.Name} ({selectedClient.ClientId})", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                searchMode = modeName,
+                selectedClientName = selectedClient.Name,
+                selectedClientId = selectedClient.ClientId
+            });
 
             return selectedClient.ClientId;
         }
@@ -324,8 +388,10 @@ namespace Alethic.Auth0.Operator.Controllers
             CancellationToken cancellationToken)
         {
             var startTime = DateTimeOffset.UtcNow;
-            Logger.LogInformation("{EntityTypeName} creating client in Auth0 with name: {ClientName}", EntityTypeName,
-                conf.Name);
+            Logger.LogInformationJson($"{EntityTypeName} creating client in Auth0 with name: {conf.Name}", new {
+                entityTypeName = EntityTypeName,
+                clientName = conf.Name
+            });
             
             ClientCreateRequest createRequest;
             try
@@ -334,8 +400,10 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to transform configuration for client creation: {Message}", 
-                    EntityTypeName, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to transform configuration for client creation: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    errorMessage = ex.Message
+                }, ex);
                 throw;
             }
 
@@ -344,14 +412,21 @@ namespace Alethic.Auth0.Operator.Controllers
                 LogAuth0ApiCall($"Creating Auth0 client with name: {conf.Name}", Auth0ApiCallType.Write, "A0Client", conf.Name ?? "unknown", "unknown", "create_client");
                 var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
                 var duration = DateTimeOffset.UtcNow - startTime;
-                Logger.LogInformation(
-                    "{EntityTypeName} successfully created client in Auth0 with ID: {ClientId} and name: {ClientName} in {Duration}ms",
-                    EntityTypeName, self.ClientId, conf.Name, duration.TotalMilliseconds);
+                Logger.LogInformationJson($"{EntityTypeName} successfully created client in Auth0 with ID: {self.ClientId} and name: {conf.Name} in {duration.TotalMilliseconds}ms", new {
+                    entityTypeName = EntityTypeName,
+                    clientId = self.ClientId,
+                    clientName = conf.Name,
+                    durationMs = duration.TotalMilliseconds
+                });
                 return self.ClientId;
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to create client in Auth0 with name: {ClientName}: {Message}", EntityTypeName, conf.Name, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to create client in Auth0 with name: {conf.Name}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    clientName = conf.Name,
+                    errorMessage = ex.Message
+                }, ex);
                 throw;
             }
         }
@@ -361,9 +436,11 @@ namespace Alethic.Auth0.Operator.Controllers
             string defaultNamespace, CancellationToken cancellationToken)
         {
             var startTime = DateTimeOffset.UtcNow;
-            Logger.LogInformation(
-                "{EntityTypeName} updating client in Auth0 with id: {ClientId} and name: {ClientName}", EntityTypeName,
-                id, conf.Name);
+            Logger.LogInformationJson($"{EntityTypeName} updating client in Auth0 with id: {id} and name: {conf.Name}", new {
+                entityTypeName = EntityTypeName,
+                clientId = id,
+                clientName = conf.Name
+            });
 
             // transform initial request
             ClientUpdateRequest req;
@@ -373,8 +450,10 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to transform configuration for client update: {Message}", 
-                    EntityTypeName, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to transform configuration for client update: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    errorMessage = ex.Message
+                }, ex);
                 throw;
             }
 
@@ -393,13 +472,21 @@ namespace Alethic.Auth0.Operator.Controllers
                 LogAuth0ApiCall($"Updating Auth0 client with ID: {id} and name: {conf.Name}", Auth0ApiCallType.Write, "A0Client", conf.Name ?? "unknown", "unknown", "update_client");
                 await api.Clients.UpdateAsync(id, req, cancellationToken);
                 var duration = DateTimeOffset.UtcNow - startTime;
-                Logger.LogInformation(
-                    "{EntityTypeName} successfully updated client in Auth0 with id: {ClientId} and name: {ClientName} in {Duration}ms",
-                    EntityTypeName, id, conf.Name, duration.TotalMilliseconds);
+                Logger.LogInformationJson($"{EntityTypeName} successfully updated client in Auth0 with id: {id} and name: {conf.Name} in {duration.TotalMilliseconds}ms", new {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    clientName = conf.Name,
+                    durationMs = duration.TotalMilliseconds
+                });
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to update client in Auth0 with id: {ClientId} and name: {ClientName}: {Message}", EntityTypeName, id, conf.Name, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to update client in Auth0 with id: {id} and name: {conf.Name}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    clientName = conf.Name,
+                    errorMessage = ex.Message
+                }, ex);
                 throw;
             }
         }
@@ -458,7 +545,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning("Failed to decode existing clientId from secret data: {Message}", ex.Message);
+                    Logger.LogWarningJson($"Failed to decode existing clientId from secret data: {ex.Message}", new {
+                        errorMessage = ex.Message
+                    });
                     return true; // If we can't decode, assume update is needed
                 }
             }
@@ -474,7 +563,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning("Failed to decode existing clientSecret from secret data: {Message}", ex.Message);
+                    Logger.LogWarningJson($"Failed to decode existing clientSecret from secret data: {ex.Message}", new {
+                        errorMessage = ex.Message
+                    });
                     return true; // If we can't decode, assume update is needed
                 }
             }
@@ -508,9 +599,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 
                 if (secret is null)
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName} which does not exist: creating.",
-                        EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} which does not exist: creating.", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        secretName = entity.Spec.SecretRef.Name
+                    });
                     try
                     {
                         secret = await Kube.CreateAsync(
@@ -523,8 +617,13 @@ namespace Alethic.Auth0.Operator.Controllers
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError(ex, "{EntityTypeName} {EntityNamespace}/{EntityName} failed to create secret {SecretName}: {Message}", 
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name, ex.Message);
+                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to create secret {entity.Spec.SecretRef.Name}: {ex.Message}", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            secretName = entity.Spec.SecretRef.Name,
+                            errorMessage = ex.Message
+                        }, ex);
                         throw;
                     }
                 }
@@ -536,9 +635,12 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     if (updateNeeded)
                     {
-                        Logger.LogInformation(
-                            "{EntityTypeName} {EntityNamespace}/{EntityName} referenced secret {SecretName}: updating due to data changes.",
-                            EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name}: updating due to data changes.", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            secretName = entity.Spec.SecretRef.Name
+                        });
                         
                         secret.StringData ??= new Dictionary<string, string>();
 
@@ -555,30 +657,44 @@ namespace Alethic.Auth0.Operator.Controllers
                         try
                         {
                             secret = await Kube.UpdateAsync(secret, cancellationToken);
-                            Logger.LogInformation(
-                                "{EntityTypeName} {EntityNamespace}/{EntityName} successfully updated secret {SecretName}",
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} successfully updated secret {entity.Spec.SecretRef.Name}", new {
+                                entityTypeName = EntityTypeName,
+                                entityNamespace = entity.Namespace(),
+                                entityName = entity.Name(),
+                                secretName = entity.Spec.SecretRef.Name
+                            });
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError(ex, "{EntityTypeName} {EntityNamespace}/{EntityName} failed to update secret {SecretName}: {Message}", 
-                                EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name, ex.Message);
+                            Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update secret {entity.Spec.SecretRef.Name}: {ex.Message}", new {
+                                entityTypeName = EntityTypeName,
+                                entityNamespace = entity.Namespace(),
+                                entityName = entity.Name(),
+                                secretName = entity.Spec.SecretRef.Name,
+                                errorMessage = ex.Message
+                            }, ex);
                             throw;
                         }
                     }
                 }
                 else
                 {
-                    Logger.LogInformation(
-                        "{EntityTypeName} {EntityNamespace}/{EntityName} secret {SecretName} exists but is not owned by this client, skipping update",
-                        EntityTypeName, entity.Namespace(), entity.Name(), entity.Spec.SecretRef.Name);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} secret {entity.Spec.SecretRef.Name} exists but is not owned by this client, skipping update", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        secretName = entity.Spec.SecretRef.Name
+                    });
                 }
             }
             catch (Exception e)
             {
-                Logger.LogError(e,
-                    "Error applying secret for {EntityTypeName} {EntityNamespace}/{EntityName}: {Message}",
-                    EntityTypeName, entity.Namespace(), entity.Name(), e.Message);
+                Logger.LogErrorJson($"Error applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    errorMessage = e.Message
+                }, e);
                 throw;
             }
         }
@@ -586,20 +702,27 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            Logger.LogInformation(
-                "{EntityTypeName} deleting client from Auth0 with ID: {ClientId} (reason: Kubernetes entity deleted)",
-                EntityTypeName, id);
+            Logger.LogInformationJson($"{EntityTypeName} deleting client from Auth0 with ID: {id} (reason: Kubernetes entity deleted)", new {
+                entityTypeName = EntityTypeName,
+                clientId = id,
+                reason = "Kubernetes entity deleted"
+            });
             try
             {
                 LogAuth0ApiCall($"Deleting Auth0 client with ID: {id}", Auth0ApiCallType.Write, "A0Client", id, "unknown", "delete_client");
                 await api.Clients.DeleteAsync(id, cancellationToken);
-                Logger.LogInformation("{EntityTypeName} successfully deleted client from Auth0 with ID: {ClientId}",
-                    EntityTypeName, id);
+                Logger.LogInformationJson($"{EntityTypeName} successfully deleted client from Auth0 with ID: {id}", new {
+                    entityTypeName = EntityTypeName,
+                    clientId = id
+                });
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to delete client from Auth0 with ID: {ClientId}: {Message}", 
-                    EntityTypeName, id, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to delete client from Auth0 with ID: {id}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    errorMessage = ex.Message
+                }, ex);
                 throw;
             }
         }
@@ -616,7 +739,11 @@ namespace Alethic.Auth0.Operator.Controllers
             
             if (secretRef is null)
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} missing client authentication secret.", EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing client authentication secret.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
                 return true;
             }
 
@@ -626,20 +753,36 @@ namespace Alethic.Auth0.Operator.Controllers
             
             if (string.IsNullOrWhiteSpace(secretName) || string.IsNullOrWhiteSpace(secretNamespace))
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} has invalid client authentication secret reference.", EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has invalid client authentication secret reference.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
                 return true;
             }
             
             var secret = Kube.Get<V1Secret>(secretName, secretNamespace);
             if (secret is null)
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} not found.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} not found.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace = secretNamespace,
+                    secretName = secretName
+                });
                 return true;
             }
 
             if (secret.Data is null)
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} has no data.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} has no data.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace = secretNamespace,
+                    secretName = secretName
+                });
                 return true;
             }
             
@@ -654,7 +797,13 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             if (string.IsNullOrWhiteSpace(clientId))
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientId.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientId.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace = secretNamespace,
+                    secretName = secretName
+                });
                 return true;
             }
 
@@ -664,7 +813,13 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             if (string.IsNullOrWhiteSpace(clientSecret))
             {
-                Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} client authentication secret {SecretNamespace}/{SecretName} is missing clientSecret.", EntityTypeName, entity.Namespace(), entity.Name(), secretNamespace, secretName);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientSecret.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace = secretNamespace,
+                    secretName = secretName
+                });
                 return true;
             }
             

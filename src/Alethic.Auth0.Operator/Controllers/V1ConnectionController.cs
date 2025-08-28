@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Connection;
+using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
@@ -64,16 +65,30 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                Logger.LogInformation("{EntityTypeName} fetching connection from Auth0 with ID {Id}", EntityTypeName, id);
+                Logger.LogInformationJson($"{EntityTypeName} fetching connection from Auth0 with ID {id}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    operation = "fetch"
+                });
                 LogAuth0ApiCall($"Getting Auth0 connection with ID: {id}", Auth0ApiCallType.Read, "A0Connection", id, defaultNamespace, "retrieve_connection_by_id");
                 var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
                 if (self == null)
                 {
-                    Logger.LogWarning("{EntityTypeName} connection with ID {Id} not found in Auth0", EntityTypeName, id);
+                    Logger.LogWarningJson($"{EntityTypeName} connection with ID {id} not found in Auth0", new {
+                        entityTypeName = EntityTypeName,
+                        connectionId = id,
+                        status = "not_found"
+                    });
                     return null;
                 }
 
-                Logger.LogInformation("{EntityTypeName} successfully retrieved connection from Auth0 with ID {Id} and name {Name}", EntityTypeName, id, self.Name);
+                Logger.LogInformationJson($"{EntityTypeName} successfully retrieved connection from Auth0 with ID {id} and name {self.Name}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    connectionName = self.Name,
+                    operation = "fetch",
+                    status = "success"
+                });
                 var dict = new Hashtable();
                 dict["id"] = self.Id;
                 dict["name"] = self.Name;
@@ -90,12 +105,23 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (ErrorApiException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                Logger.LogWarning("{EntityTypeName} connection with ID {Id} not found in Auth0 (404)", EntityTypeName, id);
+                Logger.LogWarningJson($"{EntityTypeName} connection with ID {id} not found in Auth0 (404)", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    statusCode = 404,
+                    status = "not_found"
+                });
                 return null;
             }
             catch (Exception e)
             {
-                Logger.LogError(e, "Error retrieving {EntityTypeName} with ID {Id}: {Message}", EntityTypeName, id, e.Message);
+                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    operation = "fetch",
+                    errorMessage = e.Message,
+                    status = "error"
+                }, e);
                 throw;
             }
         }
@@ -105,26 +131,58 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (spec.Find is not null)
             {
-                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} using find criteria for connection lookup", EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} using find criteria for connection lookup", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "find_using_criteria"
+                });
                 
                 if (spec.Find.ConnectionId is string connectionId)
                 {
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} searching Auth0 for connection with ID {ConnectionId}", EntityTypeName, entity.Namespace(), entity.Name(), connectionId);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for connection with ID {connectionId}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        connectionId = connectionId,
+                        operation = "search_by_id"
+                    });
                     try
                     {
                         LogAuth0ApiCall($"Getting Auth0 connection by ID: {connectionId}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "retrieve_connection_by_id_from_spec");
                         var connection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
-                        Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} found existing connection with ID {ConnectionId} and name {Name}", EntityTypeName, entity.Namespace(), entity.Name(), connectionId, connection.Name);
+                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing connection with ID {connectionId} and name {connection.Name}", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            connectionId = connectionId,
+                            connectionName = connection.Name,
+                            operation = "search_by_id",
+                            status = "found"
+                        });
                         return connection.Id;
                     }
                     catch (ErrorApiException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
-                        Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} could not find connection with ID {ConnectionId}", EntityTypeName, entity.Namespace(), entity.Name(), connectionId);
+                        Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not find connection with ID {connectionId}", new {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            connectionId = connectionId,
+                            operation = "search_by_id",
+                            status = "not_found"
+                        });
                         return null;
                     }
                 }
 
-                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} no valid connection ID provided in find criteria", EntityTypeName, entity.Namespace(), entity.Name());
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no valid connection ID provided in find criteria", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "find_criteria_validation",
+                    issue = "no_valid_connection_id"
+                });
                 return null;
             }
             else
@@ -132,20 +190,47 @@ namespace Alethic.Auth0.Operator.Controllers
                 var conf = spec.Init ?? spec.Conf;
                 if (conf is null || string.IsNullOrEmpty(conf.Name))
                 {
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} no configuration or connection name available for find operation", EntityTypeName, entity.Namespace(), entity.Name());
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no configuration or connection name available for find operation", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "find_by_name",
+                        issue = "no_configuration_or_name"
+                    });
                     return null;
                 }
 
-                Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} searching Auth0 for connection with name {ConnectionName}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for connection with name {conf.Name}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    connectionName = conf.Name,
+                    operation = "search_by_name"
+                });
                 var list = await GetAllConnectionsWithPagination(api, cancellationToken);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
                 if (self is not null)
                 {
-                    Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} found existing connection with name {ConnectionName} and ID {Id}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name, self.Id);
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing connection with name {conf.Name} and ID {self.Id}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        connectionName = conf.Name,
+                        connectionId = self.Id,
+                        operation = "search_by_name",
+                        status = "found"
+                    });
                 }
                 else
                 {
-                    Logger.LogWarning("{EntityTypeName} {Namespace}/{Name} no existing connection found with name {ConnectionName}", EntityTypeName, entity.Namespace(), entity.Name(), conf.Name);
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no existing connection found with name {conf.Name}", new {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        connectionName = conf.Name,
+                        operation = "search_by_name",
+                        status = "not_found"
+                    });
                 }
                 return self?.Id;
             }
@@ -187,7 +272,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{EntityTypeName} creating connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, conf.Name, conf.Strategy);
+            Logger.LogInformationJson($"{EntityTypeName} creating connection in Auth0 with name: {conf.Name} and strategy: {conf.Strategy}", new {
+                entityTypeName = EntityTypeName,
+                connectionName = conf.Name,
+                strategy = conf.Strategy,
+                operation = "create"
+            });
             try
             {
                 var req = new ConnectionCreateRequest();
@@ -200,12 +290,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (self is null)
                     throw new InvalidOperationException();
 
-                Logger.LogInformation("{EntityTypeName} successfully created connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, self.Id, conf.Name, conf.Strategy);
+                Logger.LogInformationJson($"{EntityTypeName} successfully created connection in Auth0 with ID: {self.Id}, name: {conf.Name} and strategy: {conf.Strategy}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = self.Id,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "create",
+                    status = "success"
+                });
                 return self.Id;
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to create connection in Auth0 with name: {ConnectionName} and strategy: {Strategy}: {Message}", EntityTypeName, conf.Name, conf.Strategy, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to create connection in Auth0 with name: {conf.Name} and strategy: {conf.Strategy}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "create",
+                    errorMessage = ex.Message,
+                    status = "failed"
+                }, ex);
                 throw;
             }
         }
@@ -213,7 +317,13 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{EntityTypeName} updating connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
+            Logger.LogInformationJson($"{EntityTypeName} updating connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new {
+                entityTypeName = EntityTypeName,
+                connectionId = id,
+                connectionName = conf.Name,
+                strategy = conf.Strategy,
+                operation = "update"
+            });
             try
             {
                 var req = new ConnectionUpdateRequest();
@@ -222,11 +332,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
                 LogAuth0ApiCall($"Updating Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection");
                 await api.Connections.UpdateAsync(id, req, cancellationToken);
-                Logger.LogInformation("{EntityTypeName} successfully updated connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}", EntityTypeName, id, conf.Name, conf.Strategy);
+                Logger.LogInformationJson($"{EntityTypeName} successfully updated connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "update",
+                    status = "success"
+                });
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to update connection in Auth0 with ID: {ConnectionId}, name: {ConnectionName} and strategy: {Strategy}: {Message}", EntityTypeName, id, conf.Name, conf.Strategy, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to update connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "update",
+                    errorMessage = ex.Message,
+                    status = "failed"
+                }, ex);
                 throw;
             }
         }
@@ -254,16 +379,32 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            Logger.LogInformation("{EntityTypeName} deleting connection from Auth0 with ID: {ConnectionId} (reason: Kubernetes entity deleted)", EntityTypeName, id);
+            Logger.LogInformationJson($"{EntityTypeName} deleting connection from Auth0 with ID: {id} (reason: Kubernetes entity deleted)", new {
+                entityTypeName = EntityTypeName,
+                connectionId = id,
+                operation = "delete",
+                reason = "kubernetes_entity_deleted"
+            });
             try
             {
                 LogAuth0ApiCall($"Deleting Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", id, "unknown", "delete_connection");
                 await api.Connections.DeleteAsync(id, cancellationToken);
-                Logger.LogInformation("{EntityTypeName} successfully deleted connection from Auth0 with ID: {ConnectionId}", EntityTypeName, id);
+                Logger.LogInformationJson($"{EntityTypeName} successfully deleted connection from Auth0 with ID: {id}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    operation = "delete",
+                    status = "success"
+                });
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "{EntityTypeName} failed to delete connection from Auth0 with ID: {ConnectionId}: {Message}", EntityTypeName, id, ex.Message);
+                Logger.LogErrorJson($"{EntityTypeName} failed to delete connection from Auth0 with ID: {id}: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    operation = "delete",
+                    errorMessage = ex.Message,
+                    status = "failed"
+                }, ex);
                 throw;
             }
         }
