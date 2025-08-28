@@ -88,7 +88,7 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 var reason = isFirstReconciliation ? "first reconciliation" : "local configuration changes detected";
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} fetching tenant settings from Auth0 API (reason: {Reason})", EntityTypeName, entity.Namespace(), entity.Name(), reason);
-                LogAuth0ApiCall($"Getting Auth0 tenant settings", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace());
+                LogAuth0ApiCall($"Getting Auth0 tenant settings", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings");
                 settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
                 if (settings is null)
                 {
@@ -135,7 +135,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         // push update to Auth0
                         var req = TransformToNewtonsoftJson<TenantConf, TenantSettingsUpdateRequest>(conf);
                         req.Flags.EnableSSO = null;
-                        LogAuth0ApiCall($"Updating Auth0 tenant settings", Auth0ApiCallType.Write, "A0Tenant", entity.Name(), entity.Namespace());
+                        LogAuth0ApiCall($"Updating Auth0 tenant settings", Auth0ApiCallType.Write, "A0Tenant", entity.Name(), entity.Namespace(), "update_tenant_settings");
                         settings = await api.TenantSettings.UpdateAsync(req, cancellationToken);
                         Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} successfully updated tenant settings in Auth0", EntityTypeName, entity.Namespace(), entity.Name());
                     }
@@ -151,7 +151,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (needsAuth0Fetch)
             {
                 Logger.LogInformation("{EntityTypeName} {Namespace}/{Name} retrieving final tenant settings from Auth0 for status update", EntityTypeName, entity.Namespace(), entity.Name());
-                LogAuth0ApiCall($"Getting Auth0 tenant settings for status update", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace());
+                LogAuth0ApiCall($"Getting Auth0 tenant settings for status update", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings_for_status");
                 settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
                 entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
                 try

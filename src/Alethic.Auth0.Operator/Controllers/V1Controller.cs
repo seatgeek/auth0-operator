@@ -107,7 +107,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="entityType">The Auth0 entity type being operated on</param>
         /// <param name="entityName">The name of the Kubernetes entity</param>
         /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
-        protected void LogAuth0ApiCall(string message, Auth0ApiCallType apiCallType, string entityType, string entityName, string entityNamespace)
+        /// <param name="purpose">The purpose of this Auth0 API invocation for better observability</param>
+        protected void LogAuth0ApiCall(string message, Auth0ApiCallType apiCallType, string entityType, string entityName, string entityNamespace, string purpose)
         {
             var logEntry = new
             {
@@ -115,7 +116,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 auth0ApiCallType = apiCallType.ToString().ToLowerInvariant(),
                 auth0EntityType = entityType,
                 auth0EntityName = entityName,
-                auth0EntityNamespace = entityNamespace
+                auth0EntityNamespace = entityNamespace,
+                auth0ApiCallPurpose = purpose
             };
             
             var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry);
@@ -276,7 +278,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
-                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace);
+                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");

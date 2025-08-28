@@ -161,7 +161,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} creating client grant in Auth0 for ClientId {ClientId} and Audience {Audience}", EntityTypeName, req.ClientId, req.Audience);
             try
             {
-                LogAuth0ApiCall($"Creating Auth0 client grant", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown");
+                LogAuth0ApiCall($"Creating Auth0 client grant", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "create_client_grant");
                 var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
                 if (self is null)
                 {
@@ -190,7 +190,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} updating client grant in Auth0 with ID {Id}", EntityTypeName, id);
             try
             {
-                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown");
+                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "update_client_grant");
                 await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully updated client grant in Auth0 with ID {Id}", EntityTypeName, id);
             }
@@ -207,7 +207,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformation("{EntityTypeName} deleting client grant from Auth0 with ID {Id}", EntityTypeName, id);
             try
             {
-                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown");
+                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown", "delete_client_grant");
                 await api.ClientGrants.DeleteAsync(id, cancellationToken);
                 Logger.LogInformation("{EntityTypeName} successfully deleted client grant from Auth0 with ID {Id}", EntityTypeName, id);
             }
