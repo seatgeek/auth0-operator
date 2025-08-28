@@ -116,9 +116,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 timestamp = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 message = message,
                 auth0ApiCallType = apiCallType.ToString().ToLowerInvariant(),
-                auth0EntityType = entityType,
-                auth0EntityName = entityName,
-                auth0EntityNamespace = entityNamespace,
+                entityTypeName = entityType,
+                entityName = entityName,
+                entityNamespace = entityNamespace,
                 auth0ApiCallPurpose = purpose
             };
             
