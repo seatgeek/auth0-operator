@@ -32,6 +32,21 @@ using Newtonsoft.Json;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
+    /// <summary>
+    /// Represents the type of Auth0 API call being performed.
+    /// </summary>
+    public enum Auth0ApiCallType
+    {
+        /// <summary>
+        /// Read operation - fetches data from Auth0 without modifying it.
+        /// </summary>
+        Read,
+        
+        /// <summary>
+        /// Write operation - creates, updates, or deletes data in Auth0.
+        /// </summary>
+        Write
+    }
 
     public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
@@ -88,16 +103,16 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Logs Auth0 API call information in JSON format immediately before the API call is made.
         /// </summary>
         /// <param name="message">The content of the log message</param>
-        /// <param name="apiCallType">The type of API call (read or write)</param>
+        /// <param name="apiCallType">The type of API call</param>
         /// <param name="entityType">The Auth0 entity type being operated on</param>
         /// <param name="entityName">The name of the Kubernetes entity</param>
         /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
-        protected void LogAuth0ApiCall(string message, string apiCallType, string entityType, string entityName, string entityNamespace)
+        protected void LogAuth0ApiCall(string message, Auth0ApiCallType apiCallType, string entityType, string entityName, string entityNamespace)
         {
             var logEntry = new
             {
                 message = message,
-                auth0ApiCallType = apiCallType,
+                auth0ApiCallType = apiCallType.ToString().ToLowerInvariant(),
                 auth0EntityType = entityType,
                 auth0EntityName = entityName,
                 auth0EntityNamespace = entityNamespace
@@ -261,7 +276,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
-                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", "read", "A0ResourceServer", id, defaultNamespace);
+                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace);
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");
