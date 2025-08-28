@@ -328,7 +328,7 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 var req = new ConnectionUpdateRequest();
                 await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
-                req.Name = null;
+                req.Name = null; // not allowed to be changed
                 req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
                 LogAuth0ApiCall($"Updating Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection");
                 await api.Connections.UpdateAsync(id, req, cancellationToken);
@@ -425,6 +425,24 @@ namespace Alethic.Auth0.Operator.Controllers
                 api.Connections.GetAllAsync,
                 "connections",
                 cancellationToken);
+        }
+
+        /// <inheritdoc />
+        protected override DriftDetectionMode GetDriftDetectionMode() => DriftDetectionMode.IncludeSpecificFields;
+
+        protected override string[] GetIncludedFields()
+        {
+            // Only compare these specific fields for drift detection
+            return new[]
+            {
+                "display_name", 
+                "options",
+                "metadata",
+                "realms",
+                "is_domain_connection",
+                "show_as_button",
+                "enabled_clients"
+            };
         }
 
     }
