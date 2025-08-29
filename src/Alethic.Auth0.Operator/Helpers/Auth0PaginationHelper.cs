@@ -7,6 +7,8 @@ using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
 using Auth0.ManagementApi.Paging;
 
+using Alethic.Auth0.Operator.Extensions;
+
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -49,7 +51,12 @@ public static class Auth0PaginationHelper
         // Check cache first
         if (cache.TryGetValue(cacheKey, out List<T>? cachedResources) && cachedResources != null)
         {
-            logger.LogDebug("Using cached {ResourceType} list with {Count} resources", resourceTypeName, cachedResources.Count);
+            logger.LogDebugJson($"Using cached {resourceTypeName} list with {cachedResources.Count} resources", new
+            {
+                resourceType = resourceTypeName,
+                resourceCount = cachedResources.Count,
+                operation = "cache_hit"
+            });
             return cachedResources;
         }
 
@@ -59,7 +66,11 @@ public static class Auth0PaginationHelper
         const int perPage = 100; // Maximum page size allowed by Auth0 API
         IPagedList<T> resources;
 
-        logger.LogDebug("Fetching all {ResourceType} from Auth0 API", resourceTypeName);
+        logger.LogDebugJson($"Fetching all {resourceTypeName} from Auth0 API", new
+        {
+            resourceType = resourceTypeName,
+            operation = "fetch_paginated"
+        });
 
         do
         {
@@ -70,8 +81,14 @@ public static class Auth0PaginationHelper
 
                 allResources.AddRange(resources);
 
-                logger.LogInformation("Retrieved page {Page}: {Count} {ResourceType} (total so far: {Total})",
-                    page, resources.Count, resourceTypeName, allResources.Count);
+                logger.LogInformationJson($"Retrieved page {page}: {resources.Count} {resourceTypeName} (total so far: {allResources.Count})", new
+                {
+                    resourceType = resourceTypeName,
+                    page = page,
+                    pageCount = resources.Count,
+                    totalCount = allResources.Count,
+                    operation = "fetch_page"
+                });
 
                 page++;
 
@@ -83,17 +100,35 @@ public static class Auth0PaginationHelper
             }
             catch (Exception e)
             {
-                logger.LogError(e, "Error retrieving {ResourceType} page {Page}: {Message}", resourceTypeName, page, e.Message);
+                logger.LogErrorJson($"Error retrieving {resourceTypeName} page {page}: {e.Message}", new
+                {
+                    resourceType = resourceTypeName,
+                    page = page,
+                    errorMessage = e.Message,
+                    operation = "fetch_page",
+                    status = "error"
+                }, e);
                 throw;
             }
 
         } while (resources.Paging != null && resources.Paging.Start + resources.Paging.Length < resources.Paging.Total);
 
-        logger.LogInformation("Completed paginated {ResourceType} retrieval: {TotalResources} resources across {TotalPages} pages",
-            resourceTypeName, allResources.Count, page);
+        logger.LogInformationJson($"Completed paginated {resourceTypeName} retrieval: {allResources.Count} resources across {page} pages", new
+        {
+            resourceType = resourceTypeName,
+            totalResources = allResources.Count,
+            totalPages = page,
+            operation = "fetch_paginated",
+            status = "completed"
+        });
 
-        logger.LogDebug("Caching {Count} {ResourceType} for {CacheDurationMinutes} minutes", 
-            allResources.Count, resourceTypeName, cacheDurationMinutes);
+        logger.LogDebugJson($"Caching {allResources.Count} {resourceTypeName} for {cacheDurationMinutes} minutes", new
+        {
+            resourceType = resourceTypeName,
+            resourceCount = allResources.Count,
+            cacheDurationMinutes = cacheDurationMinutes,
+            operation = "cache_set"
+        });
         cache.Set(cacheKey, allResources, TimeSpan.FromMinutes(cacheDurationMinutes));
 
         return allResources;

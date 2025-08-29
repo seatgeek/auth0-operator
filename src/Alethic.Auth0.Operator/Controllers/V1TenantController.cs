@@ -67,6 +67,15 @@ namespace Alethic.Auth0.Operator.Controllers
             };
         }
 
+        /// <summary>
+        /// Gets the list of fields to exclude from drift detection for tenant configuration.
+        /// </summary>
+        /// <returns>Array of field names to exclude from comparison</returns>
+        protected string[] GetExcludedFields()
+        {
+            return Array.Empty<string>();
+        }
+
         /// <inheritdoc />
         protected override async Task Reconcile(V1Tenant entity, CancellationToken cancellationToken)
         {
@@ -296,19 +305,54 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Filters fields for comparison based on the tenant-specific fields we track.
+        /// Always attempts to read GetIncludedFields first, then applies GetExcludedFields.
         /// </summary>
         /// <param name="config">The configuration hashtable to filter</param>
-        /// <returns>A new hashtable with only the tracked tenant fields</returns>
+        /// <returns>A new hashtable with fields filtered according to included and excluded fields</returns>
         private Hashtable FilterFieldsForComparison(Hashtable config)
         {
             var filtered = new Hashtable();
-            var includedFields = new HashSet<string>(GetIncludedFields(), StringComparer.OrdinalIgnoreCase);
-            
-            foreach (DictionaryEntry entry in config)
+            var includedFields = GetIncludedFields();
+            var excludedFields = GetExcludedFields();
+
+            // If included fields are specified, only include those fields
+            if (includedFields.Length > 0)
             {
-                if (entry.Key is string key && includedFields.Contains(key))
+                var includedFieldsSet = new HashSet<string>(includedFields, StringComparer.OrdinalIgnoreCase);
+                foreach (DictionaryEntry entry in config)
                 {
-                    filtered[key] = entry.Value;
+                    if (entry.Key is string key && includedFieldsSet.Contains(key))
+                    {
+                        filtered[key] = entry.Value;
+                    }
+                }
+            }
+            else
+            {
+                // Include all fields initially
+                foreach (DictionaryEntry entry in config)
+                {
+                    filtered[entry.Key] = entry.Value;
+                }
+            }
+
+            // Then apply excluded fields if any are specified
+            if (excludedFields.Length > 0)
+            {
+                var excludedFieldsSet = new HashSet<string>(excludedFields, StringComparer.OrdinalIgnoreCase);
+                var keysToRemove = new List<object>();
+                
+                foreach (DictionaryEntry entry in filtered)
+                {
+                    if (entry.Key is string key && excludedFieldsSet.Contains(key))
+                    {
+                        keysToRemove.Add(entry.Key);
+                    }
+                }
+
+                foreach (var key in keysToRemove)
+                {
+                    filtered.Remove(key);
                 }
             }
 
