@@ -838,9 +838,6 @@ namespace Alethic.Auth0.Operator.Controllers
             return (false, null);
         }
 
-        /// <inheritdoc />
-
-        protected override DriftDetectionMode GetDriftDetectionMode() => DriftDetectionMode.IncludeSpecificFields;
 
         protected override string[] GetIncludedFields()
         {

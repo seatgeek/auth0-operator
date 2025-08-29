@@ -446,8 +446,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 cancellationToken);
         }
 
-        /// <inheritdoc />
-        protected override DriftDetectionMode GetDriftDetectionMode() => DriftDetectionMode.IncludeSpecificFields;
 
         protected override string[] GetIncludedFields()
         {
@@ -463,49 +461,6 @@ namespace Alethic.Auth0.Operator.Controllers
             };
         }
 
-        /// <summary>
-        /// Applies any modification to the entity status just before saving it.
-        /// Overridden to filter out options.userid_attribute from the lastConf before storing it.
-        /// </summary>
-        protected override Task ApplyStatus(IManagementApiClient api, V1Connection entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
-        {
-            // Filter out options.userid_attribute from lastConf before storing it
-            // This ensures future comparisons won't see this field as a change
-            if (lastConf.ContainsKey("options") && lastConf["options"] is Hashtable options && options.ContainsKey("userid_attribute"))
-            {
-                // Create a copy of the options hashtable without userid_attribute
-                var filteredOptions = new Hashtable();
-                foreach (DictionaryEntry entry in options)
-                {
-                    if (entry.Key is string key && !key.Equals("userid_attribute", StringComparison.OrdinalIgnoreCase))
-                    {
-                        filteredOptions[entry.Key] = entry.Value;
-                    }
-                }
-                
-                // Update the lastConf with filtered options
-                var filteredLastConf = new Hashtable();
-                foreach (DictionaryEntry entry in lastConf)
-                {
-                    if (entry.Key is string key && key.Equals("options", StringComparison.OrdinalIgnoreCase))
-                    {
-                        filteredLastConf[entry.Key] = filteredOptions;
-                    }
-                    else
-                    {
-                        filteredLastConf[entry.Key] = entry.Value;
-                    }
-                }
-                
-                entity.Status.LastConf = filteredLastConf;
-            }
-            else
-            {
-                entity.Status.LastConf = lastConf;
-            }
-
-            return Task.CompletedTask;
-        }
 
     }
 

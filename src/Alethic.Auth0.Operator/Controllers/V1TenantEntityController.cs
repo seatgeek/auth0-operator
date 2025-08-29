@@ -26,26 +26,6 @@ using Microsoft.Extensions.Options;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
-    /// <summary>
-    /// Defines how field filtering should be applied during drift detection.
-    /// </summary>
-    public enum DriftDetectionMode
-    {
-        /// <summary>
-        /// Compare entire configuration without any field filtering.
-        /// </summary>
-        CompareAll,
-        
-        /// <summary>
-        /// Only compare specific fields defined by the entity controller.
-        /// </summary>
-        IncludeSpecificFields,
-        
-        /// <summary>
-        /// Compare all fields except those explicitly excluded by the entity controller.
-        /// </summary>
-        ExcludeSpecificFields
-    }
 
     public abstract class V1TenantEntityController<TEntity, TSpec, TStatus, TConf> : V1Controller<TEntity, TSpec, TStatus, TConf>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1TenantEntity<TSpec, TStatus, TConf>
@@ -120,11 +100,6 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns></returns>
         protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
-        /// <summary>
-        /// Gets the drift detection mode for this entity type.
-        /// </summary>
-        /// <returns>The drift detection mode to use</returns>
-        protected virtual DriftDetectionMode GetDriftDetectionMode() => DriftDetectionMode.ExcludeSpecificFields;
 
         /// <summary>
         /// Gets the list of fields to include in drift detection when using IncludeSpecificFields mode.
@@ -733,78 +708,60 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Filters fields for comparison based on the entity's drift detection configuration.
+        /// Always attempts to read GetIncludedFields first, then applies GetExcludedFields.
         /// </summary>
         /// <param name="config">The configuration hashtable to filter</param>
-        /// <returns>A new hashtable with fields filtered according to the entity's drift detection mode</returns>
+        /// <returns>A new hashtable with fields filtered according to included and excluded fields</returns>
         private Hashtable FilterFieldsForComparison(Hashtable config)
         {
-            var mode = GetDriftDetectionMode();
             var filtered = new Hashtable();
+            var includedFields = GetIncludedFields();
+            var excludedFields = GetExcludedFields();
 
-            switch (mode)
+            // If included fields are specified, only include those fields
+            if (includedFields.Length > 0)
             {
-                case DriftDetectionMode.CompareAll:
-                    // Return all fields without filtering
-                    foreach (DictionaryEntry entry in config)
+                var includedFieldsSet = new HashSet<string>(includedFields, StringComparer.OrdinalIgnoreCase);
+                foreach (DictionaryEntry entry in config)
+                {
+                    if (entry.Key is string key && includedFieldsSet.Contains(key))
                     {
-                        filtered[entry.Key] = entry.Value;
+                        filtered[key] = entry.Value;
                     }
-                    break;
+                }
+            }
+            else
+            {
+                // Include all fields initially
+                foreach (DictionaryEntry entry in config)
+                {
+                    filtered[entry.Key] = entry.Value;
+                }
+            }
 
-                case DriftDetectionMode.IncludeSpecificFields:
-                    // Only include specified fields
-                    var includedFields = new HashSet<string>(GetIncludedFields(), StringComparer.OrdinalIgnoreCase);
-                    foreach (DictionaryEntry entry in config)
+            // Then apply excluded fields if any are specified
+            if (excludedFields.Length > 0)
+            {
+                var excludedFieldsSet = new HashSet<string>(excludedFields, StringComparer.OrdinalIgnoreCase);
+                var keysToRemove = new List<object>();
+                
+                foreach (DictionaryEntry entry in filtered)
+                {
+                    if (entry.Key is string key && excludedFieldsSet.Contains(key))
                     {
-                        if (entry.Key is string key && includedFields.Contains(key))
-                        {
-                            filtered[key] = entry.Value;
-                        }
+                        keysToRemove.Add(entry.Key);
                     }
-                    break;
+                }
 
-                case DriftDetectionMode.ExcludeSpecificFields:
-                default:
-                    // Exclude specified fields plus default volatile fields
-                    var excludedFields = GetDefaultVolatileFields()
-                        .Concat(GetExcludedFields())
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    
-                    foreach (DictionaryEntry entry in config)
-                    {
-                        if (entry.Key is string key && !excludedFields.Contains(key))
-                        {
-                            filtered[key] = entry.Value;
-                        }
-                    }
-                    break;
+                foreach (var key in keysToRemove)
+                {
+                    filtered.Remove(key);
+                }
             }
 
             return filtered;
         }
 
-        /// <summary>
-        /// Gets the default list of volatile fields that Auth0 manages internally.
-        /// </summary>
-        /// <returns>Array of default volatile field names</returns>
-        private static string[] GetDefaultVolatileFields()
-        {
-            return new[]
-            {
-                // Auth0 system fields
-                "client_id", "tenant", "created_at", "updated_at", "revision",
-                // Client-specific volatile fields
-                "client_secret", "global", "is_first_party", "cross_origin_auth",
-                // Tenant-specific volatile fields
-                "id", "domain", "management_api_identifier",
-                // Connection-specific volatile fields
-                "provisioning_ticket_url", "realms",
-                // Resource server volatile fields
-                "identifier", "is_system",
-                // Client grant volatile fields
-                "id", "client_id", "audience"
-            };
-        }
 
         /// <summary>
         /// Performs deep comparison of two hashtables to detect configuration differences.
