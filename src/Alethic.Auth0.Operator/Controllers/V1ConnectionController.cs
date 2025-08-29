@@ -497,6 +497,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 filtered["metadata"] = filteredMetadata;
             }
 
+            // Normalize enabled_clients format for comparison
+            if (filtered.ContainsKey("enabled_clients") && filtered["enabled_clients"] is IEnumerable enabledClients)
+            {
+                var normalizedClients = new List<string>();
+                foreach (var client in enabledClients)
+                {
+                    if (client is Hashtable clientHash && clientHash.ContainsKey("id"))
+                    {
+                        // Extract ID from hashtable format
+                        normalizedClients.Add(clientHash["id"]?.ToString() ?? "");
+                    }
+                    else if (client is string clientId)
+                    {
+                        // Already in string format
+                        normalizedClients.Add(clientId);
+                    }
+                }
+                filtered["enabled_clients"] = normalizedClients.ToArray();
+            }
+
             return filtered;
         }
 
