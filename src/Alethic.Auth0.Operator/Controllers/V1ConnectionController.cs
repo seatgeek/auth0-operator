@@ -438,7 +438,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 "display_name", 
                 "options",
                 "metadata",
-                "realms",
                 "is_domain_connection",
                 "show_as_button",
                 "enabled_clients"
