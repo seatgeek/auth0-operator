@@ -461,6 +461,15 @@ namespace Alethic.Auth0.Operator.Controllers
             };
         }
 
+        protected override string[] GetExcludedFields()
+        {
+            // Exclude the userid_attribute field from options during comparison
+            return new[]
+            {
+                "options.userid_attribute"
+            };
+        }
+
 
     }
 

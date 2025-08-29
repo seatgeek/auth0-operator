@@ -709,6 +709,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Filters fields for comparison based on the entity's drift detection configuration.
         /// Always attempts to read GetIncludedFields first, then applies GetExcludedFields.
+        /// Supports nested field exclusions using dot notation (e.g., "options.userid_attribute").
         /// </summary>
         /// <param name="config">The configuration hashtable to filter</param>
         /// <returns>A new hashtable with fields filtered according to included and excluded fields</returns>
@@ -742,12 +743,27 @@ namespace Alethic.Auth0.Operator.Controllers
             // Then apply excluded fields if any are specified
             if (excludedFields.Length > 0)
             {
-                var excludedFieldsSet = new HashSet<string>(excludedFields, StringComparer.OrdinalIgnoreCase);
+                // Separate top-level and nested field exclusions
+                var topLevelExclusions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var nestedExclusions = new List<string>();
+
+                foreach (var field in excludedFields)
+                {
+                    if (field.Contains('.'))
+                    {
+                        nestedExclusions.Add(field);
+                    }
+                    else
+                    {
+                        topLevelExclusions.Add(field);
+                    }
+                }
+
+                // Remove top-level excluded fields
                 var keysToRemove = new List<object>();
-                
                 foreach (DictionaryEntry entry in filtered)
                 {
-                    if (entry.Key is string key && excludedFieldsSet.Contains(key))
+                    if (entry.Key is string key && topLevelExclusions.Contains(key))
                     {
                         keysToRemove.Add(entry.Key);
                     }
@@ -756,6 +772,31 @@ namespace Alethic.Auth0.Operator.Controllers
                 foreach (var key in keysToRemove)
                 {
                     filtered.Remove(key);
+                }
+
+                // Handle nested field exclusions
+                foreach (var nestedField in nestedExclusions)
+                {
+                    var parts = nestedField.Split('.', 2);
+                    if (parts.Length == 2)
+                    {
+                        var parentKey = parts[0];
+                        var childKey = parts[1];
+
+                        if (filtered.ContainsKey(parentKey) && filtered[parentKey] is Hashtable parentHash)
+                        {
+                            // Create a copy of the parent hashtable without the excluded child field
+                            var filteredParent = new Hashtable();
+                            foreach (DictionaryEntry entry in parentHash)
+                            {
+                                if (entry.Key is string key && !key.Equals(childKey, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    filteredParent[entry.Key] = entry.Value;
+                                }
+                            }
+                            filtered[parentKey] = filteredParent;
+                        }
+                    }
                 }
             }
 
