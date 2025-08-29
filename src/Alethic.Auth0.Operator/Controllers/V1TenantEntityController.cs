@@ -401,6 +401,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     if (needsUpdate)
                     {
                         await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), cancellationToken);
+                        // Update lastConf to reflect the applied configuration to prevent false drift detection
+                        var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
+                        lastConf = TransformToSystemTextJson<Hashtable>(appliedJson);
                     }
                 }
             }
