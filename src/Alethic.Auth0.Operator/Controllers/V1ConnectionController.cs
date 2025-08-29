@@ -330,6 +330,25 @@ namespace Alethic.Auth0.Operator.Controllers
                 await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
                 req.Name = null; // not allowed to be changed
                 req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+
+                // Handle metadata with special nulling logic (overriding what ApplyConfToRequest set)
+                req.Metadata = conf.Metadata ?? new Hashtable();
+                
+                // explicitly "null out" missing metadata if previously present
+                if (last is not null && last.ContainsKey("metadata") && last["metadata"] is Hashtable lastMetadata)
+                {
+                    if (req.Metadata == null)
+                        req.Metadata = new Hashtable();
+                    
+                    // Create a defensive copy of keys to avoid potential enumeration issues
+                    var keysToProcess = lastMetadata.Keys.Cast<string>().ToList();
+                    foreach (string key in keysToProcess)
+                    {
+                        if (conf.Metadata == null || !conf.Metadata.ContainsKey(key))
+                            req.Metadata[key] = ""; // setting null value deletes Auth0 client metadata but doesn't affect Auth0 connection metadata
+                    }
+                }
+
                 LogAuth0ApiCall($"Updating Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection");
                 await api.Connections.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new {
@@ -442,6 +461,50 @@ namespace Alethic.Auth0.Operator.Controllers
                 "show_as_button",
                 "enabled_clients"
             };
+        }
+
+        /// <summary>
+        /// Applies any modification to the entity status just before saving it.
+        /// Overridden to filter out options.userid_attribute from the lastConf before storing it.
+        /// </summary>
+        protected override Task ApplyStatus(IManagementApiClient api, V1Connection entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            // Filter out options.userid_attribute from lastConf before storing it
+            // This ensures future comparisons won't see this field as a change
+            if (lastConf.ContainsKey("options") && lastConf["options"] is Hashtable options && options.ContainsKey("userid_attribute"))
+            {
+                // Create a copy of the options hashtable without userid_attribute
+                var filteredOptions = new Hashtable();
+                foreach (DictionaryEntry entry in options)
+                {
+                    if (entry.Key is string key && !key.Equals("userid_attribute", StringComparison.OrdinalIgnoreCase))
+                    {
+                        filteredOptions[entry.Key] = entry.Value;
+                    }
+                }
+                
+                // Update the lastConf with filtered options
+                var filteredLastConf = new Hashtable();
+                foreach (DictionaryEntry entry in lastConf)
+                {
+                    if (entry.Key is string key && key.Equals("options", StringComparison.OrdinalIgnoreCase))
+                    {
+                        filteredLastConf[entry.Key] = filteredOptions;
+                    }
+                    else
+                    {
+                        filteredLastConf[entry.Key] = entry.Value;
+                    }
+                }
+                
+                entity.Status.LastConf = filteredLastConf;
+            }
+            else
+            {
+                entity.Status.LastConf = lastConf;
+            }
+
+            return Task.CompletedTask;
         }
 
     }
