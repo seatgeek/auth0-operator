@@ -707,6 +707,17 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Applies entity-specific post-processing to filtered configuration for comparison.
+        /// Override in derived classes to add custom filtering logic.
+        /// </summary>
+        /// <param name="filtered">The already filtered configuration hashtable</param>
+        /// <returns>The hashtable with entity-specific filtering applied</returns>
+        protected virtual Hashtable PostProcessFilteredConfiguration(Hashtable filtered)
+        {
+            return filtered;
+        }
+
+        /// <summary>
         /// Filters fields for comparison based on the entity's drift detection configuration.
         /// Always attempts to read GetIncludedFields first, then applies GetExcludedFields.
         /// Supports nested field exclusions using dot notation (e.g., "options.userid_attribute").
@@ -800,7 +811,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
             }
 
-            return filtered;
+            return PostProcessFilteredConfiguration(filtered);
         }
 
 

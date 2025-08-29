@@ -470,6 +470,36 @@ namespace Alethic.Auth0.Operator.Controllers
             };
         }
 
+        /// <summary>
+        /// Applies connection-specific post-processing to filtered configuration for comparison.
+        /// Filters out empty metadata values since they cannot be properly removed from Auth0 connections.
+        /// </summary>
+        /// <param name="filtered">The already filtered configuration hashtable</param>
+        /// <returns>The hashtable with connection-specific filtering applied</returns>
+        protected override Hashtable PostProcessFilteredConfiguration(Hashtable filtered)
+        {
+            // Special handling for connection metadata: filter out empty values
+            if (filtered.ContainsKey("metadata") && filtered["metadata"] is Hashtable metadata)
+            {
+                var filteredMetadata = new Hashtable();
+                foreach (DictionaryEntry entry in metadata)
+                {
+                    // Only include metadata entries that have non-empty values
+                    if (entry.Value is string stringValue && !string.IsNullOrEmpty(stringValue))
+                    {
+                        filteredMetadata[entry.Key] = entry.Value;
+                    }
+                    else if (entry.Value is not null && entry.Value is not string)
+                    {
+                        filteredMetadata[entry.Key] = entry.Value;
+                    }
+                }
+                filtered["metadata"] = filteredMetadata;
+            }
+
+            return filtered;
+        }
+
 
     }
 
