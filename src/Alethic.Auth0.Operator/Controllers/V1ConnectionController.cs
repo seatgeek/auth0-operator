@@ -219,6 +219,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     connectionName = conf.Name,
                     operation = "search_by_name"
                 });
+                LogAuth0ApiCall($"Listing Auth0 connections to find by name: {conf.Name}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "list_connections_by_name");
                 var list = await GetAllConnectionsWithPagination(api, cancellationToken);
                 var self = list.FirstOrDefault(i => i.Name == conf.Name);
                 if (self is not null)
@@ -378,6 +379,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         status = "warning",
                         metadata = req.Metadata
                     });
+                    LogAuth0ApiCall($"Resetting Auth0 connection metadata with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "reset_connection_metadata");
                     await api.Connections.UpdateAsync(id, new ConnectionUpdateRequest { Metadata = new Hashtable() }, cancellationToken);
                 }
 
