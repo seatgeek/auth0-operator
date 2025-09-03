@@ -321,7 +321,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        public Task DeletedAsync(V1Client entity, CancellationToken cancellationToken = default)
+        public Task ProcessClientDeletionAsync(V1Client entity, CancellationToken cancellationToken = default)
         {
             return ProcessClientRemoval(entity, cancellationToken);
         }
