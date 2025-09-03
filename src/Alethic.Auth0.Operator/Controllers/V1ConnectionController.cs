@@ -101,7 +101,19 @@ namespace Alethic.Auth0.Operator.Controllers
                 dict["is_domain_connection"] = self.IsDomainConnection;
                 dict["show_as_button"] = self.ShowAsButton;
                 dict["provisioning_ticket_url"] = self.ProvisioningTicketUrl;
-                dict["enabled_clients"] = self.EnabledClients;
+                // Transform Auth0's enabled_clients array to dictionary format
+                var enabledClientsDict = new Dictionary<string, V1ClientReference>();
+                if (self.EnabledClients != null)
+                {
+                    foreach (var clientId in self.EnabledClients)
+                    {
+                        if (!string.IsNullOrEmpty(clientId))
+                        {
+                            enabledClientsDict[clientId] = new V1ClientReference { Id = clientId };
+                        }
+                    }
+                }
+                dict["enabled_clients"] = enabledClientsDict;
                 dict["options"] = TransformToSystemTextJson<Hashtable?>(self.Options);
                 dict["metadata"] = TransformToSystemTextJson<Hashtable?>(self.Metadata);
                 return dict;
@@ -258,23 +270,23 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Attempts to resolve the list of client references to client IDs.
+        /// Attempts to resolve the dictionary of client references to client IDs for Auth0 API.
         /// </summary>
         /// <param name="refs"></param>
         /// <param name="defaultNamespace"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, V1ClientReference[]? refs, string defaultNamespace, CancellationToken cancellationToken)
+        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, Dictionary<string, V1ClientReference>? refs, string defaultNamespace, CancellationToken cancellationToken)
         {
-            if (refs is null)
+            if (refs is null || refs.Count == 0)
                 return Array.Empty<string>();
 
-            var l = new List<string>(refs.Length);
+            var l = new List<string>(refs.Count);
 
-            foreach (var i in refs)
+            foreach (var kvp in refs)
             {
-                var r = await ResolveClientRefToId(api, i, defaultNamespace, cancellationToken);
+                var r = await ResolveClientRefToId(api, kvp.Value, defaultNamespace, cancellationToken);
                 if (r is null)
                     throw new InvalidOperationException();
 
@@ -539,21 +551,25 @@ namespace Alethic.Auth0.Operator.Controllers
             // Normalize enabled_clients format for comparison
             if (filtered.ContainsKey("enabled_clients") && filtered["enabled_clients"] is IEnumerable enabledClients)
             {
-                var normalizedClients = new List<string>();
+                var normalizedClients = new Dictionary<string, V1ClientReference>();
                 foreach (var client in enabledClients)
                 {
                     if (client is Hashtable clientHash && clientHash.ContainsKey("id"))
                     {
-                        // Extract ID from hashtable format
-                        normalizedClients.Add(clientHash["id"]?.ToString() ?? "");
+                        // Extract ID from hashtable format  
+                        var clientId = clientHash["id"]?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(clientId))
+                        {
+                            normalizedClients[clientId] = new V1ClientReference { Id = clientId };
+                        }
                     }
-                    else if (client is string clientId)
+                    else if (client is string clientId && !string.IsNullOrEmpty(clientId))
                     {
                         // Already in string format
-                        normalizedClients.Add(clientId);
+                        normalizedClients[clientId] = new V1ClientReference { Id = clientId };
                     }
                 }
-                filtered["enabled_clients"] = normalizedClients.ToArray();
+                filtered["enabled_clients"] = normalizedClients;
             }
 
             return filtered;

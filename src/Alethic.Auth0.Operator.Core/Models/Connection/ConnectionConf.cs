@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 using Alethic.Auth0.Operator.Core.Extensions;
@@ -41,7 +42,7 @@ namespace Alethic.Auth0.Operator.Core.Models.Connection
 
         [JsonPropertyName("enabled_clients")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public V1ClientReference[]? EnabledClients { get; set; }
+        public Dictionary<string, V1ClientReference>? EnabledClients { get; set; }
 
         [JsonPropertyName("show_as_button")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
