@@ -440,7 +440,7 @@ namespace Alethic.Auth0.Operator.Controllers
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
-            req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
+            req.EnabledClients = conf.EnabledClients?.Select(c => c.Id).Where(id => !string.IsNullOrEmpty(id)).ToArray();
         }
 
         /// <inheritdoc />
@@ -548,39 +548,44 @@ namespace Alethic.Auth0.Operator.Controllers
                 filtered["metadata"] = filteredMetadata;
             }
 
-            // Normalize enabled_clients format for comparison - handle both array and dictionary formats
+            // Normalize enabled_clients format for comparison - ensure it's always a V1ClientReference array
             if (filtered.ContainsKey("enabled_clients"))
             {
                 var enabledClientsValue = filtered["enabled_clients"];
-                var normalizedClients = new Dictionary<string, V1ClientReference>();
+                var normalizedClients = new List<V1ClientReference>();
 
-                // Handle Dictionary format (new)
-                if (enabledClientsValue is Dictionary<string, V1ClientReference> clientDict)
+                // Handle V1ClientReference array format (standard)
+                if (enabledClientsValue is V1ClientReference[] clientArray)
                 {
-                    normalizedClients = clientDict;
+                    normalizedClients.AddRange(clientArray.Where(c => !string.IsNullOrEmpty(c.Id)));
                 }
-                // Handle array format (legacy) 
+                // Handle other array formats
                 else if (enabledClientsValue is IEnumerable enabledClients)
                 {
                     foreach (var client in enabledClients)
                     {
                         if (client is Hashtable clientHash && clientHash.ContainsKey("id"))
                         {
-                            // Extract ID from hashtable format  
-                            var clientId = clientHash["id"]?.ToString() ?? "";
-                            if (!string.IsNullOrEmpty(clientId))
+                            // Extract from hashtable format  
+                            var clientRef = new V1ClientReference
                             {
-                                normalizedClients[clientId] = new V1ClientReference { Id = clientId };
+                                Id = clientHash["id"]?.ToString(),
+                                Name = clientHash["name"]?.ToString(),
+                                Namespace = clientHash["namespace"]?.ToString()
+                            };
+                            if (!string.IsNullOrEmpty(clientRef.Id))
+                            {
+                                normalizedClients.Add(clientRef);
                             }
                         }
                         else if (client is string clientId && !string.IsNullOrEmpty(clientId))
                         {
-                            // Already in string format
-                            normalizedClients[clientId] = new V1ClientReference { Id = clientId };
+                            // Convert string to V1ClientReference
+                            normalizedClients.Add(new V1ClientReference { Id = clientId });
                         }
                     }
                 }
-                filtered["enabled_clients"] = normalizedClients;
+                filtered["enabled_clients"] = normalizedClients.ToArray();
             }
 
             return filtered;

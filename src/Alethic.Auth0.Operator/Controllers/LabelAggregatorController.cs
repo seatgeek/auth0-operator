@@ -35,6 +35,37 @@ namespace Alethic.Auth0.Operator.Controllers
         readonly ILogger<LabelAggregatorController> _logger;
 
         /// <summary>
+        /// Sanitizes a connection reference to be valid as a Kubernetes label value.
+        /// Replaces invalid characters (/, :) with underscores and ensures compliance with DNS subdomain naming rules.
+        /// </summary>
+        /// <param name="connectionRef">The connection reference (namespace/name format)</param>
+        /// <returns>A sanitized label value</returns>
+        private static string SanitizeLabelValue(string connectionRef)
+        {
+            // Replace forward slashes and other invalid characters with underscores
+            // Kubernetes label values must follow DNS subdomain naming rules
+            return connectionRef.Replace('/', '_').Replace(':', '_');
+        }
+
+        /// <summary>
+        /// Converts a sanitized label value back to the original connection reference format.
+        /// Reverses the sanitization applied by SanitizeLabelValue.
+        /// </summary>
+        /// <param name="sanitizedRef">The sanitized label value</param>
+        /// <returns>The original connection reference</returns>
+        private static string UnsanitizeLabelValue(string sanitizedRef)
+        {
+            // Convert underscores back to forward slashes for namespace/name format
+            // This assumes the first underscore represents the namespace separator
+            var firstUnderscoreIndex = sanitizedRef.IndexOf('_');
+            if (firstUnderscoreIndex > 0 && firstUnderscoreIndex < sanitizedRef.Length - 1)
+            {
+                return sanitizedRef.Substring(0, firstUnderscoreIndex) + '/' + sanitizedRef.Substring(firstUnderscoreIndex + 1);
+            }
+            return sanitizedRef;
+        }
+
+        /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="kubernetesClient"></param>
@@ -123,26 +154,27 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         private async Task UpdateConnectionEnabledClients(V1Connection connection, CancellationToken cancellationToken)
         {
-            var connectionRef = $"{connection.Namespace()}/{connection.Name()}";
+            var connectionRef = $"{connection.Namespace()}.{connection.Name()}";
+            var sanitizedConnectionRef = SanitizeLabelValue(connectionRef);
             
             // Find all clients with labels pointing to this connection
-            var labelSelector = $"{ConnectionLabelKey}={connectionRef}";
+            var labelSelector = $"{ConnectionLabelKey}={sanitizedConnectionRef}";
             var clients = await _kubernetesClient.ListAsync<V1Client>(
                 labelSelector: labelSelector,
                 cancellationToken: cancellationToken);
 
-            var labelBasedClients = new Dictionary<string, V1ClientReference>();
+            var labelBasedClients = new List<V1ClientReference>();
             
             foreach (var client in clients)
             {
                 if (!string.IsNullOrEmpty(client.Status?.Id))
                 {
-                    labelBasedClients[client.Status.Id] = new V1ClientReference 
-                    { 
+                    labelBasedClients.Add(new V1ClientReference
+                    {
+                        Id = client.Status.Id,
                         Name = client.Name(),
-                        Namespace = client.Namespace(),
-                        Id = client.Status.Id
-                    };
+                        Namespace = client.Namespace()
+                    });
                 }
             }
 
@@ -162,7 +194,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Applies the enabled_clients field by merging label-discovered clients with existing ones.
         /// This implementation reads the current connection and merges rather than using SSA to avoid conflicts.
         /// </summary>
-        private async Task ApplyEnabledClientsField(V1Connection connection, Dictionary<string, V1ClientReference> labelBasedClients, CancellationToken cancellationToken)
+        private async Task ApplyEnabledClientsField(V1Connection connection, List<V1ClientReference> labelBasedClients, CancellationToken cancellationToken)
         {
             try
             {
@@ -190,20 +222,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Add existing user-configured clients first
                 if (currentConnection.Spec.Conf.EnabledClients != null)
                 {
-                    foreach (var kvp in currentConnection.Spec.Conf.EnabledClients)
+                    foreach (var clientRef in currentConnection.Spec.Conf.EnabledClients)
                     {
-                        mergedClients[kvp.Key] = kvp.Value;
+                        if (!string.IsNullOrEmpty(clientRef.Id))
+                        {
+                            mergedClients[clientRef.Id] = clientRef;
+                        }
                     }
                 }
 
-                // Add/update with label-based clients (these take precedence for the same IDs)
-                foreach (var kvp in labelBasedClients)
+                // Add label-based clients (these take precedence for the same IDs)
+                foreach (var clientRef in labelBasedClients)
                 {
-                    mergedClients[kvp.Key] = kvp.Value;
+                    if (!string.IsNullOrEmpty(clientRef.Id))
+                    {
+                        mergedClients[clientRef.Id] = clientRef;
+                    }
                 }
 
-                // Update the connection spec
-                currentConnection.Spec.Conf.EnabledClients = mergedClients;
+                // Update the connection spec with array format
+                currentConnection.Spec.Conf.EnabledClients = mergedClients.Values.ToArray();
                 
                 await _kubernetesClient.UpdateAsync(currentConnection, cancellationToken);
 
@@ -233,17 +271,37 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Parses connection reference in format "namespace/name" or "name".
+        /// Handles both sanitized (underscore-separated) and unsanitized (slash-separated) formats for backward compatibility.
         /// </summary>
         private static (string Namespace, string Name) ParseConnectionReference(string connectionRef, string defaultNamespace)
         {
-            var parts = connectionRef.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            
-            return parts.Length switch
+            // Try to parse as unsanitized format first (contains /)
+            if (connectionRef.Contains('.'))
             {
-                1 => (defaultNamespace, parts[0]),
-                2 => (parts[0], parts[1]),
-                _ => throw new ArgumentException($"Invalid connection reference format: {connectionRef}. Expected 'namespace/name' or 'name'.")
-            };
+                var parts = connectionRef.Split('.', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length switch
+                {
+                    1 => (defaultNamespace, parts[0]),
+                    2 => (parts[0], parts[1]),
+                    _ => throw new ArgumentException($"Invalid connection reference format: {connectionRef}. Expected 'namespace/name' or 'name'.")
+                };
+            }
+            
+            // Try to parse as sanitized format (contains _ but no /)
+            if (connectionRef.Contains('_'))
+            {
+                var unsanitized = UnsanitizeLabelValue(connectionRef);
+                var parts = unsanitized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length switch
+                {
+                    1 => (defaultNamespace, parts[0]),
+                    2 => (parts[0], parts[1]),
+                    _ => throw new ArgumentException($"Invalid connection reference format: {connectionRef}. Expected 'namespace/name' or 'name'.")
+                };
+            }
+            
+            // No special characters, assume it's just a name
+            return (defaultNamespace, connectionRef);
         }
 
         /// <summary>
