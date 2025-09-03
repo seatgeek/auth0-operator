@@ -86,7 +86,7 @@ spec:
                     nullable: true
                     type: array
                   enabled_clients:
-                    additionalProperties:
+                    items:
                       properties:
                         namespace:
                           nullable: true
@@ -95,11 +95,15 @@ spec:
                           nullable: true
                           type: string
                         id:
-                          nullable: true
                           type: string
                       type: object
+                      required:
+                      - id
                     nullable: true
-                    type: object
+                    type: array
+                    x-kubernetes-list-type: map
+                    x-kubernetes-list-map-keys:
+                    - id
                   show_as_button:
                     nullable: true
                     type: boolean
@@ -136,7 +140,7 @@ spec:
                     nullable: true
                     type: array
                   enabled_clients:
-                    additionalProperties:
+                    items:
                       properties:
                         namespace:
                           nullable: true
@@ -145,11 +149,15 @@ spec:
                           nullable: true
                           type: string
                         id:
-                          nullable: true
                           type: string
                       type: object
+                      required:
+                      - id
                     nullable: true
-                    type: object
+                    type: array
+                    x-kubernetes-list-type: map
+                    x-kubernetes-list-map-keys:
+                    - id
                   show_as_button:
                     nullable: true
                     type: boolean

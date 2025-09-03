@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Alethic.Auth0.Operator.Core.Models;
+using Alethic.Auth0.Operator.Core.Models.Connection;
 using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Models;
 
@@ -26,12 +27,13 @@ namespace Alethic.Auth0.Operator.Controllers
     [EntityRbac(typeof(V1Client), Verbs = RbacVerb.List | RbacVerb.Get | RbacVerb.Watch)]
     [EntityRbac(typeof(V1Connection), Verbs = RbacVerb.List | RbacVerb.Get | RbacVerb.Watch | RbacVerb.Update | RbacVerb.Patch)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class LabelAggregatorController : IEntityController<V1Client>
+    public class LabelAggregatorController
     {
         const string ConnectionLabelKey = "auth0.kubernetes.com/connection";
         const string FieldManager = "auth0-operator.kubernetes.auth0.com/label-aggregator";
 
         readonly IKubernetesClient _kubernetesClient;
+        readonly IKubernetes _k8sClient;
         readonly ILogger<LabelAggregatorController> _logger;
 
         /// <summary>
@@ -69,17 +71,19 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Initializes a new instance.
         /// </summary>
         /// <param name="kubernetesClient"></param>
+        /// <param name="k8sClient"></param>
         /// <param name="logger"></param>
-        public LabelAggregatorController(IKubernetesClient kubernetesClient, ILogger<LabelAggregatorController> logger)
+        public LabelAggregatorController(IKubernetesClient kubernetesClient, IKubernetes k8sClient, ILogger<LabelAggregatorController> logger)
         {
             _kubernetesClient = kubernetesClient;
+            _k8sClient = k8sClient;
             _logger = logger;
         }
 
         /// <summary>
-        /// Reconciles A0Client changes to update corresponding A0Connection enabled_clients.
+        /// Processes A0Client changes to update corresponding A0Connection enabled_clients.
         /// </summary>
-        public async Task ReconcileAsync(V1Client entity, CancellationToken cancellationToken = default)
+        public async Task ProcessClientAsync(V1Client entity, CancellationToken cancellationToken = default)
         {
             _logger.LogInformationJson($"LabelAggregator processing A0Client {entity.Namespace()}/{entity.Name()}", new
             {
@@ -150,7 +154,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
 
         /// <summary>
-        /// Updates the enabled_clients field using Server-Side Apply to merge with user entries.
+        /// Updates the enabled_clients field using Server-Side Apply to manage only label-based clients.
         /// </summary>
         private async Task UpdateConnectionEnabledClients(V1Connection connection, CancellationToken cancellationToken)
         {
@@ -186,82 +190,73 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "aggregate_clients"
             });
 
-            // Apply using Server-Side Apply with our field manager
-            await ApplyEnabledClientsField(connection, labelBasedClients, cancellationToken);
+            // Apply using Server-Side Apply with our field manager to own only the label-managed portion
+            await ApplyLabelManagedClients(connection, labelBasedClients, cancellationToken);
         }
 
         /// <summary>
-        /// Applies the enabled_clients field by merging label-discovered clients with existing ones.
-        /// This implementation reads the current connection and merges rather than using SSA to avoid conflicts.
+        /// Applies label-managed clients using Server-Side Apply to own only the portion managed by labels.
+        /// With proper CRD merge hints (x-kubernetes-list-type: map), this allows kubectl users to manage 
+        /// other enabled_clients independently without conflicts.
         /// </summary>
-        private async Task ApplyEnabledClientsField(V1Connection connection, List<V1ClientReference> labelBasedClients, CancellationToken cancellationToken)
+        private async Task ApplyLabelManagedClients(V1Connection connection, List<V1ClientReference> labelBasedClients, CancellationToken cancellationToken)
         {
             try
             {
-                // Get the current connection to merge with existing enabled_clients
-                var currentConnection = await _kubernetesClient.GetAsync<V1Connection>(
-                    connection.Name(), 
-                    connection.Namespace(), 
-                    cancellationToken);
+                // Create JSON patch containing only our label-managed clients
+                // The Kubernetes API server will merge this with manual clients automatically
+                var enabledClientsJson = string.Join(",", labelBasedClients.Select(c =>
+                    $@"{{""id"":""{c.Id}"",""name"":""{c.Name}"",""namespace"":""{c.Namespace}""}}"));
 
-                if (currentConnection?.Spec?.Conf == null)
+                var jsonPatch = $@"{{
+  ""apiVersion"": ""kubernetes.auth0.com/v1"",
+  ""kind"": ""A0Connection"",
+  ""metadata"": {{
+    ""name"": ""{connection.Name()}"",
+    ""namespace"": ""{connection.Namespace()}""
+  }},
+  ""spec"": {{
+    ""conf"": {{
+      ""enabled_clients"": [{enabledClientsJson}]
+    }}
+  }}
+}}";
+
+                var patch = new V1Patch(jsonPatch, V1Patch.PatchType.ApplyPatch);
+
+                // Use Server-Side Apply without force - SSA merge hints handle field ownership per item
+                await _k8sClient.CustomObjects.PatchNamespacedCustomObjectAsync(
+                    body: patch,
+                    group: "kubernetes.auth0.com",
+                    version: "v1", 
+                    namespaceParameter: connection.Namespace(),
+                    plural: "a0connections",
+                    name: connection.Name(),
+                    fieldManager: FieldManager,
+                    force: false,           // No force needed - per-item ownership via CRD merge hints
+                    cancellationToken: cancellationToken
+                );
+
+                var connectionNamespace = connection.Namespace();
+                var connectionName = connection.Name();
+                _logger.LogInformationJson($"LabelAggregator applied {labelBasedClients.Count} label-managed clients to connection {connectionNamespace}/{connectionName}", new
                 {
-                    _logger.LogWarningJson($"LabelAggregator could not retrieve current connection {connection.Namespace()}/{connection.Name()} for enabled_clients update", new
-                    {
-                        connectionNamespace = connection.Namespace(),
-                        connectionName = connection.Name(),
-                        operation = "get_current_connection",
-                        status = "failed"
-                    });
-                    return;
-                }
-
-                // Merge existing enabled_clients (user-configured) with label-based ones
-                var mergedClients = new Dictionary<string, V1ClientReference>();
-                
-                // Add existing user-configured clients first
-                if (currentConnection.Spec.Conf.EnabledClients != null)
-                {
-                    foreach (var clientRef in currentConnection.Spec.Conf.EnabledClients)
-                    {
-                        if (!string.IsNullOrEmpty(clientRef.Id))
-                        {
-                            mergedClients[clientRef.Id] = clientRef;
-                        }
-                    }
-                }
-
-                // Add label-based clients (these take precedence for the same IDs)
-                foreach (var clientRef in labelBasedClients)
-                {
-                    if (!string.IsNullOrEmpty(clientRef.Id))
-                    {
-                        mergedClients[clientRef.Id] = clientRef;
-                    }
-                }
-
-                // Update the connection spec with array format
-                currentConnection.Spec.Conf.EnabledClients = mergedClients.Values.ToArray();
-                
-                await _kubernetesClient.UpdateAsync(currentConnection, cancellationToken);
-
-                _logger.LogInformationJson($"LabelAggregator successfully merged enabled_clients for connection {connection.Namespace()}/{connection.Name()}", new
-                {
-                    connectionNamespace = connection.Namespace(),
-                    connectionName = connection.Name(),
-                    totalClientCount = mergedClients.Count,
+                    connectionNamespace = connectionNamespace,
+                    connectionName = connectionName,
                     labelBasedClientCount = labelBasedClients.Count,
-                    operation = "merge_enabled_clients",
+                    operation = "apply_label_managed_clients",
                     status = "success"
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogErrorJson($"LabelAggregator failed to merge enabled_clients for connection {connection.Namespace()}/{connection.Name()}: {ex.Message}", new
+                var connectionNamespace = connection.Namespace();
+                var connectionName = connection.Name();
+                _logger.LogErrorJson($"LabelAggregator failed to apply label-managed clients for connection {connectionNamespace}/{connectionName}: {ex.Message}", new
                 {
-                    connectionNamespace = connection.Namespace(),
-                    connectionName = connection.Name(),
-                    operation = "merge_enabled_clients",
+                    connectionNamespace = connectionNamespace,
+                    connectionName = connectionName,
+                    operation = "apply_label_managed_clients",
                     errorMessage = ex.Message,
                     status = "failed"
                 }, ex);
