@@ -21,12 +21,12 @@ namespace Alethic.Auth0.Operator.Controllers
 {
     /// <summary>
     /// Controller that automatically populates A0Connection enabled_clients based on A0Client labels.
-    /// Uses Server-Side Apply to merge user-configured static clients with label-discovered clients.
+    /// Watches A0Client changes and updates corresponding A0Connection resources.
     /// </summary>
     [EntityRbac(typeof(V1Client), Verbs = RbacVerb.List | RbacVerb.Get | RbacVerb.Watch)]
     [EntityRbac(typeof(V1Connection), Verbs = RbacVerb.List | RbacVerb.Get | RbacVerb.Watch | RbacVerb.Update | RbacVerb.Patch)]
     [EntityRbac(typeof(Eventsv1Event), Verbs = RbacVerb.All)]
-    public class LabelAggregatorController : IEntityController<V1Client>, IEntityController<V1Connection>
+    public class LabelAggregatorController : IEntityController<V1Client>
     {
         const string ConnectionLabelKey = "auth0.kubernetes.com/connection";
         const string FieldManager = "auth0-operator.kubernetes.auth0.com/label-aggregator";
@@ -68,21 +68,6 @@ namespace Alethic.Auth0.Operator.Controllers
             await ProcessClientRemoval(entity, cancellationToken);
         }
 
-        /// <summary>
-        /// Reconciles A0Connection changes to ensure label-based clients are properly aggregated.
-        /// </summary>
-        public async Task ReconcileAsync(V1Connection entity, CancellationToken cancellationToken = default)
-        {
-            _logger.LogInformationJson($"LabelAggregator processing A0Connection {entity.Namespace()}/{entity.Name()}", new
-            {
-                entityType = "A0Connection",
-                entityNamespace = entity.Namespace(),
-                entityName = entity.Name(),
-                operation = "reconcile_connection"
-            });
-
-            await ProcessConnectionClients(entity, cancellationToken);
-        }
 
         /// <summary>
         /// Processes a client's connection label and updates the target connection.
@@ -132,13 +117,6 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        /// <summary>
-        /// Updates a connection's enabled_clients based on current client labels.
-        /// </summary>
-        private async Task ProcessConnectionClients(V1Connection connection, CancellationToken cancellationToken)
-        {
-            await UpdateConnectionEnabledClients(connection, cancellationToken);
-        }
 
         /// <summary>
         /// Updates the enabled_clients field using Server-Side Apply to merge with user entries.
@@ -181,55 +159,71 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Applies the enabled_clients field using Server-Side Apply field manager.
-        /// This merges label-discovered clients with user-configured static clients.
+        /// Applies the enabled_clients field by merging label-discovered clients with existing ones.
+        /// This implementation reads the current connection and merges rather than using SSA to avoid conflicts.
         /// </summary>
         private async Task ApplyEnabledClientsField(V1Connection connection, Dictionary<string, V1ClientReference> labelBasedClients, CancellationToken cancellationToken)
         {
             try
             {
-                // Create a partial connection object for Server-Side Apply
-                var patch = new V1Connection
+                // Get the current connection to merge with existing enabled_clients
+                var currentConnection = await _kubernetesClient.GetAsync<V1Connection>(
+                    connection.Name(), 
+                    connection.Namespace(), 
+                    cancellationToken);
+
+                if (currentConnection?.Spec?.Conf == null)
                 {
-                    ApiVersion = "kubernetes.auth0.com/v1",
-                    Kind = "A0Connection",
-                    Metadata = new V1ObjectMeta
+                    _logger.LogWarningJson($"LabelAggregator could not retrieve current connection {connection.Namespace()}/{connection.Name()} for enabled_clients update", new
                     {
-                        Name = connection.Name(),
-                        NamespaceProperty = connection.Namespace()
-                    },
-                    Spec = new V1Connection.SpecDef
+                        connectionNamespace = connection.Namespace(),
+                        connectionName = connection.Name(),
+                        operation = "get_current_connection",
+                        status = "failed"
+                    });
+                    return;
+                }
+
+                // Merge existing enabled_clients (user-configured) with label-based ones
+                var mergedClients = new Dictionary<string, V1ClientReference>();
+                
+                // Add existing user-configured clients first
+                if (currentConnection.Spec.Conf.EnabledClients != null)
+                {
+                    foreach (var kvp in currentConnection.Spec.Conf.EnabledClients)
                     {
-                        Conf = new Core.Models.Connection.ConnectionConf
-                        {
-                            EnabledClients = labelBasedClients
-                        }
+                        mergedClients[kvp.Key] = kvp.Value;
                     }
-                };
+                }
 
-                // Use UpdateAsync to apply the changes
-                // Note: Full Server-Side Apply requires more complex implementation
-                // For now, we'll update the entire connection and let Kubernetes handle conflicts
-                var updatedConnection = await _kubernetesClient.UpdateAsync(patch, cancellationToken);
+                // Add/update with label-based clients (these take precedence for the same IDs)
+                foreach (var kvp in labelBasedClients)
+                {
+                    mergedClients[kvp.Key] = kvp.Value;
+                }
 
-                _logger.LogInformationJson($"LabelAggregator successfully applied enabled_clients for connection {connection.Namespace()}/{connection.Name()}", new
+                // Update the connection spec
+                currentConnection.Spec.Conf.EnabledClients = mergedClients;
+                
+                await _kubernetesClient.UpdateAsync(currentConnection, cancellationToken);
+
+                _logger.LogInformationJson($"LabelAggregator successfully merged enabled_clients for connection {connection.Namespace()}/{connection.Name()}", new
                 {
                     connectionNamespace = connection.Namespace(),
                     connectionName = connection.Name(),
-                    appliedClientCount = labelBasedClients.Count,
-                    fieldManager = FieldManager,
-                    operation = "server_side_apply",
+                    totalClientCount = mergedClients.Count,
+                    labelBasedClientCount = labelBasedClients.Count,
+                    operation = "merge_enabled_clients",
                     status = "success"
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogErrorJson($"LabelAggregator failed to apply enabled_clients for connection {connection.Namespace()}/{connection.Name()}: {ex.Message}", new
+                _logger.LogErrorJson($"LabelAggregator failed to merge enabled_clients for connection {connection.Namespace()}/{connection.Name()}: {ex.Message}", new
                 {
                     connectionNamespace = connection.Namespace(),
                     connectionName = connection.Name(),
-                    fieldManager = FieldManager,
-                    operation = "server_side_apply",
+                    operation = "merge_enabled_clients",
                     errorMessage = ex.Message,
                     status = "failed"
                 }, ex);
@@ -279,10 +273,5 @@ namespace Alethic.Auth0.Operator.Controllers
             return ProcessClientRemoval(entity, cancellationToken);
         }
 
-        public Task DeletedAsync(V1Connection entity, CancellationToken cancellationToken = default)
-        {
-            // No special cleanup needed for connection deletion
-            return Task.CompletedTask;
-        }
     }
 }
