@@ -8,6 +8,7 @@ rules:
   resources:
   - a0tenants
   - a0clients
+  - a0connections
   - a0resourceservers
   verbs:
   - '*'
@@ -27,7 +28,6 @@ rules:
   - kubernetes.auth0.com
   resources:
   - a0clientgrants
-  - a0connections
   verbs:
   - '*'
 - apiGroups:
@@ -70,6 +70,14 @@ rules:
 - apiGroups:
   - kubernetes.auth0.com
   resources:
+  - a0connections/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - kubernetes.auth0.com
+  resources:
   - a0resourceservers/status
   verbs:
   - get
@@ -79,14 +87,6 @@ rules:
   - kubernetes.auth0.com
   resources:
   - a0clientgrants/status
-  verbs:
-  - get
-  - update
-  - patch
-- apiGroups:
-  - kubernetes.auth0.com
-  resources:
-  - a0connections/status
   verbs:
   - get
   - update

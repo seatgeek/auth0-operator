@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,6 +11,7 @@ using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
+using Alethic.Auth0.Operator.Services;
 
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
@@ -35,6 +37,7 @@ namespace Alethic.Auth0.Operator.Controllers
     {
 
         readonly IOptions<OperatorOptions> _options;
+        static readonly ConcurrentDictionary<string, ITenantApiAccess> _tenantApiAccessCache = new();
 
         /// <summary>
         /// Initializes a new instance.
@@ -48,6 +51,28 @@ namespace Alethic.Auth0.Operator.Controllers
             base(kube, requeue, cache, logger)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
+        }
+
+        /// <summary>
+        /// Gets or creates a TenantApiAccess instance for the given tenant, with lazy loading and caching.
+        /// </summary>
+        /// <param name="tenant">The tenant to get API access for</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>TenantApiAccess instance</returns>
+        protected async Task<ITenantApiAccess> GetOrCreateTenantApiAccessAsync(V1Tenant tenant, CancellationToken cancellationToken)
+        {
+            var cacheKey = $"{tenant.Namespace()}/{tenant.Name()}";
+            
+            if (_tenantApiAccessCache.TryGetValue(cacheKey, out var existingTenantApiAccess))
+            {
+                return existingTenantApiAccess;
+            }
+
+            var newTenantApiAccess = await TenantApiAccess.CreateAsync(tenant, Kube, Logger, cancellationToken);
+            await newTenantApiAccess.RegenerateTokenAsync(cancellationToken);
+            
+            _tenantApiAccessCache.TryAdd(cacheKey, newTenantApiAccess);
+            return newTenantApiAccess;
         }
 
         /// <summary>
@@ -96,9 +121,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="last"></param>
         /// <param name="conf"></param>
         /// <param name="defaultNamespace"></param>
+        /// <param name="tenantApiAccess"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
+        protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken);
 
 
         /// <summary>
@@ -400,7 +426,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     if (needsUpdate)
                     {
-                        await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), cancellationToken);
+                        var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
+                        await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
                         // Update lastConf to reflect the applied configuration to prevent false drift detection
                         var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
                         lastConf = TransformToSystemTextJson<Hashtable>(appliedJson);

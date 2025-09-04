@@ -85,21 +85,6 @@ spec:
                       type: string
                     nullable: true
                     type: array
-                  enabled_clients:
-                    items:
-                      properties:
-                        namespace:
-                          nullable: true
-                          type: string
-                        name:
-                          nullable: true
-                          type: string
-                        id:
-                          nullable: true
-                          type: string
-                      type: object
-                    nullable: true
-                    type: array
                   show_as_button:
                     nullable: true
                     type: boolean
@@ -133,21 +118,6 @@ spec:
                   realms:
                     items:
                       type: string
-                    nullable: true
-                    type: array
-                  enabled_clients:
-                    items:
-                      properties:
-                        namespace:
-                          nullable: true
-                          type: string
-                        name:
-                          nullable: true
-                          type: string
-                        id:
-                          nullable: true
-                          type: string
-                      type: object
                     nullable: true
                     type: array
                   show_as_button:

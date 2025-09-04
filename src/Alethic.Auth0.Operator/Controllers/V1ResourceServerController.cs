@@ -10,6 +10,7 @@ using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
+using Alethic.Auth0.Operator.Services;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
@@ -186,7 +187,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ResourceServerConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} updating resource server in Auth0 with ID {id} and identifier {conf.Identifier}", new {
                 entityTypeName = EntityTypeName,

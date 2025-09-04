@@ -1,0 +1,952 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: a0clients.kubernetes.auth0.com
+spec:
+  group: kubernetes.auth0.com
+  names:
+    kind: A0Client
+    listKind: A0ClientList
+    plural: a0clients
+    shortNames:
+    - a0app
+    singular: a0client
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: A0Client is the Schema for the a0clients API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: A0ClientSpec defines the desired state of A0Client
+            properties:
+              conf:
+                description: Conf specifies the desired configuration for the client
+                properties:
+                  addons:
+                    description: AddOns configuration for third-party integrations
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  allowed_clients:
+                    description: AllowedClients lists allowed client IDs for this
+                      client
+                    items:
+                      type: string
+                    type: array
+                  allowed_logout_urls:
+                    description: AllowedLogoutUrls lists allowed logout URLs
+                    items:
+                      type: string
+                    type: array
+                  allowed_origins:
+                    description: AllowedOrigins lists allowed origins for CORS
+                    items:
+                      type: string
+                    type: array
+                  app_type:
+                    description: ApplicationType is the type of Auth0 application
+                    enum:
+                    - box
+                    - cloudbees
+                    - concur
+                    - dropbox
+                    - echosign
+                    - egnyte
+                    - mscrm
+                    - native
+                    - newrelic
+                    - non_interactive
+                    - office365
+                    - regular_web
+                    - rms
+                    - salesforce
+                    - sentry
+                    - sharepoint
+                    - slack
+                    - springcm
+                    - spa
+                    - zendesk
+                    - zoom
+                    type: string
+                  callbacks:
+                    description: Callbacks lists callback URLs
+                    items:
+                      type: string
+                    type: array
+                  client_aliases:
+                    description: ClientAliases lists client aliases
+                    items:
+                      type: string
+                    type: array
+                  client_authentication_methods:
+                    description: ClientAuthenticationMethods defines advanced authentication
+                      methods
+                    properties:
+                      private_key_jwt:
+                        description: PrivateKeyJwtDef contains private key JWT credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      self_signed_tls_client_auth:
+                        description: SelfSignedTlsClientAuthDef contains self-signed
+                          TLS client auth credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      tls_client_auth:
+                        description: TlsClientAuthDef contains TLS client auth credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                    type: object
+                  client_metadata:
+                    description: ClientMetadata contains custom client metadata
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  compliance_level:
+                    description: ComplianceLevel specifies the compliance level
+                    enum:
+                    - none
+                    - fapi1_adv_pkj_par
+                    - fapi1_adv_mtls_par
+                    type: string
+                  cross_origin_authentication:
+                    description: CrossOriginAuthentication indicates if cross-origin
+                      auth is enabled
+                    type: boolean
+                  custom_login_page:
+                    description: CustomLoginPage contains custom login page HTML
+                    type: string
+                  custom_login_page_on:
+                    description: IsCustomLoginPageOn indicates if custom login page
+                      is enabled
+                    type: boolean
+                  custom_login_page_preview:
+                    description: CustomLoginPagePreview contains custom login page
+                      preview HTML
+                    type: string
+                  default_organization:
+                    description: DefaultOrganization specifies default organization
+                      settings
+                    properties:
+                      flows:
+                        enum:
+                        - client_credentials
+                        items:
+                          type: string
+                        type: array
+                      organization_id:
+                        type: string
+                    type: object
+                  description:
+                    description: Description is the client description
+                    type: string
+                  enabled_connections:
+                    description: EnabledConnections lists enabled connections for
+                      this client
+                    items:
+                      description: V1ConnectionReference represents a reference to
+                        an A0Connection resource
+                      properties:
+                        id:
+                          description: Id is the Auth0 ID of the connection
+                          type: string
+                        name:
+                          description: Name is the name of the referenced connection
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace is the namespace of the referenced connection.
+                            If empty, the same namespace as the referencing resource is assumed.
+                          type: string
+                      type: object
+                    type: array
+                  encryption_key:
+                    description: EncryptionKey is the encryption key configuration
+                    properties:
+                      cert:
+                        type: string
+                      pub:
+                        type: string
+                      subject:
+                        type: string
+                    type: object
+                  form_template:
+                    description: FormTemplate contains the form template
+                    type: string
+                  grant_types:
+                    description: GrantTypes lists allowed grant types
+                    items:
+                      type: string
+                    type: array
+                  initiate_login_uri:
+                    description: InitiateLoginUri is the URI to initiate login
+                    type: string
+                  is_first_party:
+                    description: IsFirstParty indicates if this is a first-party client
+                    type: boolean
+                  jwt_configuration:
+                    description: JwtConfiguration contains JWT configuration
+                    properties:
+                      alg:
+                        type: string
+                      lifetime_in_seconds:
+                        format: int32
+                        type: integer
+                      scopes:
+                        description: Scopes contains scope definitions
+                        properties:
+                          client_keys:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          clients:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          stats:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          tokens:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          users:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          users_app_metadata:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                        type: object
+                      secret_encoded:
+                        type: boolean
+                    type: object
+                  logo_uri:
+                    description: LogoUri is the client logo URI
+                    type: string
+                  mobile:
+                    description: Mobile contains mobile app configuration
+                    properties:
+                      android:
+                        description: MobileAndroid contains Android-specific configuration
+                        properties:
+                          app_package_name:
+                            type: string
+                          keystore_hash:
+                            type: string
+                        type: object
+                      ios:
+                        description: MobileIos contains iOS-specific configuration
+                        properties:
+                          app_bundle_identifier:
+                            type: string
+                          team_id:
+                            type: string
+                        type: object
+                    type: object
+                  name:
+                    description: Name is the client name
+                    type: string
+                  oidc_conformant:
+                    description: OidcConformant indicates OIDC conformance
+                    type: boolean
+                  oidc_logout:
+                    description: OidcLogout contains OIDC logout configuration
+                    properties:
+                      backchannel_logout_initiators:
+                        description: BackchannelLogoutInitiators contains backchannel
+                          logout initiator configuration
+                        properties:
+                          mode:
+                            enum:
+                            - all
+                            - custom
+                            type: string
+                          selected_initiators:
+                            enum:
+                            - rp-logout
+                            - idp-logout
+                            - password-changed
+                            - session-expired
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      backchannel_logout_urls:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  organization_require_behavior:
+                    description: OrganizationRequireBehavior specifies organization
+                      require behavior
+                    enum:
+                    - no_prompt
+                    - pre_login_prompt
+                    - post_login_prompt
+                    type: string
+                  organization_usage:
+                    description: OrganizationUsage specifies organization usage policy
+                    enum:
+                    - deny
+                    - allow
+                    - require
+                    type: string
+                  refresh_token:
+                    description: RefreshToken contains refresh token configuration
+                    properties:
+                      expiration_type:
+                        enum:
+                        - expiring
+                        - non-expiring
+                        type: string
+                      idle_token_lifetime:
+                        format: int32
+                        type: integer
+                      infinite_idle_token_lifetime:
+                        type: boolean
+                      infinite_token_lifetime:
+                        type: boolean
+                      leeway:
+                        format: int32
+                        type: integer
+                      rotation_type:
+                        enum:
+                        - rotating
+                        - non-rotating
+                        type: string
+                      token_lifetime:
+                        format: int32
+                        type: integer
+                    type: object
+                  require_proof_of_possession:
+                    description: RequireProofOfPossession indicates if proof of possession
+                      is required
+                    type: boolean
+                  require_pushed_authorization_requests:
+                    description: RequirePushedAuthorizationRequests indicates if PAR
+                      is required
+                    type: boolean
+                  resource_servers:
+                    description: ResourceServers lists associated resource servers
+                    items:
+                      description: ClientResourceServerAssociation represents a client-resource
+                        server association
+                      properties:
+                        identifier:
+                          type: string
+                        scopes:
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                  signed_request_object:
+                    description: SignedRequestObject configuration
+                    properties:
+                      credentials:
+                        items:
+                          description: CredentialIdDef represents a credential reference
+                          properties:
+                            id:
+                              type: string
+                          type: object
+                        type: array
+                      required:
+                        type: boolean
+                    type: object
+                  signing_keys:
+                    description: SigningKeys are the signing keys for the client
+                    items:
+                      description: SigningKey represents a signing key configuration
+                      properties:
+                        cert:
+                          type: string
+                        key:
+                          type: string
+                        pkcs7:
+                          type: string
+                      type: object
+                    type: array
+                  sso:
+                    description: Sso indicates if SSO is enabled
+                    type: boolean
+                  token_endpoint_auth_method:
+                    description: TokenEndpointAuthMethod specifies the client authentication
+                      method
+                    enum:
+                    - none
+                    - client_secret_post
+                    - client_secret_basic
+                    type: string
+                  web_origins:
+                    description: WebOrigins lists web origins for the client
+                    items:
+                      type: string
+                    type: array
+                type: object
+              find:
+                description: Find specifies how to find an existing client in Auth0
+                properties:
+                  callback_url_match_mode:
+                    description: CallbackUrlMatchMode defines how to match callback
+                      URLs
+                    type: string
+                  callback_urls:
+                    description: CallbackUrls are callback URLs to match against
+                    items:
+                      type: string
+                    type: array
+                  client_id:
+                    description: ClientId is the Auth0 client ID to search for
+                    type: string
+                type: object
+              init:
+                description: Init specifies the initial configuration when creating
+                  a new client
+                properties:
+                  addons:
+                    description: AddOns configuration for third-party integrations
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  allowed_clients:
+                    description: AllowedClients lists allowed client IDs for this
+                      client
+                    items:
+                      type: string
+                    type: array
+                  allowed_logout_urls:
+                    description: AllowedLogoutUrls lists allowed logout URLs
+                    items:
+                      type: string
+                    type: array
+                  allowed_origins:
+                    description: AllowedOrigins lists allowed origins for CORS
+                    items:
+                      type: string
+                    type: array
+                  app_type:
+                    description: ApplicationType is the type of Auth0 application
+                    enum:
+                    - box
+                    - cloudbees
+                    - concur
+                    - dropbox
+                    - echosign
+                    - egnyte
+                    - mscrm
+                    - native
+                    - newrelic
+                    - non_interactive
+                    - office365
+                    - regular_web
+                    - rms
+                    - salesforce
+                    - sentry
+                    - sharepoint
+                    - slack
+                    - springcm
+                    - spa
+                    - zendesk
+                    - zoom
+                    type: string
+                  callbacks:
+                    description: Callbacks lists callback URLs
+                    items:
+                      type: string
+                    type: array
+                  client_aliases:
+                    description: ClientAliases lists client aliases
+                    items:
+                      type: string
+                    type: array
+                  client_authentication_methods:
+                    description: ClientAuthenticationMethods defines advanced authentication
+                      methods
+                    properties:
+                      private_key_jwt:
+                        description: PrivateKeyJwtDef contains private key JWT credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      self_signed_tls_client_auth:
+                        description: SelfSignedTlsClientAuthDef contains self-signed
+                          TLS client auth credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      tls_client_auth:
+                        description: TlsClientAuthDef contains TLS client auth credentials
+                        properties:
+                          credentials:
+                            items:
+                              description: CredentialIdDef represents a credential
+                                reference
+                              properties:
+                                id:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                    type: object
+                  client_metadata:
+                    description: ClientMetadata contains custom client metadata
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  compliance_level:
+                    description: ComplianceLevel specifies the compliance level
+                    enum:
+                    - none
+                    - fapi1_adv_pkj_par
+                    - fapi1_adv_mtls_par
+                    type: string
+                  cross_origin_authentication:
+                    description: CrossOriginAuthentication indicates if cross-origin
+                      auth is enabled
+                    type: boolean
+                  custom_login_page:
+                    description: CustomLoginPage contains custom login page HTML
+                    type: string
+                  custom_login_page_on:
+                    description: IsCustomLoginPageOn indicates if custom login page
+                      is enabled
+                    type: boolean
+                  custom_login_page_preview:
+                    description: CustomLoginPagePreview contains custom login page
+                      preview HTML
+                    type: string
+                  default_organization:
+                    description: DefaultOrganization specifies default organization
+                      settings
+                    properties:
+                      flows:
+                        enum:
+                        - client_credentials
+                        items:
+                          type: string
+                        type: array
+                      organization_id:
+                        type: string
+                    type: object
+                  description:
+                    description: Description is the client description
+                    type: string
+                  enabled_connections:
+                    description: EnabledConnections lists enabled connections for
+                      this client
+                    items:
+                      description: V1ConnectionReference represents a reference to
+                        an A0Connection resource
+                      properties:
+                        id:
+                          description: Id is the Auth0 ID of the connection
+                          type: string
+                        name:
+                          description: Name is the name of the referenced connection
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace is the namespace of the referenced connection.
+                            If empty, the same namespace as the referencing resource is assumed.
+                          type: string
+                      type: object
+                    type: array
+                  encryption_key:
+                    description: EncryptionKey is the encryption key configuration
+                    properties:
+                      cert:
+                        type: string
+                      pub:
+                        type: string
+                      subject:
+                        type: string
+                    type: object
+                  form_template:
+                    description: FormTemplate contains the form template
+                    type: string
+                  grant_types:
+                    description: GrantTypes lists allowed grant types
+                    items:
+                      type: string
+                    type: array
+                  initiate_login_uri:
+                    description: InitiateLoginUri is the URI to initiate login
+                    type: string
+                  is_first_party:
+                    description: IsFirstParty indicates if this is a first-party client
+                    type: boolean
+                  jwt_configuration:
+                    description: JwtConfiguration contains JWT configuration
+                    properties:
+                      alg:
+                        type: string
+                      lifetime_in_seconds:
+                        format: int32
+                        type: integer
+                      scopes:
+                        description: Scopes contains scope definitions
+                        properties:
+                          client_keys:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          clients:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          stats:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          tokens:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          users:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          users_app_metadata:
+                            description: ScopeEntry contains scope actions
+                            properties:
+                              actions:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                        type: object
+                      secret_encoded:
+                        type: boolean
+                    type: object
+                  logo_uri:
+                    description: LogoUri is the client logo URI
+                    type: string
+                  mobile:
+                    description: Mobile contains mobile app configuration
+                    properties:
+                      android:
+                        description: MobileAndroid contains Android-specific configuration
+                        properties:
+                          app_package_name:
+                            type: string
+                          keystore_hash:
+                            type: string
+                        type: object
+                      ios:
+                        description: MobileIos contains iOS-specific configuration
+                        properties:
+                          app_bundle_identifier:
+                            type: string
+                          team_id:
+                            type: string
+                        type: object
+                    type: object
+                  name:
+                    description: Name is the client name
+                    type: string
+                  oidc_conformant:
+                    description: OidcConformant indicates OIDC conformance
+                    type: boolean
+                  oidc_logout:
+                    description: OidcLogout contains OIDC logout configuration
+                    properties:
+                      backchannel_logout_initiators:
+                        description: BackchannelLogoutInitiators contains backchannel
+                          logout initiator configuration
+                        properties:
+                          mode:
+                            enum:
+                            - all
+                            - custom
+                            type: string
+                          selected_initiators:
+                            enum:
+                            - rp-logout
+                            - idp-logout
+                            - password-changed
+                            - session-expired
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      backchannel_logout_urls:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  organization_require_behavior:
+                    description: OrganizationRequireBehavior specifies organization
+                      require behavior
+                    enum:
+                    - no_prompt
+                    - pre_login_prompt
+                    - post_login_prompt
+                    type: string
+                  organization_usage:
+                    description: OrganizationUsage specifies organization usage policy
+                    enum:
+                    - deny
+                    - allow
+                    - require
+                    type: string
+                  refresh_token:
+                    description: RefreshToken contains refresh token configuration
+                    properties:
+                      expiration_type:
+                        enum:
+                        - expiring
+                        - non-expiring
+                        type: string
+                      idle_token_lifetime:
+                        format: int32
+                        type: integer
+                      infinite_idle_token_lifetime:
+                        type: boolean
+                      infinite_token_lifetime:
+                        type: boolean
+                      leeway:
+                        format: int32
+                        type: integer
+                      rotation_type:
+                        enum:
+                        - rotating
+                        - non-rotating
+                        type: string
+                      token_lifetime:
+                        format: int32
+                        type: integer
+                    type: object
+                  require_proof_of_possession:
+                    description: RequireProofOfPossession indicates if proof of possession
+                      is required
+                    type: boolean
+                  require_pushed_authorization_requests:
+                    description: RequirePushedAuthorizationRequests indicates if PAR
+                      is required
+                    type: boolean
+                  resource_servers:
+                    description: ResourceServers lists associated resource servers
+                    items:
+                      description: ClientResourceServerAssociation represents a client-resource
+                        server association
+                      properties:
+                        identifier:
+                          type: string
+                        scopes:
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                  signed_request_object:
+                    description: SignedRequestObject configuration
+                    properties:
+                      credentials:
+                        items:
+                          description: CredentialIdDef represents a credential reference
+                          properties:
+                            id:
+                              type: string
+                          type: object
+                        type: array
+                      required:
+                        type: boolean
+                    type: object
+                  signing_keys:
+                    description: SigningKeys are the signing keys for the client
+                    items:
+                      description: SigningKey represents a signing key configuration
+                      properties:
+                        cert:
+                          type: string
+                        key:
+                          type: string
+                        pkcs7:
+                          type: string
+                      type: object
+                    type: array
+                  sso:
+                    description: Sso indicates if SSO is enabled
+                    type: boolean
+                  token_endpoint_auth_method:
+                    description: TokenEndpointAuthMethod specifies the client authentication
+                      method
+                    enum:
+                    - none
+                    - client_secret_post
+                    - client_secret_basic
+                    type: string
+                  web_origins:
+                    description: WebOrigins lists web origins for the client
+                    items:
+                      type: string
+                    type: array
+                type: object
+              policy:
+                description: Policy defines the allowed operations for this client
+                items:
+                  description: V1EntityPolicyType defines the policy types for Auth0
+                    entities
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                type: array
+              secretRef:
+                description: SecretRef is a reference to a secret containing client
+                  credentials
+                properties:
+                  name:
+                    description: Name is the name of the secret
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the secret
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              tenantRef:
+                description: TenantRef is a reference to the A0Tenant this client
+                  belongs to
+                properties:
+                  name:
+                    description: Name is the name of the referenced tenant
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the namespace of the referenced tenant.
+                      If empty, the same namespace as the referencing resource is assumed.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - conf
+            - tenantRef
+            type: object
+          status:
+            description: A0ClientStatus defines the observed state of A0Client
+            properties:
+              id:
+                description: Id is the Auth0 client ID
+                type: string
+              lastConf:
+                description: LastConf contains the last applied configuration
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
