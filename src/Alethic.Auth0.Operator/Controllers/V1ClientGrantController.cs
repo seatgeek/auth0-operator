@@ -188,7 +188,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "search_auth0"
             });
             var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
-            var result = list.Where(i => i.ClientId == clientId && i.Audience == audience).Select(i => i.Id).FirstOrDefault();
+            var result = list.Where(i => string.Equals(i.ClientId, clientId, StringComparison.OrdinalIgnoreCase) && 
+                                       string.Equals(i.Audience, audience, StringComparison.OrdinalIgnoreCase))
+                            .Select(i => i.Id).FirstOrDefault();
             
             if (result != null)
             {

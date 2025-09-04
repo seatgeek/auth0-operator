@@ -221,7 +221,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 LogAuth0ApiCall($"Listing Auth0 connections to find by name: {conf.Name}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "list_connections_by_name");
                 var list = await GetAllConnectionsWithPagination(api, cancellationToken);
-                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
                 if (self is not null)
                 {
                     Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing connection with name {conf.Name} and ID {self.Id}", new
@@ -299,7 +299,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var req = new ConnectionCreateRequest();
                 await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
                 req.Strategy = conf.Strategy;
-                req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
 
                 LogAuth0ApiCall($"Creating Auth0 connection with name: {conf.Name}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "create_connection");
                 var self = await api.Connections.CreateAsync(req, cancellationToken);
@@ -348,7 +348,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var req = new ConnectionUpdateRequest();
                 await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
                 req.Name = null; // not allowed to be changed
-                req.Options = conf.Strategy == "auth0" ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
 
                 // Handle metadata with special nulling logic (overriding what ApplyConfToRequest set)
                 req.Metadata = conf.Metadata ?? new Hashtable();

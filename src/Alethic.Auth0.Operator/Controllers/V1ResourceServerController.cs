@@ -114,7 +114,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "search_by_identifier"
             });
             var list = await GetAllResourceServersWithPagination(api, cancellationToken);
-            var self = list.FirstOrDefault(i => i.Identifier == conf.Identifier);
+            var self = list.FirstOrDefault(i => string.Equals(i.Identifier, conf.Identifier, StringComparison.OrdinalIgnoreCase));
             
             if (self != null)
             {
