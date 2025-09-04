@@ -735,7 +735,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>True if the secret requires refresh, false if it exists and is valid</returns>
         private async Task<bool> ClientAuth0SecretRequiresRefresh(V1Client entity, CancellationToken cancellationToken)
         {
-            var secretRef = await ResolveSecretRef(new V1SecretReference { Name = $"{entity.Name()}-auth0" }, entity.Namespace(), cancellationToken);
+            var secretRef = await ResolveSecretRef(entity.Spec.SecretRef, entity.Namespace(), cancellationToken);
             
             if (secretRef is null)
             {
