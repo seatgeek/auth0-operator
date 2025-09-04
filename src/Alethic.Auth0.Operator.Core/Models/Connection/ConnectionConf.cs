@@ -39,9 +39,6 @@ namespace Alethic.Auth0.Operator.Core.Models.Connection
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string[]? Realms { get; set; }
 
-        [JsonPropertyName("enabled_clients")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public V1ClientReference[]? EnabledClients { get; set; }
 
         [JsonPropertyName("show_as_button")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

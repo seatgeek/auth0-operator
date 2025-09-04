@@ -1,0 +1,365 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: a0resourceservers.kubernetes.auth0.com
+spec:
+  group: kubernetes.auth0.com
+  names:
+    kind: A0ResourceServer
+    listKind: A0ResourceServerList
+    plural: a0resourceservers
+    shortNames:
+    - a0api
+    singular: a0resourceserver
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: A0ResourceServer is the Schema for the a0resourceservers API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: A0ResourceServerSpec defines the desired state of A0ResourceServer
+            properties:
+              conf:
+                description: Conf specifies the desired configuration for the resource
+                  server
+                properties:
+                  allow_offline_access:
+                    description: AllowOfflineAccess indicates whether refresh tokens
+                      can be issued
+                    type: boolean
+                  authorization_details:
+                    description: AuthorizationDetails contains authorization detail
+                      configurations
+                    items:
+                      description: ResourceServerAuthorizationDetail defines authorization
+                        detail configuration
+                      properties:
+                        type:
+                          description: Type specifies the authorization detail type
+                          type: string
+                      type: object
+                    type: array
+                  consent_policy:
+                    description: ConsentPolicy specifies the consent policy
+                    enum:
+                    - "null"
+                    - transactional-authorization-with-mfa
+                    type: string
+                  enforce_policies:
+                    description: EnforcePolicy indicates whether to enforce authorization
+                      policies
+                    type: boolean
+                  id:
+                    description: Id is the Auth0 resource server ID
+                    type: string
+                  identifier:
+                    description: Identifier is the unique identifier for this resource
+                      server
+                    type: string
+                  name:
+                    description: Name is the name of the resource server
+                    type: string
+                  options:
+                    description: Options contains additional resource server options
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  proof_of_possession:
+                    description: ProofOfPossession contains proof of possession configuration
+                    properties:
+                      mechanism:
+                        description: Mechanism specifies the proof of possession mechanism
+                        enum:
+                        - mtls
+                        type: string
+                      required:
+                        description: Required indicates whether proof of possession
+                          is required
+                        type: boolean
+                    type: object
+                  scopes:
+                    description: Scopes defines the scopes available for this resource
+                      server
+                    items:
+                      description: ResourceServerScope defines a scope for a resource
+                        server
+                      properties:
+                        description:
+                          description: Description is the human-readable description
+                            of the scope
+                          type: string
+                        value:
+                          description: Value is the scope value
+                          type: string
+                      type: object
+                    type: array
+                  signing_alg:
+                    description: SigningAlgorithm specifies the algorithm used to
+                      sign tokens
+                    enum:
+                    - HS256
+                    - RS256
+                    - PS256
+                    type: string
+                  signing_secret:
+                    description: SigningSecret is the secret used for signing (for
+                      HMAC algorithms)
+                    type: string
+                  skip_consent_for_verifiable_first_party_clients:
+                    description: SkipConsentForVerifiableFirstPartyClients skips consent
+                      for verifiable first-party clients
+                    type: boolean
+                  token_dialect:
+                    description: TokenDialect specifies the token format dialect
+                    enum:
+                    - access_token
+                    - access_token_authz
+                    type: string
+                  token_encryption:
+                    description: TokenEncryption contains token encryption configuration
+                    properties:
+                      encryption_key:
+                        description: EncryptionKey contains the encryption key configuration
+                        properties:
+                          alg:
+                            description: Algorithm specifies the encryption algorithm
+                            type: string
+                          kid:
+                            description: KeyId is the key identifier
+                            type: string
+                          name:
+                            description: Name is the name of the encryption key
+                            type: string
+                          pem:
+                            description: Pem contains the PEM-encoded key
+                            type: string
+                        type: object
+                      format:
+                        description: Format specifies the token format
+                        enum:
+                        - compact-nested-jwe
+                        type: string
+                    type: object
+                  token_lifetime:
+                    description: TokenLifetime specifies the token lifetime in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  token_lifetime_for_web:
+                    description: TokenLifetimeForWeb specifies the token lifetime
+                      for web apps in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  verification_location:
+                    description: VerificationLocation specifies where verification
+                      should occur
+                    type: string
+                type: object
+              init:
+                description: Init specifies the initial configuration when creating
+                  a new resource server
+                properties:
+                  allow_offline_access:
+                    description: AllowOfflineAccess indicates whether refresh tokens
+                      can be issued
+                    type: boolean
+                  authorization_details:
+                    description: AuthorizationDetails contains authorization detail
+                      configurations
+                    items:
+                      description: ResourceServerAuthorizationDetail defines authorization
+                        detail configuration
+                      properties:
+                        type:
+                          description: Type specifies the authorization detail type
+                          type: string
+                      type: object
+                    type: array
+                  consent_policy:
+                    description: ConsentPolicy specifies the consent policy
+                    enum:
+                    - "null"
+                    - transactional-authorization-with-mfa
+                    type: string
+                  enforce_policies:
+                    description: EnforcePolicy indicates whether to enforce authorization
+                      policies
+                    type: boolean
+                  id:
+                    description: Id is the Auth0 resource server ID
+                    type: string
+                  identifier:
+                    description: Identifier is the unique identifier for this resource
+                      server
+                    type: string
+                  name:
+                    description: Name is the name of the resource server
+                    type: string
+                  options:
+                    description: Options contains additional resource server options
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  proof_of_possession:
+                    description: ProofOfPossession contains proof of possession configuration
+                    properties:
+                      mechanism:
+                        description: Mechanism specifies the proof of possession mechanism
+                        enum:
+                        - mtls
+                        type: string
+                      required:
+                        description: Required indicates whether proof of possession
+                          is required
+                        type: boolean
+                    type: object
+                  scopes:
+                    description: Scopes defines the scopes available for this resource
+                      server
+                    items:
+                      description: ResourceServerScope defines a scope for a resource
+                        server
+                      properties:
+                        description:
+                          description: Description is the human-readable description
+                            of the scope
+                          type: string
+                        value:
+                          description: Value is the scope value
+                          type: string
+                      type: object
+                    type: array
+                  signing_alg:
+                    description: SigningAlgorithm specifies the algorithm used to
+                      sign tokens
+                    enum:
+                    - HS256
+                    - RS256
+                    - PS256
+                    type: string
+                  signing_secret:
+                    description: SigningSecret is the secret used for signing (for
+                      HMAC algorithms)
+                    type: string
+                  skip_consent_for_verifiable_first_party_clients:
+                    description: SkipConsentForVerifiableFirstPartyClients skips consent
+                      for verifiable first-party clients
+                    type: boolean
+                  token_dialect:
+                    description: TokenDialect specifies the token format dialect
+                    enum:
+                    - access_token
+                    - access_token_authz
+                    type: string
+                  token_encryption:
+                    description: TokenEncryption contains token encryption configuration
+                    properties:
+                      encryption_key:
+                        description: EncryptionKey contains the encryption key configuration
+                        properties:
+                          alg:
+                            description: Algorithm specifies the encryption algorithm
+                            type: string
+                          kid:
+                            description: KeyId is the key identifier
+                            type: string
+                          name:
+                            description: Name is the name of the encryption key
+                            type: string
+                          pem:
+                            description: Pem contains the PEM-encoded key
+                            type: string
+                        type: object
+                      format:
+                        description: Format specifies the token format
+                        enum:
+                        - compact-nested-jwe
+                        type: string
+                    type: object
+                  token_lifetime:
+                    description: TokenLifetime specifies the token lifetime in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  token_lifetime_for_web:
+                    description: TokenLifetimeForWeb specifies the token lifetime
+                      for web apps in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  verification_location:
+                    description: VerificationLocation specifies where verification
+                      should occur
+                    type: string
+                type: object
+              policy:
+                description: Policy defines the allowed operations for this resource
+                  server
+                items:
+                  description: V1EntityPolicyType defines the policy types for Auth0
+                    entities
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                type: array
+              tenantRef:
+                description: TenantRef is a reference to the A0Tenant this resource
+                  server belongs to
+                properties:
+                  name:
+                    description: Name is the name of the referenced tenant
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the namespace of the referenced tenant.
+                      If empty, the same namespace as the referencing resource is assumed.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - conf
+            - tenantRef
+            type: object
+          status:
+            description: A0ResourceServerStatus defines the observed state of A0ResourceServer
+            properties:
+              id:
+                description: Id is the Auth0 resource server ID
+                type: string
+              identifier:
+                description: Identifier is the Auth0 resource server identifier
+                type: string
+              lastConf:
+                description: LastConf contains the last applied configuration
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

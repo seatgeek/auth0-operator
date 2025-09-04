@@ -1,0 +1,185 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: a0connections.kubernetes.auth0.com
+spec:
+  group: kubernetes.auth0.com
+  names:
+    kind: A0Connection
+    listKind: A0ConnectionList
+    plural: a0connections
+    shortNames:
+    - a0con
+    singular: a0connection
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: A0Connection is the Schema for the a0connections API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: A0ConnectionSpec defines the desired state of A0Connection
+            properties:
+              conf:
+                description: Conf specifies the desired configuration for the connection
+                properties:
+                  display_name:
+                    description: DisplayName is the human-friendly name of the connection
+                    type: string
+                  is_domain_connection:
+                    default: false
+                    description: IsDomainConnection indicates whether this is a domain
+                      connection
+                    type: boolean
+                  metadata:
+                    description: Metadata contains arbitrary key-value pairs for the
+                      connection
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  name:
+                    description: Name is the connection name
+                    type: string
+                  options:
+                    description: Options contains connection-specific configuration
+                      options
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  provisioning_ticket_url:
+                    description: ProvisioningTicketUrl is the provisioning ticket
+                      URL for enterprise connections
+                    type: string
+                  realms:
+                    description: Realms contains the realms for which the connection
+                      will be used
+                    items:
+                      type: string
+                    type: array
+                  show_as_button:
+                    description: ShowAsButton indicates whether to display the connection
+                      as a button
+                    type: boolean
+                  strategy:
+                    description: Strategy defines the type of identity provider (e.g.,
+                      auth0, google-oauth2, samlp)
+                    type: string
+                type: object
+              find:
+                description: Find specifies how to find an existing connection in
+                  Auth0
+                properties:
+                  id:
+                    description: ConnectionId is the Auth0 connection ID to search
+                      for
+                    type: string
+                type: object
+              init:
+                description: Init specifies the initial configuration when creating
+                  a new connection
+                properties:
+                  display_name:
+                    description: DisplayName is the human-friendly name of the connection
+                    type: string
+                  is_domain_connection:
+                    default: false
+                    description: IsDomainConnection indicates whether this is a domain
+                      connection
+                    type: boolean
+                  metadata:
+                    description: Metadata contains arbitrary key-value pairs for the
+                      connection
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  name:
+                    description: Name is the connection name
+                    type: string
+                  options:
+                    description: Options contains connection-specific configuration
+                      options
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  provisioning_ticket_url:
+                    description: ProvisioningTicketUrl is the provisioning ticket
+                      URL for enterprise connections
+                    type: string
+                  realms:
+                    description: Realms contains the realms for which the connection
+                      will be used
+                    items:
+                      type: string
+                    type: array
+                  show_as_button:
+                    description: ShowAsButton indicates whether to display the connection
+                      as a button
+                    type: boolean
+                  strategy:
+                    description: Strategy defines the type of identity provider (e.g.,
+                      auth0, google-oauth2, samlp)
+                    type: string
+                type: object
+              policy:
+                description: Policy defines the allowed operations for this connection
+                items:
+                  description: V1EntityPolicyType defines the policy types for Auth0
+                    entities
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                type: array
+              tenantRef:
+                description: TenantRef is a reference to the A0Tenant this connection
+                  belongs to
+                properties:
+                  name:
+                    description: Name is the name of the referenced tenant
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the namespace of the referenced tenant.
+                      If empty, the same namespace as the referencing resource is assumed.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - conf
+            - tenantRef
+            type: object
+          status:
+            description: A0ConnectionStatus defines the observed state of A0Connection
+            properties:
+              id:
+                description: Id is the Auth0 connection ID
+                type: string
+              lastConf:
+                description: LastConf contains the last applied configuration
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

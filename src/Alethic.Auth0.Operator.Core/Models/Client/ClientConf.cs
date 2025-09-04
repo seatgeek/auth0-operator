@@ -2,6 +2,7 @@
 using System.Text.Json.Serialization;
 
 using Alethic.Auth0.Operator.Core.Extensions;
+using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Organization;
 
 namespace Alethic.Auth0.Operator.Core.Models.Client
@@ -160,6 +161,10 @@ namespace Alethic.Auth0.Operator.Core.Models.Client
         [JsonPropertyName("require_proof_of_possession")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? RequireProofOfPossession { get; set; }
+
+        [JsonPropertyName("enabled_connections")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public V1ConnectionReference[]? EnabledConnections { get; set; }
 
     }
 

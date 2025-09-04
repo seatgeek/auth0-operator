@@ -12,6 +12,7 @@ using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Helpers;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
+using Alethic.Auth0.Operator.Services;
 
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
@@ -101,7 +102,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 dict["is_domain_connection"] = self.IsDomainConnection;
                 dict["show_as_button"] = self.ShowAsButton;
                 dict["provisioning_ticket_url"] = self.ProvisioningTicketUrl;
-                dict["enabled_clients"] = self.EnabledClients;
                 dict["options"] = TransformToSystemTextJson<Hashtable?>(self.Options);
                 dict["metadata"] = TransformToSystemTextJson<Hashtable?>(self.Metadata);
                 return dict;
@@ -257,32 +257,6 @@ namespace Alethic.Auth0.Operator.Controllers
             return null;
         }
 
-        /// <summary>
-        /// Attempts to resolve the list of client references to client IDs.
-        /// </summary>
-        /// <param name="refs"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
-        async Task<string[]?> ResolveClientRefsToIds(IManagementApiClient api, V1ClientReference[]? refs, string defaultNamespace, CancellationToken cancellationToken)
-        {
-            if (refs is null)
-                return Array.Empty<string>();
-
-            var l = new List<string>(refs.Length);
-
-            foreach (var i in refs)
-            {
-                var r = await ResolveClientRefToId(api, i, defaultNamespace, cancellationToken);
-                if (r is null)
-                    throw new InvalidOperationException();
-
-                l.Add(r);
-            }
-
-            return l.ToArray();
-        }
 
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
@@ -297,7 +271,7 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 var req = new ConnectionCreateRequest();
-                await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
+                ApplyConfToRequest(req, conf);
                 req.Strategy = conf.Strategy;
                 req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
 
@@ -333,7 +307,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} updating connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new
             {
@@ -346,7 +320,7 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 var req = new ConnectionUpdateRequest();
-                await ApplyConfToRequest(api, req, conf, defaultNamespace, cancellationToken);
+                ApplyConfToRequest(req, conf);
                 req.Name = null; // not allowed to be changed
                 req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
 
@@ -414,13 +388,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Applies the specified configuration to the request object.
         /// </summary>
-        /// <param name="api"></param>
         /// <param name="req"></param>
         /// <param name="conf"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        async Task ApplyConfToRequest(IManagementApiClient api, ConnectionBase req, ConnectionConf conf, string defaultNamespace, CancellationToken cancellationToken)
+        static void ApplyConfToRequest(ConnectionBase req, ConnectionConf conf)
         {
             req.Name = conf.Name;
             req.DisplayName = conf.DisplayName;
@@ -428,7 +398,6 @@ namespace Alethic.Auth0.Operator.Controllers
             req.Realms = conf.Realms;
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
-            req.EnabledClients = await ResolveClientRefsToIds(api, conf.EnabledClients, defaultNamespace, cancellationToken);
         }
 
         /// <inheritdoc />
@@ -496,7 +465,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 "metadata",
                 "is_domain_connection",
                 "show_as_button",
-                "enabled_clients"
             };
         }
 
@@ -536,25 +504,6 @@ namespace Alethic.Auth0.Operator.Controllers
                 filtered["metadata"] = filteredMetadata;
             }
 
-            // Normalize enabled_clients format for comparison
-            if (filtered.ContainsKey("enabled_clients") && filtered["enabled_clients"] is IEnumerable enabledClients)
-            {
-                var normalizedClients = new List<string>();
-                foreach (var client in enabledClients)
-                {
-                    if (client is Hashtable clientHash && clientHash.ContainsKey("id"))
-                    {
-                        // Extract ID from hashtable format
-                        normalizedClients.Add(clientHash["id"]?.ToString() ?? "");
-                    }
-                    else if (client is string clientId)
-                    {
-                        // Already in string format
-                        normalizedClients.Add(clientId);
-                    }
-                }
-                filtered["enabled_clients"] = normalizedClients.ToArray();
-            }
 
             return filtered;
         }

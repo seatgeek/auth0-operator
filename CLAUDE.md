@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Before starting work
 
-- After preparing a plan, write the plan to `claude/tasks/<date in format yyyy-MM-dd__hh-mm-ss> - <TASK_NAME>.md`. (use logical time, not UTC)
+- After preparing a plan, write the plan to `claude/tasks/<date in format yyyy-MM-dd__hh-mm-ss> - <TASK_NAME>.md`. (use the system/local time, not UTC)
 - The plan should list a detailed implementation plan, its reasoning, and tasks broken down.
 - Use these section titles in the plan: requirements, detailed implementation plan+reasoning, and task list
 - If the task requires external knowledge or a particular package, research to get the latest knowledge (Use the Task tool for research)

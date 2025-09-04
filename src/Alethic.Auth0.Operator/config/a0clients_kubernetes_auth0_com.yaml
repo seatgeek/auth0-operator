@@ -580,6 +580,21 @@ spec:
                   require_proof_of_possession:
                     nullable: true
                     type: boolean
+                  enabled_connections:
+                    items:
+                      properties:
+                        namespace:
+                          nullable: true
+                          type: string
+                        name:
+                          nullable: true
+                          type: string
+                        id:
+                          nullable: true
+                          type: string
+                      type: object
+                    nullable: true
+                    type: array
                 type: object
               conf:
                 nullable: true
@@ -1088,6 +1103,21 @@ spec:
                   require_proof_of_possession:
                     nullable: true
                     type: boolean
+                  enabled_connections:
+                    items:
+                      properties:
+                        namespace:
+                          nullable: true
+                          type: string
+                        name:
+                          nullable: true
+                          type: string
+                        id:
+                          nullable: true
+                          type: string
+                      type: object
+                    nullable: true
+                    type: array
                 type: object
             required:
             - tenantRef

@@ -1,0 +1,466 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: a0tenants.kubernetes.auth0.com
+spec:
+  group: kubernetes.auth0.com
+  names:
+    kind: A0Tenant
+    listKind: A0TenantList
+    plural: a0tenants
+    shortNames:
+    - a0tenant
+    singular: a0tenant
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: A0Tenant is the Schema for the a0tenants API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: A0TenantSpec defines the desired state of A0Tenant
+            properties:
+              auth:
+                description: Auth contains authentication configuration for the tenant
+                properties:
+                  domain:
+                    description: Domain is the Auth0 tenant domain
+                    type: string
+                  secretRef:
+                    description: SecretRef references a Kubernetes Secret containing
+                      Auth0 credentials
+                    properties:
+                      name:
+                        description: Name is the name of the secret
+                        type: string
+                      namespace:
+                        description: Namespace is the namespace of the secret
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                required:
+                - domain
+                - secretRef
+                type: object
+              conf:
+                description: Conf specifies the desired configuration for the tenant
+                properties:
+                  allowed_logout_urls:
+                    description: AllowedLogoutUrls lists allowed logout URLs for the
+                      tenant
+                    items:
+                      type: string
+                    type: array
+                  change_password:
+                    description: ChangePassword contains change password configuration
+                    properties:
+                      enabled:
+                        description: Enabled indicates whether change password is
+                          enabled
+                        type: boolean
+                      html:
+                        description: Html contains custom HTML for the change password
+                          page
+                        type: string
+                    type: object
+                  default_audience:
+                    description: DefaultAudience is the default audience for API authorization
+                    type: string
+                  default_directory:
+                    description: DefaultDirectory is the default directory for the
+                      tenant
+                    type: string
+                  device_flow:
+                    description: DeviceFlow contains device flow configuration
+                    properties:
+                      charset:
+                        description: Charset specifies the character set for device
+                          codes
+                        enum:
+                        - base20
+                        - digits
+                        type: string
+                      mask:
+                        description: Mask specifies the format mask for device codes
+                        type: string
+                    type: object
+                  enabled_locales:
+                    description: EnabledLocales lists the enabled locales for the
+                      tenant
+                    items:
+                      type: string
+                    type: array
+                  error_page:
+                    description: ErrorPage contains custom error page configuration
+                    properties:
+                      html:
+                        description: Html contains custom HTML for error pages
+                        type: string
+                      show_log_link:
+                        description: ShowLogLink indicates whether to show log links
+                          in error pages
+                        type: boolean
+                      url:
+                        description: Url is the URL for custom error pages
+                        type: string
+                    type: object
+                  flags:
+                    description: Flags contains feature flags for the tenant
+                    properties:
+                      allow_legacy_delegation_grant_types:
+                        description: AllowLegacyDelegationGrantTypes allows legacy
+                          delegation grant types
+                        type: boolean
+                      allow_legacy_ro_grant_types:
+                        description: AllowLegacyROGrantTypes allows legacy resource
+                          owner grant types
+                        type: boolean
+                      allow_legacy_tokeninfo_endpoint:
+                        description: AllowLegacyTokenInfoEndpoint allows legacy tokeninfo
+                          endpoint
+                        type: boolean
+                      change_pwd_flow_v1:
+                        description: ChangePasswordFlowV1 enables change password
+                          flow v1
+                        type: boolean
+                      disable_clickjack_protection_headers:
+                        description: DisableClickjackProtectionHeaders disables clickjack
+                          protection headers
+                        type: boolean
+                      enable_apis_section:
+                        description: EnableApisSection enables the APIs section
+                        type: boolean
+                      enable_client_connections:
+                        description: EnableClientConnections enables client connections
+                        type: boolean
+                      enable_custom_domain_in_emails:
+                        description: EnableCustomDomainInEmails enables custom domain
+                          in emails
+                        type: boolean
+                      enable_dynamic_client_registration:
+                        description: EnableDynamicClientRegistration enables dynamic
+                          client registration
+                        type: boolean
+                      enable_idtoken_api2:
+                        description: EnableIdTokenAPI enables ID token API
+                        type: boolean
+                      enable_impersonation:
+                        description: EnableIdTokenImplicitGrant enables ID token implicit
+                          grant
+                        type: boolean
+                      enable_legacy_logs_search_v2:
+                        description: EnableLegacyLogsSearchV2 enables legacy logs
+                          search v2
+                        type: boolean
+                      enable_legacy_profile:
+                        description: EnableLegacyProfile enables legacy profile
+                        type: boolean
+                      enable_pipeline2:
+                        description: EnablePipelineV2 enables pipeline v2
+                        type: boolean
+                      enable_public_signup_user_exists_error:
+                        description: EnablePublicSignupUserExistsError enables public
+                          signup user exists error
+                        type: boolean
+                      universal_login:
+                        description: UniversalLogin enables universal login
+                        type: boolean
+                      use_scope:
+                        description: UseScope describes what scope to use
+                        type: string
+                    type: object
+                  friendly_name:
+                    description: FriendlyName is the human-readable name of the tenant
+                    type: string
+                  guardian_mfa_page:
+                    description: GuardianMfaPage contains Guardian MFA page configuration
+                    properties:
+                      enabled:
+                        description: Enabled indicates whether custom Guardian MFA
+                          page is enabled
+                        type: boolean
+                      html:
+                        description: Html contains custom HTML for the Guardian MFA
+                          page
+                        type: string
+                    type: object
+                  idle_session_lifetime:
+                    description: IdleSessionLifetime specifies idle session lifetime
+                      in hours
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  sandbox_version:
+                    description: SandboxVersion specifies the sandbox version
+                    type: string
+                  session_cookie:
+                    description: SessionCookie contains session cookie configuration
+                    properties:
+                      mode:
+                        description: Mode specifies the session cookie mode
+                        enum:
+                        - persistent
+                        - non-persistent
+                        type: string
+                    type: object
+                  session_cookie_mode:
+                    description: SessionCookieMode specifies the session cookie mode
+                    enum:
+                    - persistent
+                    - non-persistent
+                    type: string
+                  session_lifetime:
+                    description: SessionLifetime specifies session lifetime in hours
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  sessions:
+                    description: Sessions contains session configuration
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  support_email:
+                    description: SupportEmail is the support email for the tenant
+                    type: string
+                  support_url:
+                    description: SupportUrl is the support URL for the tenant
+                    type: string
+                type: object
+              init:
+                description: Init specifies the initial configuration when creating
+                  a new tenant
+                properties:
+                  allowed_logout_urls:
+                    description: AllowedLogoutUrls lists allowed logout URLs for the
+                      tenant
+                    items:
+                      type: string
+                    type: array
+                  change_password:
+                    description: ChangePassword contains change password configuration
+                    properties:
+                      enabled:
+                        description: Enabled indicates whether change password is
+                          enabled
+                        type: boolean
+                      html:
+                        description: Html contains custom HTML for the change password
+                          page
+                        type: string
+                    type: object
+                  default_audience:
+                    description: DefaultAudience is the default audience for API authorization
+                    type: string
+                  default_directory:
+                    description: DefaultDirectory is the default directory for the
+                      tenant
+                    type: string
+                  device_flow:
+                    description: DeviceFlow contains device flow configuration
+                    properties:
+                      charset:
+                        description: Charset specifies the character set for device
+                          codes
+                        enum:
+                        - base20
+                        - digits
+                        type: string
+                      mask:
+                        description: Mask specifies the format mask for device codes
+                        type: string
+                    type: object
+                  enabled_locales:
+                    description: EnabledLocales lists the enabled locales for the
+                      tenant
+                    items:
+                      type: string
+                    type: array
+                  error_page:
+                    description: ErrorPage contains custom error page configuration
+                    properties:
+                      html:
+                        description: Html contains custom HTML for error pages
+                        type: string
+                      show_log_link:
+                        description: ShowLogLink indicates whether to show log links
+                          in error pages
+                        type: boolean
+                      url:
+                        description: Url is the URL for custom error pages
+                        type: string
+                    type: object
+                  flags:
+                    description: Flags contains feature flags for the tenant
+                    properties:
+                      allow_legacy_delegation_grant_types:
+                        description: AllowLegacyDelegationGrantTypes allows legacy
+                          delegation grant types
+                        type: boolean
+                      allow_legacy_ro_grant_types:
+                        description: AllowLegacyROGrantTypes allows legacy resource
+                          owner grant types
+                        type: boolean
+                      allow_legacy_tokeninfo_endpoint:
+                        description: AllowLegacyTokenInfoEndpoint allows legacy tokeninfo
+                          endpoint
+                        type: boolean
+                      change_pwd_flow_v1:
+                        description: ChangePasswordFlowV1 enables change password
+                          flow v1
+                        type: boolean
+                      disable_clickjack_protection_headers:
+                        description: DisableClickjackProtectionHeaders disables clickjack
+                          protection headers
+                        type: boolean
+                      enable_apis_section:
+                        description: EnableApisSection enables the APIs section
+                        type: boolean
+                      enable_client_connections:
+                        description: EnableClientConnections enables client connections
+                        type: boolean
+                      enable_custom_domain_in_emails:
+                        description: EnableCustomDomainInEmails enables custom domain
+                          in emails
+                        type: boolean
+                      enable_dynamic_client_registration:
+                        description: EnableDynamicClientRegistration enables dynamic
+                          client registration
+                        type: boolean
+                      enable_idtoken_api2:
+                        description: EnableIdTokenAPI enables ID token API
+                        type: boolean
+                      enable_impersonation:
+                        description: EnableIdTokenImplicitGrant enables ID token implicit
+                          grant
+                        type: boolean
+                      enable_legacy_logs_search_v2:
+                        description: EnableLegacyLogsSearchV2 enables legacy logs
+                          search v2
+                        type: boolean
+                      enable_legacy_profile:
+                        description: EnableLegacyProfile enables legacy profile
+                        type: boolean
+                      enable_pipeline2:
+                        description: EnablePipelineV2 enables pipeline v2
+                        type: boolean
+                      enable_public_signup_user_exists_error:
+                        description: EnablePublicSignupUserExistsError enables public
+                          signup user exists error
+                        type: boolean
+                      universal_login:
+                        description: UniversalLogin enables universal login
+                        type: boolean
+                      use_scope:
+                        description: UseScope describes what scope to use
+                        type: string
+                    type: object
+                  friendly_name:
+                    description: FriendlyName is the human-readable name of the tenant
+                    type: string
+                  guardian_mfa_page:
+                    description: GuardianMfaPage contains Guardian MFA page configuration
+                    properties:
+                      enabled:
+                        description: Enabled indicates whether custom Guardian MFA
+                          page is enabled
+                        type: boolean
+                      html:
+                        description: Html contains custom HTML for the Guardian MFA
+                          page
+                        type: string
+                    type: object
+                  idle_session_lifetime:
+                    description: IdleSessionLifetime specifies idle session lifetime
+                      in hours
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  sandbox_version:
+                    description: SandboxVersion specifies the sandbox version
+                    type: string
+                  session_cookie:
+                    description: SessionCookie contains session cookie configuration
+                    properties:
+                      mode:
+                        description: Mode specifies the session cookie mode
+                        enum:
+                        - persistent
+                        - non-persistent
+                        type: string
+                    type: object
+                  session_cookie_mode:
+                    description: SessionCookieMode specifies the session cookie mode
+                    enum:
+                    - persistent
+                    - non-persistent
+                    type: string
+                  session_lifetime:
+                    description: SessionLifetime specifies session lifetime in hours
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  sessions:
+                    description: Sessions contains session configuration
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  support_email:
+                    description: SupportEmail is the support email for the tenant
+                    type: string
+                  support_url:
+                    description: SupportUrl is the support URL for the tenant
+                    type: string
+                type: object
+              name:
+                description: Name is the name of the tenant
+                type: string
+              policy:
+                description: Policy defines the allowed operations for this tenant
+                items:
+                  description: V1EntityPolicyType defines the policy types for Auth0
+                    entities
+                  enum:
+                  - Create
+                  - Update
+                  - Delete
+                  type: string
+                type: array
+            required:
+            - auth
+            - conf
+            - name
+            type: object
+          status:
+            description: A0TenantStatus defines the observed state of A0Tenant
+            properties:
+              lastConf:
+                description: LastConf contains the last applied configuration
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
