@@ -198,7 +198,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     entityName = entity.Name(),
                     clientCount = list.Count
                 });
-                var self = list.FirstOrDefault(i => i.Name == conf.Name);
+                var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
 
                 if (self != null)
                 {
@@ -365,12 +365,12 @@ namespace Alethic.Auth0.Operator.Controllers
             if (isStrictMode)
             {
                 // Strict mode: ALL target URLs must be found in client's callbacks
-                return targetUrls.All(targetUrl => client.Callbacks.Contains(targetUrl));
+                return targetUrls.All(targetUrl => client.Callbacks.Contains(targetUrl, StringComparer.OrdinalIgnoreCase));
             }
             else
             {
                 // Loose mode: AT LEAST ONE target URL must be found in client's callbacks
-                return targetUrls.Any(targetUrl => client.Callbacks.Contains(targetUrl));
+                return targetUrls.Any(targetUrl => client.Callbacks.Contains(targetUrl, StringComparer.OrdinalIgnoreCase));
             }
         }
 
