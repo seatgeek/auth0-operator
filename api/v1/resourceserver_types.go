@@ -202,4 +202,3 @@ type ProofOfPossession struct {
 	// +kubebuilder:validation:Optional
 	Required *bool `json:"required,omitempty"`
 }
-

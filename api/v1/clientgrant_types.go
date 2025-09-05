@@ -87,4 +87,3 @@ type V1ClientReference struct {
 	// +optional
 	Id *string `json:"id,omitempty"`
 }
-
