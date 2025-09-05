@@ -1511,6 +1511,19 @@ namespace Alethic.Auth0.Operator.Controllers
                 "enabled_connections"
             };
         }
+
+        protected override Hashtable PostProcessFilteredConfiguration(Hashtable filtered)
+        {
+            // Auth0 doesn't store enabled_connections directly on the client object.
+            // It's managed separately through the client-connections API.
+            // Remove it from comparison to prevent false drift detection.
+            if (filtered.ContainsKey("enabled_connections"))
+            {
+                filtered.Remove("enabled_connections");
+            }
+            
+            return base.PostProcessFilteredConfiguration(filtered);
+        }
     }
 
     /// <summary>
