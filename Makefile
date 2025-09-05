@@ -116,4 +116,4 @@ tag: ## Create and push a git tag (requires VERSION environment variable)
 		exit 1; \
 	fi
 	git tag $(VERSION)
-	git push origin $(VERSION)
+	git push fork $(VERSION)

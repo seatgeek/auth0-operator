@@ -166,7 +166,7 @@ VERSION="v1.2.3"
 
 # 2. Create and push git tag
 git tag ${VERSION}
-git push origin ${VERSION}
+git push fork ${VERSION}
 
 # 3. Create GitHub release manually
 gh release create ${VERSION} \

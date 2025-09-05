@@ -66,7 +66,7 @@ fi
 # Create and push the tag
 echo "🏷️  Creating and pushing tag ${VERSION}..."
 git tag "${VERSION}"
-git push origin "${VERSION}"
+git push fork "${VERSION}"
 
 # Create GitHub release
 echo "📦 Creating GitHub release..."
