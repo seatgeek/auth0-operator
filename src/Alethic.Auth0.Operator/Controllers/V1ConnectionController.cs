@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Core.Models.Connection;
 using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Helpers;
@@ -17,7 +16,6 @@ using Alethic.Auth0.Operator.Services;
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
-using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -151,7 +149,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
-                        connectionId = connectionId,
+                        connectionId,
                         operation = "search_by_id"
                     });
                     try
@@ -163,7 +161,7 @@ namespace Alethic.Auth0.Operator.Controllers
                             entityTypeName = EntityTypeName,
                             entityNamespace = entity.Namespace(),
                             entityName = entity.Name(),
-                            connectionId = connectionId,
+                            connectionId,
                             connectionName = connection.Name,
                             operation = "search_by_id",
                             status = "found"
@@ -177,7 +175,7 @@ namespace Alethic.Auth0.Operator.Controllers
                             entityTypeName = EntityTypeName,
                             entityNamespace = entity.Namespace(),
                             entityName = entity.Name(),
-                            connectionId = connectionId,
+                            connectionId,
                             operation = "search_by_id",
                             status = "not_found"
                         });
@@ -516,6 +514,12 @@ namespace Alethic.Auth0.Operator.Controllers
                     return true;
             }
             return false;
+        }
+
+        /// <inheritdoc />
+        protected override Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(V1Connection entity, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<(bool RequiresFetch, string? Reason)>((true, "inspecting configuration drift between desired and actual state"));
         }
     }
 

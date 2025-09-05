@@ -3,8 +3,6 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -156,36 +154,23 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
-            if (entity.Spec.TenantRef is null)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.");
-            }
+            var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
+            
+            entity = await EnsureEntityHasId(entity, api, cancellationToken);
+            
+            var lastConf = await RetrieveCurrentAuth0State(entity, api, cancellationToken);
+            
+            lastConf = await ApplyUpdatesIfNeeded(entity, tenant, api, lastConf, cancellationToken);
+            
+            await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+        }
 
-            if (entity.Spec.Conf is null)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.");
-            }
+        private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
+        {
+            EnsureValidTenantRef(entity);
+            EnsureSpecConfExists(entity);
 
-            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-            if (tenant is null)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.");
-            }
+            var tenant = await ResolveTenantRef(entity, cancellationToken);
 
             var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
@@ -203,99 +188,34 @@ namespace Alethic.Auth0.Operator.Controllers
             var an = md.EnsureAnnotations();
             an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
 
-            // we have not resolved a remote entity
-            if (string.IsNullOrWhiteSpace(entity.Status.Id))
+            return (tenant, api);
+        }
+
+        private async Task<TEntity> EnsureEntityHasId(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has not yet been reconciled, checking if entity exists in Auth0.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-
-                // find existing remote entity
-                var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
-                if (entityId is null)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not be located, creating.", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name()
-                    });
-
-                    // reject creation if disallowed
-                    if (entity.HasPolicy(V1EntityPolicyType.Create) == false)
-                    {
-                        Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support creation.", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name()
-                        });
-                        return;
-                    }
-
-                    // validate configuration version used for initialization
-                    var init = entity.Spec.Init ?? entity.Spec.Conf;
-                    if (ValidateCreate(init) is string msg)
-                    {
-                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            validationMessage = msg
-                        });
-                        throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
-                    }
-
-                    // create new entity and associate
-                    entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        createdId = entity.Status.Id
-                    });
-                    try
-                    {
-                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after creation: {ex.Message}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            errorMessage = ex.Message
-                        }, ex);
-                        throw;
-                    }
-                }
-                else
-                {
-                    entity.Status.Id = entityId;
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found with {entity.Status.Id}", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        foundId = entity.Status.Id
-                    });
-                    try
-                    {
-                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after finding entity: {ex.Message}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            errorMessage = ex.Message
-                        }, ex);
-                        throw;
-                    }
-                }
+                return await ValidateExistingEntityId(entity);
             }
 
-            // at this point we must have a reference to an entity
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has not yet been reconciled, checking if entity exists in Auth0.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+
+            var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
+            
+            if (entityId is null)
+            {
+                return await CreateNewEntity(entity, api, cancellationToken);
+            }
+            
+            return await AssociateWithExistingEntity(entity, entityId, cancellationToken);
+        }
+
+        private Task<TEntity> ValidateExistingEntityId(TEntity entity)
+        {
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
                 Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} reconciliation failed - ID is still not set after attempting to find or create entity.", new {
@@ -305,162 +225,281 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
             }
+            return Task.FromResult(entity);
+        }
 
-            // Optimization: Check if Kubernetes spec has changed before making Auth0 API call
-            var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
-            var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
-            Hashtable? lastConf = null;
+        private async Task<TEntity> CreateNewEntity(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not be located, creating.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+
+            ValidateCreatePolicy(entity);
+            var init = ValidateAndGetInitConfiguration(entity);
+
+            entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                createdId = entity.Status.Id
+            });
             
-            if (needsAuth0Fetch)
+            return await UpdateKubernetesStatus(entity, "creation", cancellationToken);
+        }
+
+        private void ValidateCreatePolicy(TEntity entity)
+        {
+            if (entity.HasPolicy(V1EntityPolicyType.Create) == false)
             {
-                // Only retrieve Auth0 entity when changes are detected or it's the first time
-                var reason = isFirstReconciliation ? "first reconciliation" : 
-                            hasLocalChanges ? "local configuration changes detected" : 
-                            entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
-                            "unknown";
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} checking if entity exists in Auth0 with ID {entity.Status.Id} (reason: {reason})", new {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support creation.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support creation.");
+            }
+        }
+
+        private TConf ValidateAndGetInitConfiguration(TEntity entity)
+        {
+            var init = entity.Spec.Init ?? entity.Spec.Conf;
+            if (ValidateCreate(init) is string msg)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
-                    entityId = entity.Status.Id,
-                    checkReason = reason
+                    validationMessage = msg
                 });
-                    
-                lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
-                if (lastConf is null)
-                {
-                    // no matching remote entity that correlates directly with ID, reset and retry to go back to Find/Create
-                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} not found in Auth0, clearing status and scheduling recreation", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name()
-                    });
-                    entity.Status.LastConf = null;
-                    entity.Status.Id = null;
-                    try
-                    {
-                        entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status during reset: {ex.Message}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            errorMessage = ex.Message
-                        }, ex);
-                        throw;
-                    }
-                    throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
-                }
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
             }
-            else
-            {
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping Auth0 API call and update", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-                // Use the previously stored configuration since no changes were detected
-                lastConf = entity.Status.LastConf;
-            }
+            return init;
+        }
 
-            // apply updates if allowed
-            if (entity.HasPolicy(V1EntityPolicyType.Update))
-            {
-                if (entity.Spec.Conf is { } conf)
-                {
-                    // For first reconciliation, check if update is actually needed by comparing with Auth0 state
-                    // For subsequent reconciliations, we already know if changes exist from local comparison
-                    bool needsUpdate;
-                    if (isFirstReconciliation)
-                    {
-                        needsUpdate = HasConfigurationChanged(lastConf, conf);
-                        if (needsUpdate)
-                        {
-                            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
-                                entityTypeName = EntityTypeName,
-                                entityNamespace = entity.Namespace(),
-                                entityName = entity.Name(),
-                                reconciliationType = "first",
-                                action = "applying updates"
-                            });
-                        }
-                        else
-                        {
-                            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - Auth0 state matches desired state - skipping update", new {
-                                entityTypeName = EntityTypeName,
-                                entityNamespace = entity.Namespace(),
-                                entityName = entity.Name(),
-                                reconciliationType = "first",
-                                action = "skipping update"
-                            });
-                        }
-                    }
-                    else
-                    {
-                        needsUpdate = hasLocalChanges;
-                        if (needsUpdate)
-                        {
-                            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} local configuration changes detected - applying updates to Auth0", new {
-                                entityTypeName = EntityTypeName,
-                                entityNamespace = entity.Namespace(),
-                                entityName = entity.Name(),
-                                changeType = "local configuration changes",
-                                action = "applying updates"
-                            });
-                        }
-                        else
-                        {
-                            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping update", new {
-                                entityTypeName = EntityTypeName,
-                                entityNamespace = entity.Namespace(),
-                                entityName = entity.Name(),
-                                changeType = "no changes",
-                                action = "skipping update"
-                            });
-                        }
-                    }
+        private async Task<TEntity> AssociateWithExistingEntity(TEntity entity, string entityId, CancellationToken cancellationToken)
+        {
+            entity.Status.Id = entityId;
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found with {entity.Status.Id}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                foundId = entity.Status.Id
+            });
+            
+            return await UpdateKubernetesStatus(entity, "finding entity", cancellationToken);
+        }
 
-                    if (needsUpdate)
-                    {
-                        var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
-                        await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
-                        // Update lastConf to reflect the applied configuration to prevent false drift detection
-                        var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
-                        lastConf = TransformToSystemTextJson<Hashtable>(appliedJson);
-                    }
-                }
-            }
-            else
-            {
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support update.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
-            }
-
-            // apply new configuration
-            await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
+        private async Task<TEntity> UpdateKubernetesStatus(TEntity entity, string operation, CancellationToken cancellationToken)
+        {
             try
             {
-                entity = await Kube.UpdateStatusAsync(entity, cancellationToken);
+                return await Kube.UpdateStatusAsync(entity, cancellationToken);
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after applying configuration: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after {operation}: {ex.Message}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
+                    operation,
                     errorMessage = ex.Message
                 }, ex);
                 throw;
             }
+        }
 
-            // schedule periodic reconciliation to detect external changes (e.g., manual deletion from Auth0)
+        private async Task<Hashtable?> RetrieveCurrentAuth0State(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
+        {
+            var (needsAuth0Fetch, reason) = await DetermineIfAuth0FetchIsNeeded(entity, cancellationToken);
+
+            if (needsAuth0Fetch)
+            {
+                return await FetchFromAuth0WithValidation(entity, api, reason, cancellationToken);
+            }
+
+            return GetCachedConfiguration(entity);
+        }
+
+        private async Task<(bool needsAuth0Fetch, string reason)> DetermineIfAuth0FetchIsNeeded(TEntity entity, CancellationToken cancellationToken)
+        {
+            var isFirstReconciliation = entity.Status.LastConf is null;
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
+            var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
+            
+            var reason = isFirstReconciliation ? "first reconciliation" : 
+                        hasLocalChanges ? "local configuration changes detected" : 
+                        entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
+                        "unknown";
+
+            return (needsAuth0Fetch, reason);
+        }
+
+        private async Task<Hashtable?> FetchFromAuth0WithValidation(TEntity entity, IManagementApiClient api, string reason, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} checking if entity exists in Auth0 with ID {entity.Status.Id} (reason: {reason})", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                entityId = entity.Status.Id,
+                checkReason = reason
+            });
+                
+            var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
+            if (lastConf is null)
+            {
+                await HandleMissingAuth0Entity(entity, cancellationToken);
+            }
+            return lastConf;
+        }
+
+        private async Task HandleMissingAuth0Entity(TEntity entity, CancellationToken cancellationToken)
+        {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} not found in Auth0, clearing status and scheduling recreation", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+            
+            entity.Status.LastConf = null;
+            entity.Status.Id = null;
+            
+            await UpdateKubernetesStatus(entity, "reset", cancellationToken);
+            throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
+        }
+
+        private Hashtable? GetCachedConfiguration(TEntity entity)
+        {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping Auth0 API call and update", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+            return entity.Status.LastConf;
+        }
+
+        private async Task<Hashtable?> ApplyUpdatesIfNeeded(TEntity entity, V1Tenant tenant, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        {
+            if (!entity.HasPolicy(V1EntityPolicyType.Update))
+            {
+                LogUpdateNotSupported(entity);
+                return lastConf;
+            }
+
+            if (entity.Spec.Conf is not { } conf)
+            {
+                return lastConf;
+            }
+
+            var needsUpdate = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
+            
+            if (needsUpdate)
+            {
+                return await PerformUpdate(entity, tenant, api, lastConf, conf, cancellationToken);
+            }
+
+            return lastConf;
+        }
+
+        private void LogUpdateNotSupported(TEntity entity)
+        {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support update.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+        }
+
+        private bool DetermineIfUpdateIsNeeded(TEntity entity, Hashtable? lastConf, TConf conf)
+        {
+            var isFirstReconciliation = entity.Status.LastConf is null;
+            var hasLocalChanges = !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, conf);
+            
+            bool needsUpdate;
+            if (isFirstReconciliation)
+            {
+                needsUpdate = HasConfigurationChanged(lastConf, conf);
+                LogFirstReconciliationDecision(entity, needsUpdate);
+            }
+            else
+            {
+                needsUpdate = hasLocalChanges;
+                LogSubsequentReconciliationDecision(entity, needsUpdate);
+            }
+
+            return needsUpdate;
+        }
+
+        private void LogFirstReconciliationDecision(TEntity entity, bool needsUpdate)
+        {
+            if (needsUpdate)
+            {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    reconciliationType = "first",
+                    action = "applying updates"
+                });
+            }
+            else
+            {
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - Auth0 state matches desired state - skipping update", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    reconciliationType = "first",
+                    action = "skipping update"
+                });
+            }
+        }
+
+        private void LogSubsequentReconciliationDecision(TEntity entity, bool needsUpdate)
+        {
+            if (needsUpdate)
+            {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} local configuration changes detected - applying updates to Auth0", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    changeType = "local configuration changes",
+                    action = "applying updates"
+                });
+            }
+            else
+            {
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping update", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    changeType = "no changes",
+                    action = "skipping update"
+                });
+            }
+        }
+
+        private async Task<Hashtable> PerformUpdate(TEntity entity, V1Tenant tenant, IManagementApiClient api, Hashtable? lastConf, TConf conf, CancellationToken cancellationToken)
+        {
+            var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
+            await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
+            
+            // Update lastConf to reflect the applied configuration to prevent false drift detection
+            var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
+            return TransformToSystemTextJson<Hashtable>(appliedJson);
+        }
+
+        private async Task FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        {
+            await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
+            await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
+            ScheduleNextReconciliation(entity);
+        }
+
+        private void ScheduleNextReconciliation(TEntity entity)
+        {
             var interval = _options.Value.Reconciliation.Interval;
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} scheduling next reconciliation in {interval.TotalSeconds}s", new {
                 entityTypeName = EntityTypeName,
@@ -469,6 +508,48 @@ namespace Alethic.Auth0.Operator.Controllers
                 intervalSeconds = interval.TotalSeconds
             });
             Requeue(entity, interval);
+        }
+
+        private async Task<V1Tenant?> ResolveTenantRef(TEntity entity, CancellationToken cancellationToken)
+        {
+            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            if (tenant is null)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.");
+            }
+
+            return tenant;
+        }
+
+        private void EnsureSpecConfExists(TEntity entity)
+        {
+            if (entity.Spec.Conf is null)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.");
+            }
+        }
+
+        private void EnsureValidTenantRef(TEntity entity)
+        {
+            if (entity.Spec.TenantRef is null)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
+                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.");
+            }
         }
 
 
@@ -952,7 +1033,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformationJson($"{EntityTypeName} configuration changes - ADDED fields: {string.Join(", ", addedFields)}", new {
                     entityTypeName = EntityTypeName,
                     changeType = "ADDED",
-                    addedFields = addedFields,
+                    addedFields,
                     fieldCount = addedFields.Count
                 });
             }
@@ -962,7 +1043,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformationJson($"{EntityTypeName} configuration changes - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
                     entityTypeName = EntityTypeName,
                     changeType = "MODIFIED",
-                    modifiedFields = modifiedFields,
+                    modifiedFields,
                     fieldCount = modifiedFields.Count
                 });
             }
@@ -972,7 +1053,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformationJson($"{EntityTypeName} configuration changes - REMOVED fields: {string.Join(", ", removedFields)}", new {
                     entityTypeName = EntityTypeName,
                     changeType = "REMOVED",
-                    removedFields = removedFields,
+                    removedFields,
                     fieldCount = removedFields.Count
                 });
             }
@@ -984,7 +1065,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformationJson($"{EntityTypeName} configuration drift detected: {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
                     entityTypeName = EntityTypeName,
                     operation = "drift_detection",
-                    totalChanges = totalChanges,
+                    totalChanges,
                     addedCount = addedFields.Count,
                     modifiedCount = modifiedFields.Count,
                     removedCount = removedFields.Count

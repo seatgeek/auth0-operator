@@ -94,143 +94,169 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (spec.Find is not null)
             {
-                // Log the beginning of find operation with all criteria
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting client lookup with find criteria: ClientId={spec.Find.ClientId ?? "null"}, CallbackUrls=[{(spec.Find.CallbackUrls != null ? string.Join(", ", spec.Find.CallbackUrls) : "null")}], MatchMode={spec.Find.CallbackUrlMatchMode ?? "strict"}", new {
+                return await FindClientUsingCriteria(api, entity, spec.Find, cancellationToken);
+            }
+
+            return await FindClientByName(api, entity, spec, cancellationToken);
+        }
+
+        private async Task<string?> FindClientUsingCriteria(IManagementApiClient api, V1Client entity, ClientFind findCriteria, CancellationToken cancellationToken)
+        {
+            LogFindOperationStart(entity, findCriteria);
+
+            if (findCriteria.ClientId is string clientId)
+            {
+                return await FindClientByClientId(api, entity, clientId, cancellationToken);
+            }
+
+            if (findCriteria.CallbackUrls is { Length: > 0 } callbackUrls)
+            {
+                return await FindClientByCallbackUrls(api, entity, callbackUrls, findCriteria.CallbackUrlMatchMode, cancellationToken);
+            }
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} find operation completed - no valid lookup criteria provided", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+            return null;
+        }
+
+        private void LogFindOperationStart(V1Client entity, ClientFind findCriteria)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting client lookup with find criteria: ClientId={findCriteria.ClientId ?? "null"}, CallbackUrls=[{(findCriteria.CallbackUrls != null ? string.Join(", ", findCriteria.CallbackUrls) : "null")}], MatchMode={findCriteria.CallbackUrlMatchMode ?? "strict"}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                clientId = findCriteria.ClientId,
+                callbackUrls = findCriteria.CallbackUrls,
+                matchMode = findCriteria.CallbackUrlMatchMode ?? "strict"
+            });
+        }
+
+        private async Task<string?> FindClientByClientId(IManagementApiClient api, V1Client entity, string clientId, CancellationToken cancellationToken)
+        {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating client_id lookup: {clientId}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                clientId
+            });
+
+            try
+            {
+                LogAuth0ApiCall($"Getting Auth0 client by client ID: {clientId}", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_client_by_clientid");
+                var client = await api.Clients.GetAsync(clientId, "client_id,name",
+                    cancellationToken: cancellationToken);
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup SUCCESSFUL - found existing client: {client.Name} (ClientId: {client.ClientId})", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
-                    clientId = spec.Find.ClientId,
-                    callbackUrls = spec.Find.CallbackUrls,
-                    matchMode = spec.Find.CallbackUrlMatchMode ?? "strict"
+                    foundClientName = client.Name,
+                    foundClientId = client.ClientId
                 });
-
-                if (spec.Find.ClientId is string clientId)
-                {
-                    Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating client_id lookup: {clientId}", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        clientId = clientId
-                    });
-
-                    try
-                    {
-                        LogAuth0ApiCall($"Getting Auth0 client by client ID: {clientId}", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_client_by_clientid");
-                        var client = await api.Clients.GetAsync(clientId, "client_id,name",
-                            cancellationToken: cancellationToken);
-                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup SUCCESSFUL - found existing client: {client.Name} (ClientId: {client.ClientId})", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            foundClientName = client.Name,
-                            foundClientId = client.ClientId
-                        });
-                        return client.ClientId;
-                    }
-                    catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup FAILED - could not find client with id {clientId}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            searchedClientId = clientId
-                        });
-                        return null;
-                    }
-                }
-
-                if (spec.Find.CallbackUrls is { Length: > 0 } callbackUrls)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating callback URL lookup: URLs=[{string.Join(", ", callbackUrls)}], Mode={spec.Find.CallbackUrlMatchMode ?? "strict"}", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        callbackUrls = callbackUrls,
-                        matchMode = spec.Find.CallbackUrlMatchMode ?? "strict"
-                    });
-
-                    var result = await FindByCallbackUrls(api, entity, callbackUrls, spec.Find.CallbackUrlMatchMode,
-                        cancellationToken);
-
-                    if (result != null)
-                    {
-                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup SUCCESSFUL - found client with id: {result}", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name(),
-                            foundClientId = result
-                        });
-                    }
-                    else
-                    {
-                        Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup FAILED - no matching client found", new {
-                            entityTypeName = EntityTypeName,
-                            entityNamespace = entity.Namespace(),
-                            entityName = entity.Name()
-                        });
-                    }
-
-                    return result;
-                }
-
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} find operation completed - no valid lookup criteria provided", new {
+                return client.ClientId;
+            }
+            catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
+            {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client_id lookup FAILED - could not find client with id {clientId}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
+                    entityName = entity.Name(),
+                    searchedClientId = clientId
                 });
                 return null;
             }
+        }
+
+        private async Task<string?> FindClientByCallbackUrls(IManagementApiClient api, V1Client entity, string[] callbackUrls, string? matchMode, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating callback URL lookup: URLs=[{string.Join(", ", callbackUrls)}], Mode={matchMode ?? "strict"}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                callbackUrls,
+                matchMode = matchMode ?? "strict"
+            });
+
+            var result = await FindByCallbackUrls(api, entity, callbackUrls, matchMode, cancellationToken);
+
+            if (result != null)
+            {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup SUCCESSFUL - found client with id: {result}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    foundClientId = result
+                });
+            }
             else
             {
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no find criteria specified - falling back to name-based lookup", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} callback URL lookup FAILED - no matching client found", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
                 });
-
-                var conf = spec.Init ?? spec.Conf;
-                if (conf is null)
-                    return null;
-
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating name-based lookup for client: {conf.Name}", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    clientName = conf.Name
-                });
-
-                LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
-                var list = await GetAllClientsWithPagination(api, cancellationToken);
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searched {list.Count} clients for name-based lookup", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    clientCount = list.Count
-                });
-                var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
-
-                if (self != null)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup SUCCESSFUL - found client: {conf.Name} (ClientId: {self.ClientId})", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        foundClientName = conf.Name,
-                        foundClientId = self.ClientId
-                    });
-                }
-                else
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup FAILED - no client found with name: {conf.Name}", new {
-                        entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(),
-                        entityName = entity.Name(),
-                        searchedClientName = conf.Name
-                    });
-                }
-
-                return self?.ClientId;
             }
+
+            return result;
+        }
+
+        private async Task<string?> FindClientByName(IManagementApiClient api, V1Client entity, V1Client.SpecDef spec, CancellationToken cancellationToken)
+        {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no find criteria specified - falling back to name-based lookup", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+
+            var conf = spec.Init ?? spec.Conf;
+            if (conf is null)
+                return null;
+
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating name-based lookup for client: {conf.Name}", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                clientName = conf.Name
+            });
+
+            LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client", entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
+            var list = await GetAllClientsWithPagination(api, cancellationToken);
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searched {list.Count} clients for name-based lookup", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                clientCount = list.Count
+            });
+            var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
+
+            return LogNameBasedLookupResult(entity, conf.Name, self);
+        }
+
+        private string? LogNameBasedLookupResult(V1Client entity, string clientName, Client? foundClient)
+        {
+            if (foundClient != null)
+            {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup SUCCESSFUL - found client: {clientName} (ClientId: {foundClient.ClientId})", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    foundClientName = clientName,
+                    foundClientId = foundClient.ClientId
+                });
+            }
+            else
+            {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} name-based lookup FAILED - no client found with name: {clientName}", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    searchedClientName = clientName
+                });
+            }
+
+            return foundClient?.ClientId;
         }
 
         /// <summary>
@@ -752,103 +778,147 @@ namespace Alethic.Auth0.Operator.Controllers
             
             if (secretRef is null)
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing client authentication secret.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
+                LogMissingClientSecret(entity);
                 return true;
             }
 
-            var secretName = secretRef.Name();
-            var secretNamespace = secretRef.Namespace();
-            secretNamespace = string.IsNullOrEmpty(secretNamespace) ? entity.Namespace() : secretNamespace;
+            var (secretName, secretNamespace) = GetSecretNameAndNamespace(secretRef, entity);
             
             if (string.IsNullOrWhiteSpace(secretName) || string.IsNullOrWhiteSpace(secretNamespace))
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has invalid client authentication secret reference.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
-                });
+                LogInvalidSecretReference(entity);
                 return true;
             }
             
             var secret = Kube.Get<V1Secret>(secretName, secretNamespace);
             if (secret is null)
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} not found.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    secretNamespace = secretNamespace,
-                    secretName = secretName
-                });
+                LogSecretNotFound(entity, secretName, secretNamespace);
                 return true;
             }
 
+            return ValidateSecretData(entity, secret, secretName, secretNamespace);
+        }
+
+        private void LogMissingClientSecret(V1Client entity)
+        {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing client authentication secret.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+        }
+
+        private (string secretName, string secretNamespace) GetSecretNameAndNamespace(V1Secret secretRef, V1Client entity)
+        {
+            var secretName = secretRef.Name();
+            var secretNamespace = secretRef.Namespace();
+            secretNamespace = string.IsNullOrEmpty(secretNamespace) ? entity.Namespace() : secretNamespace;
+            return (secretName, secretNamespace);
+        }
+
+        private void LogInvalidSecretReference(V1Client entity)
+        {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has invalid client authentication secret reference.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name()
+            });
+        }
+
+        private void LogSecretNotFound(V1Client entity, string secretName, string secretNamespace)
+        {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} not found.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                secretNamespace = secretNamespace,
+                secretName = secretName
+            });
+        }
+
+        private bool ValidateSecretData(V1Client entity, V1Secret secret, string secretName, string secretNamespace)
+        {
             if (secret.Data is null)
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} has no data.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    secretNamespace = secretNamespace,
-                    secretName = secretName
-                });
+                LogSecretHasNoData(entity, secretName, secretNamespace);
                 return true;
             }
             
-            string clientId = null;
-            string clientSecret = null;
-            
-            // Verify that both fields clientId and clientSecret are present and non-empty
-            // secret.Data contains base64-encoded byte arrays, so we need to decode them to strings
-            if (secret.Data.TryGetValue("clientId", out var clientIdBytes) && clientIdBytes != null)
-            {
-                clientId = Encoding.UTF8.GetString(clientIdBytes);
-            }
+            var clientId = ExtractClientIdFromSecret(secret, entity, secretName, secretNamespace);
             if (string.IsNullOrWhiteSpace(clientId))
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientId.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    secretNamespace = secretNamespace,
-                    secretName = secretName
-                });
                 return true;
             }
 
-            if (secret.Data.TryGetValue("clientSecret", out var clientSecretBytes) && clientSecretBytes != null)
-            {
-                clientSecret = Encoding.UTF8.GetString(clientSecretBytes);
-            }
+            var clientSecret = ExtractClientSecretFromSecret(secret, entity, secretName, secretNamespace);
             if (string.IsNullOrWhiteSpace(clientSecret))
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientSecret.", new {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    secretNamespace = secretNamespace,
-                    secretName = secretName
-                });
                 return true;
             }
             
             return false;
         }
 
-        /// <inheritdoc />
-        protected override async Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(V1Client entity, CancellationToken cancellationToken)
+        private void LogSecretHasNoData(V1Client entity, string secretName, string secretNamespace)
         {
-            var secretRequiresRefresh = await ClientAuth0SecretRequiresRefresh(entity, cancellationToken);
-            if (secretRequiresRefresh)
-            {
-                return (true, "client auth0 secret requires refresh");
-            }
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} has no data.", new {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                secretNamespace,
+                secretName
+            });
+        }
 
-            return (false, null);
+        private string? ExtractClientIdFromSecret(V1Secret secret, V1Client entity, string secretName, string secretNamespace)
+        {
+            string? clientId = null;
+            if (secret.Data.TryGetValue("clientId", out var clientIdBytes) && clientIdBytes != null)
+            {
+                clientId = Encoding.UTF8.GetString(clientIdBytes);
+            }
+            
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientId.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace,
+                    secretName
+                });
+            }
+            
+            return clientId;
+        }
+
+        private string? ExtractClientSecretFromSecret(V1Secret secret, V1Client entity, string secretName, string secretNamespace)
+        {
+            string? clientSecret = null;
+            if (secret.Data.TryGetValue("clientSecret", out var clientSecretBytes) && clientSecretBytes != null)
+            {
+                clientSecret = Encoding.UTF8.GetString(clientSecretBytes);
+            }
+            
+            if (string.IsNullOrWhiteSpace(clientSecret))
+            {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client authentication secret {secretNamespace}/{secretName} is missing clientSecret.", new {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretNamespace,
+                    secretName
+                });
+            }
+            
+            return clientSecret;
+        }
+
+        /// <inheritdoc />
+        protected override Task<(bool RequiresFetch, string? Reason)> RequiresAuth0Fetch(V1Client entity, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<(bool RequiresFetch, string? Reason)>((true, "inspecting configuration drift between desired and actual state"));
         }
 
         /// <summary>
@@ -872,7 +942,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogInformationJson($"{EntityTypeName} loading connection from Auth0 for caching: {connectionId}", new
                 {
                     entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
+                    connectionId,
                     operation = "cache_load"
                 });
 
@@ -890,7 +960,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogInformationJson($"{EntityTypeName} cached connection: {connectionId} ({connection.Name})", new
                     {
                         entityTypeName = EntityTypeName,
-                        connectionId = connectionId,
+                        connectionId,
                         connectionName = connection.Name,
                         operation = "cache_store"
                     });
@@ -903,7 +973,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogWarningJson($"{EntityTypeName} connection not found for caching: {connectionId}", new
                 {
                     entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
+                    connectionId,
                     operation = "cache_load",
                     status = "not_found"
                 });
@@ -923,7 +993,7 @@ namespace Alethic.Auth0.Operator.Controllers
             Logger.LogInformationJson($"{EntityTypeName} invalidated connection cache: {connectionId}", new
             {
                 entityTypeName = EntityTypeName,
-                connectionId = connectionId,
+                connectionId,
                 operation = "cache_invalidate"
             });
         }
@@ -964,7 +1034,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     Logger.LogInformationJson($"{EntityTypeName} received 401 Unauthorized, regenerating token for client {clientId}", new
                     {
                         entityTypeName = EntityTypeName,
-                        clientId = clientId,
+                        clientId,
                         operation = "token_regeneration"
                     });
                     
@@ -977,13 +1047,13 @@ namespace Alethic.Auth0.Operator.Controllers
                 response.EnsureSuccessStatusCode();
                 
                 var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var response_data = Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
-                var connections = response_data?.Connections;
+                var responseData = Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
+                var connections = responseData?.Connections;
                 
                 Logger.LogInformationJson($"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}", new
                 {
                     entityTypeName = EntityTypeName,
-                    clientId = clientId,
+                    clientId,
                     connectionCount = connections?.Count ?? 0,
                     operation = "get_client_connections_direct",
                     baseUri = tenantApiAccess.BaseUri.ToString()
@@ -996,7 +1066,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 Logger.LogErrorJson($"{EntityTypeName} failed to get connections for client {clientId}: {ex.Message}", new
                 {
                     entityTypeName = EntityTypeName,
-                    clientId = clientId,
+                    clientId,
                     operation = "get_client_connections_direct",
                     errorMessage = ex.Message
                 }, ex);
@@ -1009,114 +1079,151 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                Logger.LogInformationJson($"{EntityTypeName} getting current enabled connections for client {clientId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId = clientId,
-                    operation = "get_current_connections"
-                });
+                var (currentConnectionIds, desiredConnectionIds) = await GetConnectionSetsForReconciliation(tenantApiAccess, clientId, enabledConnectionRefs, defaultNamespace, cancellationToken);
+                var (connectionsToAdd, connectionsToRemove) = CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
+                var api = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
 
-                var currentConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, cancellationToken);
-                var currentConnectionIds = currentConnections.Select(c => c.Id).Where(id => !string.IsNullOrEmpty(id)).ToHashSet();
-
-                var desiredConnectionIds = new HashSet<string>();
-                IManagementApiClient? api = null;
-                
-                if (enabledConnectionRefs is { Length: > 0 })
-                {
-                    var resolvedIds = await ResolveConnectionRefsToIds(enabledConnectionRefs, defaultNamespace, cancellationToken);
-                    if (resolvedIds is not null)
-                    {
-                        foreach (var connectionId in resolvedIds)
-                        {
-                            desiredConnectionIds.Add(connectionId);
-                        }
-                    }
-                }
-
-                Logger.LogInformationJson($"{EntityTypeName} reconciling connections for client {clientId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId = clientId,
-                    currentCount = currentConnectionIds.Count,
-                    desiredCount = desiredConnectionIds.Count,
-                    operation = "reconcile_connections"
-                });
-
-                var connectionsToAdd = desiredConnectionIds.Except(currentConnectionIds).ToList();
-                var connectionsToRemove = currentConnectionIds.Except(desiredConnectionIds).ToList();
-
-                // For add/remove operations we need an API client
-                if ((connectionsToAdd.Count > 0 || connectionsToRemove.Count > 0) && api == null)
-                {
-                    // Ensure we have a valid access token
-                    if (!tenantApiAccess.HasValidToken)
-                    {
-                        await tenantApiAccess.RegenerateTokenAsync(cancellationToken);
-                    }
-                    
-                    // Create a legacy ManagementApiClient for backward compatibility with existing update methods
-                    api = new ManagementApiClient(tenantApiAccess.AccessToken!, tenantApiAccess.BaseUri);
-                }
-
-                // Add missing connections
-                if (connectionsToAdd.Count > 0)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} adding {connectionsToAdd.Count} connections for client {clientId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId = clientId,
-                        connectionsToAdd = connectionsToAdd.ToArray(),
-                        operation = "add_connections"
-                    });
-
-                    foreach (var connectionId in connectionsToAdd)
-                    {
-                        await AddClientToConnection(api!, connectionId, clientId, cancellationToken);
-                    }
-                }
-
-                // Remove extra connections
-                if (connectionsToRemove.Count > 0)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} removing {connectionsToRemove.Count} connections for client {clientId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId = clientId,
-                        connectionsToRemove = connectionsToRemove.ToArray(),
-                        operation = "remove_connections"
-                    });
-
-                    foreach (var connectionId in connectionsToRemove)
-                    {
-                        await RemoveClientFromConnection(api!, connectionId, clientId, cancellationToken);
-                    }
-                }
-
-                if (connectionsToAdd.Count == 0 && connectionsToRemove.Count == 0)
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} connections already in desired state for client {clientId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId = clientId,
-                        connectionCount = currentConnectionIds.Count,
-                        operation = "reconcile_connections",
-                        status = "no_changes_needed"
-                    });
-                }
+                await ApplyConnectionChanges(api, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
+                LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count, connectionsToRemove.Count);
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to reconcile enabled connections for client {clientId}: {ex.Message}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId = clientId,
-                    operation = "reconcile_connections",
-                    errorMessage = ex.Message,
-                    status = "failed"
-                }, ex);
+                LogReconciliationError(clientId, ex);
                 throw;
             }
+        }
+
+        private async Task<(HashSet<string> currentConnectionIds, HashSet<string> desiredConnectionIds)> GetConnectionSetsForReconciliation(
+            ITenantApiAccess tenantApiAccess, string clientId, V1ConnectionReference[]? enabledConnectionRefs, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} getting current enabled connections for client {clientId}", new
+            {
+                entityTypeName = EntityTypeName,
+                clientId,
+                operation = "get_current_connections"
+            });
+
+            var currentConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, cancellationToken);
+            var currentConnectionIds = currentConnections.Select(c => c.Id).Where(id => !string.IsNullOrEmpty(id)).ToHashSet();
+
+            var desiredConnectionIds = new HashSet<string>();
+            if (enabledConnectionRefs is { Length: > 0 })
+            {
+                var resolvedIds = await ResolveConnectionRefsToIds(enabledConnectionRefs, defaultNamespace, cancellationToken);
+                if (resolvedIds is not null)
+                {
+                    foreach (var connectionId in resolvedIds)
+                    {
+                        desiredConnectionIds.Add(connectionId);
+                    }
+                }
+            }
+
+            return (currentConnectionIds, desiredConnectionIds);
+        }
+
+        private (List<string> connectionsToAdd, List<string> connectionsToRemove) CalculateConnectionDifferences(
+            HashSet<string> currentConnectionIds, HashSet<string> desiredConnectionIds)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} calculating connection differences", new
+            {
+                entityTypeName = EntityTypeName,
+                currentCount = currentConnectionIds.Count,
+                desiredCount = desiredConnectionIds.Count,
+                operation = "calculate_differences"
+            });
+
+            var connectionsToAdd = desiredConnectionIds.Except(currentConnectionIds).ToList();
+            var connectionsToRemove = currentConnectionIds.Except(desiredConnectionIds).ToList();
+
+            return (connectionsToAdd, connectionsToRemove);
+        }
+
+        private async Task<IManagementApiClient?> GetApiClientIfNeeded(
+            ITenantApiAccess tenantApiAccess, List<string> connectionsToAdd, List<string> connectionsToRemove)
+        {
+            if (connectionsToAdd.Count == 0 && connectionsToRemove.Count == 0)
+                return null;
+
+            if (!tenantApiAccess.HasValidToken)
+            {
+                await tenantApiAccess.RegenerateTokenAsync(CancellationToken.None);
+            }
+            
+            return new ManagementApiClient(tenantApiAccess.AccessToken!, tenantApiAccess.BaseUri);
+        }
+
+        private async Task ApplyConnectionChanges(IManagementApiClient? api, string clientId, 
+            List<string> connectionsToAdd, List<string> connectionsToRemove, CancellationToken cancellationToken)
+        {
+            if (connectionsToAdd.Count > 0)
+            {
+                await AddConnectionsToClient(api!, clientId, connectionsToAdd, cancellationToken);
+            }
+
+            if (connectionsToRemove.Count > 0)
+            {
+                await RemoveConnectionsFromClient(api!, clientId, connectionsToRemove, cancellationToken);
+            }
+        }
+
+        private async Task AddConnectionsToClient(IManagementApiClient api, string clientId, List<string> connectionsToAdd, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} adding {connectionsToAdd.Count} connections for client {clientId}", new
+            {
+                entityTypeName = EntityTypeName,
+                clientId,
+                connectionsToAdd = connectionsToAdd.ToArray(),
+                operation = "add_connections"
+            });
+
+            foreach (var connectionId in connectionsToAdd)
+            {
+                await AddClientToConnection(api, connectionId, clientId, cancellationToken);
+            }
+        }
+
+        private async Task RemoveConnectionsFromClient(IManagementApiClient api, string clientId, List<string> connectionsToRemove, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} removing {connectionsToRemove.Count} connections for client {clientId}", new
+            {
+                entityTypeName = EntityTypeName,
+                clientId,
+                connectionsToRemove = connectionsToRemove.ToArray(),
+                operation = "remove_connections"
+            });
+
+            foreach (var connectionId in connectionsToRemove)
+            {
+                await RemoveClientFromConnection(api, connectionId, clientId, cancellationToken);
+            }
+        }
+
+        private void LogReconciliationResult(string clientId, int currentConnectionCount, int addedCount, int removedCount)
+        {
+            if (addedCount == 0 && removedCount == 0)
+            {
+                Logger.LogInformationJson($"{EntityTypeName} connections already in desired state for client {clientId}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    clientId,
+                    connectionCount = currentConnectionCount,
+                    operation = "reconcile_connections",
+                    status = "no_changes_needed"
+                });
+            }
+        }
+
+        private void LogReconciliationError(string clientId, Exception ex)
+        {
+            Logger.LogErrorJson($"{EntityTypeName} failed to reconcile enabled connections for client {clientId}: {ex.Message}", new
+            {
+                entityTypeName = EntityTypeName,
+                clientId,
+                operation = "reconcile_connections",
+                errorMessage = ex.Message,
+                status = "failed"
+            }, ex);
         }
 
         /// <summary>
@@ -1133,100 +1240,110 @@ namespace Alethic.Auth0.Operator.Controllers
             await mutex.WaitAsync(cancellationToken);
             try
             {
-                // Preliminary read to get current state
-                Logger.LogInformationJson($"{EntityTypeName} reading current connection state before update: {connectionId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "preliminary_read"
-                });
+                var currentConnection = await GetConnectionForUpdate(connectionId, clientId, "enabled_clients update", cancellationToken, api);
+                if (currentConnection is null) return;
 
-                LogAuth0ApiCall($"Getting Auth0 connection for enabled_clients update: {connectionId}", Auth0ApiCallType.Read, "A0Connection", connectionId, "unknown", "preliminary_connection_read");
-                var currentConnection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
-                
-                if (currentConnection is null)
-                {
-                    Logger.LogWarningJson($"{EntityTypeName} connection not found for enabled_clients update: {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId = connectionId,
-                        clientId = clientId,
-                        operation = "preliminary_read",
-                        status = "not_found"
-                    });
-                    return;
-                }
+                var enabledClientIds = GetCurrentEnabledClients(connectionId, currentConnection);
+                if (IsClientAlreadyEnabled(connectionId, clientId, enabledClientIds)) return;
 
-                // Get current enabled clients 
-                LogAuth0ApiCall($"Getting Auth0 connection enabled clients: {connectionId}", Auth0ApiCallType.Read, "A0Connection", connectionId, "unknown", "get_connection_enabled_clients");
-#pragma warning disable CS0618 // Type or member is obsolete
-                var enabledClientIds = currentConnection.EnabledClients?.ToList() ?? new List<string>();
-#pragma warning restore CS0618 // Type or member is obsolete
-
-                if (enabledClientIds.Contains(clientId))
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} client {clientId} already enabled for connection {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId = connectionId,
-                        clientId = clientId,
-                        operation = "enabled_clients_check",
-                        status = "already_enabled"
-                    });
-                    return;
-                }
-
-                // Add client to enabled_clients
-                enabledClientIds.Add(clientId);
-
-                var updateRequest = new ConnectionUpdateRequest
-                {
-#pragma warning disable CS0618 // Type or member is obsolete
-                    EnabledClients = enabledClientIds.ToArray()
-#pragma warning restore CS0618 // Type or member is obsolete
-                };
-
-                Logger.LogInformationJson($"{EntityTypeName} updating connection {connectionId} to include client {clientId} in enabled_clients", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "update_enabled_clients"
-                });
-
-                LogAuth0ApiCall($"Updating Auth0 connection enabled_clients: {connectionId}", Auth0ApiCallType.Write, "A0Connection", connectionId, "unknown", "update_connection_enabled_clients");
-                await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
-
-                // Invalidate connection cache
-                InvalidateConnectionCache(connectionId);
-
-                Logger.LogInformationJson($"{EntityTypeName} successfully updated connection {connectionId} enabled_clients to include client {clientId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "update_enabled_clients",
-                    status = "success"
-                });
+                await UpdateConnectionWithAddedClient(api, connectionId, clientId, enabledClientIds, cancellationToken);
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to update connection {connectionId} enabled_clients for client {clientId}: {ex.Message}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "update_enabled_clients",
-                    errorMessage = ex.Message,
-                    status = "failed"
-                }, ex);
+                LogConnectionUpdateError(connectionId, clientId, "update_enabled_clients", ex);
                 throw;
             }
             finally
             {
                 mutex.Release();
             }
+        }
+
+        private async Task<Connection?> GetConnectionForUpdate(string connectionId, string clientId, string operation, CancellationToken cancellationToken, IManagementApiClient api)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} reading current connection state before {operation}: {connectionId}", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation = "preliminary_read"
+            });
+
+            LogAuth0ApiCall($"Getting Auth0 connection for {operation}: {connectionId}", Auth0ApiCallType.Read, "A0Connection", connectionId, "unknown", "preliminary_connection_read");
+            var currentConnection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
+            
+            if (currentConnection is null)
+            {
+                Logger.LogWarningJson($"{EntityTypeName} connection not found for {operation}: {connectionId}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId,
+                    clientId,
+                    operation = "preliminary_read",
+                    status = "not_found"
+                });
+            }
+
+            return currentConnection;
+        }
+
+        private List<string> GetCurrentEnabledClients(string connectionId, Connection currentConnection)
+        {
+            LogAuth0ApiCall($"Getting Auth0 connection enabled clients: {connectionId}", Auth0ApiCallType.Read, "A0Connection", connectionId, "unknown", "get_connection_enabled_clients");
+#pragma warning disable CS0618 // Type or member is obsolete
+            return currentConnection.EnabledClients?.ToList() ?? new List<string>();
+#pragma warning restore CS0618 // Type or member is obsolete
+        }
+
+        private bool IsClientAlreadyEnabled(string connectionId, string clientId, List<string> enabledClientIds)
+        {
+            if (enabledClientIds.Contains(clientId))
+            {
+                Logger.LogInformationJson($"{EntityTypeName} client {clientId} already enabled for connection {connectionId}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId,
+                    clientId,
+                    operation = "enabled_clients_check",
+                    status = "already_enabled"
+                });
+                return true;
+            }
+            return false;
+        }
+
+        private async Task UpdateConnectionWithAddedClient(IManagementApiClient api, string connectionId, string clientId, List<string> enabledClientIds, CancellationToken cancellationToken)
+        {
+            enabledClientIds.Add(clientId);
+
+            var updateRequest = new ConnectionUpdateRequest
+            {
+#pragma warning disable CS0618 // Type or member is obsolete
+                EnabledClients = enabledClientIds.ToArray()
+#pragma warning restore CS0618 // Type or member is obsolete
+            };
+
+            Logger.LogInformationJson($"{EntityTypeName} updating connection {connectionId} to include client {clientId} in enabled_clients", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation = "update_enabled_clients"
+            });
+
+            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients: {connectionId}", Auth0ApiCallType.Write, "A0Connection", connectionId, "unknown", "update_connection_enabled_clients");
+            await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
+
+            InvalidateConnectionCache(connectionId);
+
+            Logger.LogInformationJson($"{EntityTypeName} successfully updated connection {connectionId} enabled_clients to include client {clientId}", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation = "update_enabled_clients",
+                status = "success"
+            });
         }
 
         /// <summary>
@@ -1243,98 +1360,87 @@ namespace Alethic.Auth0.Operator.Controllers
             await mutex.WaitAsync(cancellationToken);
             try
             {
-                // Preliminary read to get current state
-                Logger.LogInformationJson($"{EntityTypeName} reading current connection state before removing client: {connectionId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "preliminary_read"
-                });
+                var currentConnection = await GetConnectionForUpdate(connectionId, clientId, "enabled_clients removal", cancellationToken, api);
+                if (currentConnection is null) return;
 
-                LogAuth0ApiCall($"Getting Auth0 connection for enabled_clients removal: {connectionId}", Auth0ApiCallType.Read, "A0Connection", connectionId, "unknown", "preliminary_connection_read");
-                var currentConnection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
-                
-                if (currentConnection is null)
-                {
-                    Logger.LogWarningJson($"{EntityTypeName} connection not found for enabled_clients removal: {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId = connectionId,
-                        clientId = clientId,
-                        operation = "preliminary_read",
-                        status = "not_found"
-                    });
-                    return;
-                }
+                var enabledClientIds = GetCurrentEnabledClients(connectionId, currentConnection);
+                if (!IsClientCurrentlyEnabled(connectionId, clientId, enabledClientIds)) return;
 
-                // Check if client is in enabled_clients
-#pragma warning disable CS0618 // Type or member is obsolete
-                var enabledClientIds = currentConnection.EnabledClients?.ToList() ?? new List<string>();
-#pragma warning restore CS0618 // Type or member is obsolete
-                if (!enabledClientIds.Contains(clientId))
-                {
-                    Logger.LogInformationJson($"{EntityTypeName} client {clientId} not currently enabled for connection {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId = connectionId,
-                        clientId = clientId,
-                        operation = "enabled_clients_check",
-                        status = "not_enabled"
-                    });
-                    return;
-                }
-
-                // Remove client from enabled_clients
-                enabledClientIds.Remove(clientId);
-
-                var updateRequest = new ConnectionUpdateRequest
-                {
-#pragma warning disable CS0618 // Type or member is obsolete
-                    EnabledClients = enabledClientIds.ToArray()
-#pragma warning restore CS0618 // Type or member is obsolete
-                };
-
-                Logger.LogInformationJson($"{EntityTypeName} updating connection {connectionId} to remove client {clientId} from enabled_clients", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "remove_enabled_clients"
-                });
-
-                LogAuth0ApiCall($"Updating Auth0 connection enabled_clients removal: {connectionId}", Auth0ApiCallType.Write, "A0Connection", connectionId, "unknown", "update_connection_remove_clients");
-                await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
-
-                // Invalidate connection cache
-                InvalidateConnectionCache(connectionId);
-
-                Logger.LogInformationJson($"{EntityTypeName} successfully removed client {clientId} from connection {connectionId} enabled_clients", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "remove_enabled_clients",
-                    status = "success"
-                });
+                await UpdateConnectionWithRemovedClient(api, connectionId, clientId, enabledClientIds, cancellationToken);
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to remove client {clientId} from connection {connectionId} enabled_clients: {ex.Message}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId = connectionId,
-                    clientId = clientId,
-                    operation = "remove_enabled_clients",
-                    errorMessage = ex.Message,
-                    status = "failed"
-                }, ex);
+                LogConnectionUpdateError(connectionId, clientId, "remove_enabled_clients", ex);
                 throw;
             }
             finally
             {
                 mutex.Release();
             }
+        }
+
+        private bool IsClientCurrentlyEnabled(string connectionId, string clientId, List<string> enabledClientIds)
+        {
+            if (!enabledClientIds.Contains(clientId))
+            {
+                Logger.LogInformationJson($"{EntityTypeName} client {clientId} not currently enabled for connection {connectionId}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId,
+                    clientId,
+                    operation = "enabled_clients_check",
+                    status = "not_enabled"
+                });
+                return false;
+            }
+            return true;
+        }
+
+        private async Task UpdateConnectionWithRemovedClient(IManagementApiClient api, string connectionId, string clientId, List<string> enabledClientIds, CancellationToken cancellationToken)
+        {
+            enabledClientIds.Remove(clientId);
+
+            var updateRequest = new ConnectionUpdateRequest
+            {
+#pragma warning disable CS0618 // Type or member is obsolete
+                EnabledClients = enabledClientIds.ToArray()
+#pragma warning restore CS0618 // Type or member is obsolete
+            };
+
+            Logger.LogInformationJson($"{EntityTypeName} updating connection {connectionId} to remove client {clientId} from enabled_clients", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation = "remove_enabled_clients"
+            });
+
+            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients removal: {connectionId}", Auth0ApiCallType.Write, "A0Connection", connectionId, "unknown", "update_connection_remove_clients");
+            await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
+
+            InvalidateConnectionCache(connectionId);
+
+            Logger.LogInformationJson($"{EntityTypeName} successfully removed client {clientId} from connection {connectionId} enabled_clients", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation = "remove_enabled_clients",
+                status = "success"
+            });
+        }
+
+        private void LogConnectionUpdateError(string connectionId, string clientId, string operation, Exception ex)
+        {
+            Logger.LogErrorJson($"{EntityTypeName} failed to update connection {connectionId} for client {clientId}: {ex.Message}", new
+            {
+                entityTypeName = EntityTypeName,
+                connectionId,
+                clientId,
+                operation,
+                errorMessage = ex.Message,
+                status = "failed"
+            }, ex);
         }
 
         /// <summary>
