@@ -155,12 +155,13 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
+            var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
             
             entity = await EnsureEntityHasId(entity, api, cancellationToken);
             
-            var lastConf = await RetrieveCurrentAuth0State(entity, api, cancellationToken);
+            var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
             
-            lastConf = await ApplyUpdatesIfNeeded(entity, tenant, api, lastConf, cancellationToken);
+            lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
             
             await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
         }
@@ -311,13 +312,13 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        private async Task<Hashtable?> RetrieveCurrentAuth0State(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
+        private async Task<Hashtable?> RetrieveCurrentAuth0State(TEntity entity, IManagementApiClient api, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
             var (needsAuth0Fetch, reason) = await DetermineIfAuth0FetchIsNeeded(entity, cancellationToken);
 
             if (needsAuth0Fetch)
             {
-                return await FetchFromAuth0WithValidation(entity, api, reason, cancellationToken);
+                return await FetchFromAuth0WithValidation(entity, api, tenantApiAccess, reason, cancellationToken);
             }
 
             return GetCachedConfiguration(entity);
@@ -338,7 +339,7 @@ namespace Alethic.Auth0.Operator.Controllers
             return (needsAuth0Fetch, reason);
         }
 
-        private async Task<Hashtable?> FetchFromAuth0WithValidation(TEntity entity, IManagementApiClient api, string reason, CancellationToken cancellationToken)
+        private async Task<Hashtable?> FetchFromAuth0WithValidation(TEntity entity, IManagementApiClient api, ITenantApiAccess tenantApiAccess, string reason, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} checking if entity exists in Auth0 with ID {entity.Status.Id} (reason: {reason})", new {
                 entityTypeName = EntityTypeName,
@@ -352,8 +353,30 @@ namespace Alethic.Auth0.Operator.Controllers
             if (lastConf is null)
             {
                 await HandleMissingAuth0Entity(entity, cancellationToken);
+                return lastConf;
             }
+
+            // Allow derived controllers to enrich the Auth0 state (e.g., client controllers can add connection data)
+            lastConf = await EnrichAuth0State(entity, api, tenantApiAccess, lastConf, cancellationToken);
+            
             return lastConf;
+        }
+
+        /// <summary>
+        /// Virtual method that allows derived controllers to enrich the Auth0 state after retrieval.
+        /// Base implementation returns the state unchanged.
+        /// Override in derived controllers to add entity-specific enrichment logic.
+        /// </summary>
+        /// <param name="entity">The entity being processed</param>
+        /// <param name="api">The Auth0 Management API client</param>
+        /// <param name="auth0State">The current Auth0 state hashtable</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The enriched Auth0 state</returns>
+        protected virtual async Task<Hashtable> EnrichAuth0State(TEntity entity, IManagementApiClient api, ITenantApiAccess tenantApiAccess, Hashtable auth0State, CancellationToken cancellationToken)
+        {
+            // Base implementation - no enrichment needed
+            await Task.CompletedTask;
+            return auth0State;
         }
 
         private async Task HandleMissingAuth0Entity(TEntity entity, CancellationToken cancellationToken)
@@ -381,7 +404,7 @@ namespace Alethic.Auth0.Operator.Controllers
             return entity.Status.LastConf;
         }
 
-        private async Task<Hashtable?> ApplyUpdatesIfNeeded(TEntity entity, V1Tenant tenant, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<Hashtable?> ApplyUpdatesIfNeeded(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             if (!entity.HasPolicy(V1EntityPolicyType.Update))
             {
@@ -398,7 +421,7 @@ namespace Alethic.Auth0.Operator.Controllers
             
             if (needsUpdate)
             {
-                return await PerformUpdate(entity, tenant, api, lastConf, conf, cancellationToken);
+                return await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, cancellationToken);
             }
 
             return lastConf;
@@ -482,9 +505,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        private async Task<Hashtable> PerformUpdate(TEntity entity, V1Tenant tenant, IManagementApiClient api, Hashtable? lastConf, TConf conf, CancellationToken cancellationToken)
+        private async Task<Hashtable> PerformUpdate(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, TConf conf, CancellationToken cancellationToken)
         {
-            var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
             await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
             
             // Update lastConf to reflect the applied configuration to prevent false drift detection
