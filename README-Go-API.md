@@ -2,7 +2,7 @@
 
 This package provides Go types and utilities for managing Auth0 resources in Kubernetes clusters. It allows Go applications to programmatically create, read, update, and delete Auth0 Custom Resource Definitions (CRDs) that are managed by the Auth0 Operator.
 
-> ✅ **Latest Release**: v1.0.0 is now available! The Go API is ready for use.
+> ✅ **Latest Release**: v1.0.1 is now available! The Go API is ready for use.
 
 ## Architecture Overview
 
@@ -38,14 +38,14 @@ Both toolchains generate functionally identical CRDs from their respective type 
 
 ```bash
 # Add to your Go project
-go get github.com/seatgeek/auth0-operator@v1.0.0
+go get github.com/seatgeek/auth0-operator@v1.0.1
 
 # Add required Kubernetes dependencies  
 go get k8s.io/client-go@v0.32.1
 go get k8s.io/apimachinery@v0.32.1
 
 # Note: If you encounter checksum verification issues, use:
-# GOSUMDB=off go get github.com/seatgeek/auth0-operator@v1.0.0
+# GOSUMDB=off go get github.com/seatgeek/auth0-operator@v1.0.1
 ```
 
 ### Basic Usage Example
@@ -212,7 +212,7 @@ mkdir my-auth0-app && cd my-auth0-app
 go mod init github.com/yourorg/my-auth0-app
 
 # 2. Add the Auth0 Operator API dependency  
-go get github.com/seatgeek/auth0-operator@v1.0.0
+go get github.com/seatgeek/auth0-operator@v1.0.1
 
 # 3. Add required Kubernetes dependencies
 go get k8s.io/client-go@v0.32.1
@@ -224,7 +224,7 @@ go get k8s.io/api@v0.32.1
 
 ```bash
 # Add to existing Go project
-go get github.com/seatgeek/auth0-operator@v1.0.0
+go get github.com/seatgeek/auth0-operator@v1.0.1
 go mod tidy
 ```
 
@@ -379,10 +379,10 @@ kubectl get crd | grep auth0
 
 ```bash
 # Pin to exact version in go.mod  
-go get github.com/seatgeek/auth0-operator@v1.0.0
+go get github.com/seatgeek/auth0-operator@v1.0.1
 
 # Or edit go.mod directly:
-# require github.com/seatgeek/auth0-operator v1.0.0
+# require github.com/seatgeek/auth0-operator v1.0.1
 ```
 
 #### Update to Latest Version
