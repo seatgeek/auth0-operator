@@ -12,7 +12,7 @@ namespace Alethic.Auth0.Operator.Models
         /// <summary>
         /// Gets the policy set on the entity.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Array of policy types applied to the entity</returns>
         public V1EntityPolicyType[] GetPolicy() => Spec.Policy ?? [
             V1EntityPolicyType.Create,
             V1EntityPolicyType.Update,
@@ -21,8 +21,8 @@ namespace Alethic.Auth0.Operator.Models
         /// <summary>
         /// Gets whether or not this entity has this policy applied.
         /// </summary>
-        /// <param name="policy"></param>
-        /// <returns></returns>
+        /// <param name="policy">The policy type to check for</param>
+        /// <returns>True if the entity has the specified policy, false otherwise</returns>
         public bool HasPolicy(V1EntityPolicyType policy)
         {
             return GetPolicy().Contains(policy);

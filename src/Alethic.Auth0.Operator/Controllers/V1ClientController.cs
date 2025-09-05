@@ -1794,6 +1794,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity">The V1Client entity being processed</param>
         /// <param name="api">The Auth0 Management API client</param>
+        /// <param name="tenantApiAccess">Tenant API access for credentials and tokens</param>
         /// <param name="auth0State">The current Auth0 state hashtable</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>The enriched Auth0 state with enabled_connections field</returns>

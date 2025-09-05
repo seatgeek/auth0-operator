@@ -18,7 +18,7 @@ namespace Alethic.Auth0.Operator.Finalizers
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="controller"></param>
+        /// <param name="controller">The V1Client controller for handling deletion operations</param>
         public V1ClientFinalizer(V1ClientController controller)
         {
             _controller = controller ?? throw new ArgumentNullException(nameof(controller));

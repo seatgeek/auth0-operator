@@ -40,11 +40,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="kube"></param>
-        /// <param name="requeue"></param>
-        /// <param name="cache"></param>
-        /// <param name="logger"></param>
-        /// <param name="options"></param>
+        /// <param name="kube">The Kubernetes client</param>
+        /// <param name="requeue">Entity requeue service for scheduling reconciliation</param>
+        /// <param name="cache">Memory cache for API responses</param>
+        /// <param name="logger">Logger instance</param>
+        /// <param name="options">Operator configuration options</param>
         public V1TenantEntityController(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger, IOptions<OperatorOptions> options) :
             base(kube, requeue, cache, logger)
         {
@@ -76,52 +76,52 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Attempts to perform a get operation through the API.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="id"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="id">The entity ID to retrieve</param>
+        /// <param name="defaultNamespace">Default namespace for the entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The retrieved entity as a hashtable, or null if not found</returns>
         protected abstract Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to locate a matching API element by the given configuration.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="entity"></param>
-        /// <param name="spec"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">The entity to find</param>
+        /// <param name="spec">Entity specification with configuration</param>
+        /// <param name="defaultNamespace">Default namespace for the entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The ID of the matching entity, or null if not found</returns>
         protected abstract Task<string?> Find(IManagementApiClient api, TEntity entity, TSpec spec, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Performs a validation on the <paramref name="conf"/> parameter for usage in create operations.
         /// </summary>
-        /// <param name="conf"></param>
-        /// <returns></returns>
+        /// <param name="conf">The configuration to validate</param>
+        /// <returns>Error message if validation fails, null if valid</returns>
         protected abstract string? ValidateCreate(TConf conf);
 
         /// <summary>
         /// Attempts to perform a creation through the API. If successful returns the new ID value.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="conf"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="conf">Configuration for the new entity</param>
+        /// <param name="defaultNamespace">Default namespace for the entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The ID of the created entity</returns>
         protected abstract Task<string> Create(IManagementApiClient api, TConf conf, string defaultNamespace, CancellationToken cancellationToken);
 
         /// <summary>
         /// Attempts to perform an update through the API.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="id"></param>
-        /// <param name="last"></param>
-        /// <param name="conf"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="tenantApiAccess"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="id">The entity ID to update</param>
+        /// <param name="last">The last known configuration state</param>
+        /// <param name="conf">The new configuration to apply</param>
+        /// <param name="defaultNamespace">Default namespace for the entity</param>
+        /// <param name="tenantApiAccess">Tenant API access for credentials and tokens</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>A task representing the asynchronous update operation</returns>
         protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken);
 
 
@@ -369,6 +369,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity">The entity being processed</param>
         /// <param name="api">The Auth0 Management API client</param>
+        /// <param name="tenantApiAccess">Tenant API access for credentials and tokens</param>
         /// <param name="auth0State">The current Auth0 state hashtable</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>The enriched Auth0 state</returns>
@@ -579,12 +580,12 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Applies any modification to the entity status just before saving it.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="entity"></param>
-        /// <param name="lastConf"></param>
-        /// <param name="defaultNamespace"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">The entity being processed</param>
+        /// <param name="lastConf">The last known configuration from Auth0</param>
+        /// <param name="defaultNamespace">Default namespace for the entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>A task representing the asynchronous status application operation</returns>
         protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             entity.Status.LastConf = lastConf;
@@ -594,10 +595,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Implement this method to delete a specific entity from the API.
         /// </summary>
-        /// <param name="api"></param>
-        /// <param name="id"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="id">The entity ID to delete</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>A task representing the asynchronous delete operation</returns>
         protected abstract Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken);
 
         /// <inheritdoc />
