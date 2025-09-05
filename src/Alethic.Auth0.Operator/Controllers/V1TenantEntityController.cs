@@ -437,12 +437,13 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (needsUpdate)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} DRIFT DETECTED *** First reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
                     reconciliationType = "first",
-                    action = "applying updates"
+                    action = "applying updates",
+                    driftDetected = true
                 });
             }
             else
@@ -1062,13 +1063,14 @@ namespace Alethic.Auth0.Operator.Controllers
             var totalChanges = addedFields.Count + modifiedFields.Count + removedFields.Count;
             if (totalChanges > 0)
             {
-                Logger.LogInformationJson($"{EntityTypeName} configuration drift detected: {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} CONFIGURATION DRIFT DETECTED *** {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
                     entityTypeName = EntityTypeName,
                     operation = "drift_detection",
                     totalChanges,
                     addedCount = addedFields.Count,
                     modifiedCount = modifiedFields.Count,
-                    removedCount = removedFields.Count
+                    removedCount = removedFields.Count,
+                    driftDetected = true
                 });
             }
         }
