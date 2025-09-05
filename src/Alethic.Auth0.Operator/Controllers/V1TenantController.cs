@@ -98,7 +98,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // Check if configuration changes need to be applied
             var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity.Status.LastConf, currentConf);
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity, entity.Status.LastConf, currentConf);
             var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation;
             
             TenantSettings? settings = null;
@@ -138,7 +138,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (isFirstReconciliation)
                 {
                     var settingsHashtable = TransformToSystemTextJson<Hashtable>(settings);
-                    needsUpdate = HasConfigurationChanged(settingsHashtable, conf);
+                    needsUpdate = HasConfigurationChanged(entity, settingsHashtable, conf);
                     if (needsUpdate)
                     {
                         Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} DRIFT DETECTED *** First reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
@@ -258,10 +258,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Determines if the tenant configuration has changed by comparing the last known state with the desired configuration.
         /// </summary>
+        /// <param name="entity">The tenant entity</param>
         /// <param name="lastConf">The last known configuration from Auth0</param>
         /// <param name="desiredConf">The desired configuration from the Kubernetes spec</param>
         /// <returns>True if changes are detected, false if configurations match</returns>
-        private bool HasConfigurationChanged(Hashtable? lastConf, TenantConf desiredConf)
+        private bool HasConfigurationChanged(V1Tenant entity, Hashtable? lastConf, TenantConf desiredConf)
         {
             try
             {
@@ -287,7 +288,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 
                 if (foundConfigChanges)
                 {
-                    LogConfigurationDifferences(filteredLast, filteredDesired);
+                    LogConfigurationDifferences(entity, filteredLast, filteredDesired);
                 }
                 
                 return foundConfigChanges;
@@ -427,9 +428,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Logs detected configuration differences with detailed field-by-field changes.
         /// </summary>
+        /// <param name="entity">The tenant entity</param>
         /// <param name="last">Last known configuration</param>
         /// <param name="desired">Desired configuration</param>
-        private void LogConfigurationDifferences(Hashtable last, Hashtable desired)
+        private void LogConfigurationDifferences(V1Tenant entity, Hashtable last, Hashtable desired)
         {
             var addedFields = new List<string>();
             var modifiedFields = new List<string>();
@@ -464,30 +466,36 @@ namespace Alethic.Auth0.Operator.Controllers
             // Log changes by category with detailed before/after values
             if (addedFields.Count > 0)
             {
-                Logger.LogInformationJson($"{EntityTypeName} configuration changes - ADDED fields: {string.Join(", ", addedFields)}", new {
+                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - ADDED fields: {string.Join(", ", addedFields)}", new {
                     entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
                     changeType = "ADDED",
-                    addedFields = addedFields,
+                    addedFields,
                     fieldCount = addedFields.Count
                 });
             }
 
             if (modifiedFields.Count > 0)
             {
-                Logger.LogInformationJson($"{EntityTypeName} configuration changes - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
+                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
                     entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
                     changeType = "MODIFIED",
-                    modifiedFields = modifiedFields,
+                    modifiedFields,
                     fieldCount = modifiedFields.Count
                 });
             }
 
             if (removedFields.Count > 0)
             {
-                Logger.LogInformationJson($"{EntityTypeName} configuration changes - REMOVED fields: {string.Join(", ", removedFields)}", new {
+                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - REMOVED fields: {string.Join(", ", removedFields)}", new {
                     entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
                     changeType = "REMOVED",
-                    removedFields = removedFields,
+                    removedFields,
                     fieldCount = removedFields.Count
                 });
             }
@@ -496,10 +504,12 @@ namespace Alethic.Auth0.Operator.Controllers
             var totalChanges = addedFields.Count + modifiedFields.Count + removedFields.Count;
             if (totalChanges > 0)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} CONFIGURATION DRIFT DETECTED *** {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION DRIFT DETECTED *** {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
                     entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
                     operation = "drift_detection",
-                    totalChanges = totalChanges,
+                    totalChanges,
                     addedCount = addedFields.Count,
                     modifiedCount = modifiedFields.Count,
                     removedCount = removedFields.Count,
