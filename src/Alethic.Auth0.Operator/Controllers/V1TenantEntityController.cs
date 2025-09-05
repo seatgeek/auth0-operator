@@ -470,7 +470,6 @@ namespace Alethic.Auth0.Operator.Controllers
         private bool DetermineIfUpdateIsNeeded(TEntity entity, Hashtable? lastConf, TConf conf)
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = !isFirstReconciliation && HasConfigurationChanged(entity, entity.Status.LastConf, conf);
 
             bool needsUpdate;
             if (isFirstReconciliation)
@@ -480,7 +479,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                needsUpdate = hasLocalChanges;
+                needsUpdate = HasConfigurationChanged(entity, entity.Status.LastConf, conf);
                 LogSubsequentReconciliationDecision(entity, needsUpdate);
             }
 
