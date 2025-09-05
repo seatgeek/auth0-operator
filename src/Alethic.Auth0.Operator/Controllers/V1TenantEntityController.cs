@@ -327,7 +327,7 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<(bool needsAuth0Fetch, string reason)> DetermineIfAuth0FetchIsNeeded(TEntity entity, CancellationToken cancellationToken)
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChanged(entity, entity.Status.LastConf, currentConf);
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
             var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
             var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
             
@@ -791,7 +791,56 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Determines if the configuration has changed by comparing the last known state with the desired configuration (without logging).
+        /// This version is used for internal checks where logging drift details would be redundant.
+        /// </summary>
+        /// <param name="entity">The entity</param>
+        /// <param name="lastConf">The last known configuration from Auth0</param>
+        /// <param name="desiredConf">The desired configuration from the Kubernetes spec</param>
+        /// <returns>True if changes are detected, false if configurations match</returns>
+        private bool HasConfigurationChangedQuiet(TEntity entity, Hashtable? lastConf, TConf desiredConf)
+        {
+            try
+            {
+                if (lastConf is null)
+                {
+                    Logger.LogDebugJson($"{EntityTypeName} no previous configuration available - assuming changes exist", new {
+                        entityTypeName = EntityTypeName,
+                        configurationStatus = "no_previous_config",
+                        assumingChanges = true
+                    });
+                    return true;
+                }
+
+                // Convert desired configuration to Auth0 API format for comparison
+                var desiredJson = TransformToNewtonsoftJson<TConf, object>(desiredConf);
+                var desiredHashtable = TransformToSystemTextJson<Hashtable>(desiredJson);
+                
+                // Filter fields based on the entity's drift detection configuration
+                var filteredLast = FilterFieldsForComparison(lastConf);
+                var filteredDesired = FilterFieldsForComparison(desiredHashtable);
+
+                // Compare the filtered configurations but do NOT log drift details
+                var result = !AreHashtablesEqual(filteredLast, filteredDesired);
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarningJson($"{EntityTypeName} error comparing configurations, assuming changes exist: {ex.Message}", new {
+                    entityTypeName = EntityTypeName,
+                    operation = "configuration_comparison_quiet",
+                    errorMessage = ex.Message,
+                    assumingChanges = true
+                });
+                
+                return true; // Safe fallback: assume changes exist
+            }
+        }
+
+        /// <summary>
         /// Determines if the configuration has changed by comparing the last known state with the desired configuration.
+        /// This version logs detailed drift information when changes are detected.
         /// </summary>
         /// <param name="entity">The entity</param>
         /// <param name="lastConf">The last known configuration from Auth0</param>
@@ -1055,7 +1104,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // Log changes by category with detailed before/after values
             if (addedFields.Count > 0)
             {
-                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - ADDED fields: {string.Join(", ", addedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - ADDED fields: {string.Join(", ", addedFields)}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1067,7 +1116,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (modifiedFields.Count > 0)
             {
-                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1079,7 +1128,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (removedFields.Count > 0)
             {
-                Logger.LogInformationJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - REMOVED fields: {string.Join(", ", removedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - REMOVED fields: {string.Join(", ", removedFields)}", new {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
