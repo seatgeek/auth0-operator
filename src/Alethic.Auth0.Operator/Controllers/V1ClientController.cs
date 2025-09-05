@@ -1748,21 +1748,22 @@ namespace Alethic.Auth0.Operator.Controllers
                 var enabledConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, cancellationToken);
 
                 // Create a list of connection IDs to match the expected format in the client configuration
-                var connectionIds = enabledConnections
+                // Need to populate `clientState["enabled_connections"]` with an array of hashtables, each containing key="id" and value= the connection ID
+                var enabledConnectionsList = enabledConnections
                     .Where(conn => !string.IsNullOrEmpty(conn.Id))
-                    .Select(conn => conn.Id)
-                    .ToArray();
+                    .Select(conn => new Hashtable { { "id", conn.Id } })
+                    .ToList();
 
                 // Add the enabled_connections field to the client state
-                clientState["enabled_connections"] = connectionIds;
+                clientState["enabled_connections"] = enabledConnectionsList;
 
                 Logger.LogInformationJson(
-                    $"{EntityTypeName} successfully enriched client state with {connectionIds.Length} enabled connections for client {clientId}",
+                    $"{EntityTypeName} successfully enriched client state with {enabledConnectionsList.Count} enabled connections for client {clientId}",
                     new
                     {
                         entityTypeName = EntityTypeName,
                         clientId,
-                        connectionCount = connectionIds.Length,
+                        connectionCount = enabledConnectionsList.Count,
                         operation = "enrich_enabled_connections_api",
                         status = "success"
                     });
