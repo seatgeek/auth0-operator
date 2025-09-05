@@ -481,11 +481,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 LogAuth0ApiCall($"Updating Auth0 client with ID: {id} and name: {conf.Name}", Auth0ApiCallType.Write, "A0Client", conf.Name ?? "unknown", "unknown", "update_client");
                 await api.Clients.UpdateAsync(id, req, cancellationToken);
 
-                // Reconcile enabled connections if they are specified in the configuration
-                if (conf.EnabledConnections != null)
-                {
-                    await ReconcileEnabledConnections(tenantApiAccess, id, conf.EnabledConnections, defaultNamespace, cancellationToken);
-                }
+                // Always attempt to reconcile the enabled connection as it might be that all were just removed
+                await ReconcileEnabledConnections(tenantApiAccess, id, conf.EnabledConnections, defaultNamespace, cancellationToken);
 
                 var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated client in Auth0 with id: {id} and name: {conf.Name} in {duration.TotalMilliseconds}ms", new {
