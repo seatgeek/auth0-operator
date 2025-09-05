@@ -274,4 +274,3 @@ type SessionCookie struct {
 	// +kubebuilder:validation:Enum=persistent;non-persistent
 	Mode *string `json:"mode,omitempty"`
 }
-

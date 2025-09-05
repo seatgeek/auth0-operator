@@ -305,7 +305,6 @@ type SignedRequestObject struct {
 	Credentials []CredentialIdDef `json:"credentials,omitempty"`
 }
 
-
 // Mobile contains mobile app configuration
 type Mobile struct {
 	// +kubebuilder:validation:Optional
@@ -451,4 +450,3 @@ type DefaultOrganization struct {
 	// +kubebuilder:validation:Enum=client_credentials
 	Flows []string `json:"flows,omitempty"`
 }
-

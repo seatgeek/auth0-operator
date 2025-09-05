@@ -159,4 +159,3 @@ const (
 	SetUserRootAttributesOnFirstLogin SetUserRootAttributes = "on_first_login"
 	SetUserRootAttributesNeverOnLogin SetUserRootAttributes = "never_on_login"
 )
-
