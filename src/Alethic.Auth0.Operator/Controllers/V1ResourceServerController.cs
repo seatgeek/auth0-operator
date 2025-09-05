@@ -63,14 +63,16 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                Logger.LogInformationJson($"{EntityTypeName} fetching resource server from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} fetching resource server from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "fetch"
                 });
                 LogAuth0ApiCall($"Getting Auth0 resource server with ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "retrieve_resource_server_by_id");
                 var result = await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully retrieved resource server from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully retrieved resource server from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "fetch",
@@ -80,7 +82,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception e)
             {
-                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new {
+                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "fetch",
@@ -97,7 +100,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var conf = spec.Init ?? spec.Conf;
             if (conf is null)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no configuration available for find operation", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no configuration available for find operation", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -107,7 +111,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 return null;
             }
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for resource server with identifier {conf.Identifier}", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for resource server with identifier {conf.Identifier}", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
@@ -116,10 +121,11 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             var list = await GetAllResourceServersWithPagination(api, cancellationToken);
             var self = list.FirstOrDefault(i => string.Equals(i.Identifier, conf.Identifier, StringComparison.OrdinalIgnoreCase));
-            
+
             if (self != null)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing resource server with identifier {conf.Identifier} and ID {self.Id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing resource server with identifier {conf.Identifier} and ID {self.Id}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -131,7 +137,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no existing resource server found with identifier {conf.Identifier}", new {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no existing resource server found with identifier {conf.Identifier}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -140,7 +147,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     status = "not_found"
                 });
             }
-            
+
             return self?.Id;
         }
 
@@ -153,7 +160,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<string> Create(IManagementApiClient api, ResourceServerConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} creating resource server in Auth0 with identifier {conf.Identifier} and name {conf.Name}", new {
+            Logger.LogInformationJson($"{EntityTypeName} creating resource server in Auth0 with identifier {conf.Identifier} and name {conf.Name}", new
+            {
                 entityTypeName = EntityTypeName,
                 identifier = conf.Identifier,
                 resourceServerName = conf.Name,
@@ -163,7 +171,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 LogAuth0ApiCall($"Creating Auth0 resource server with identifier: {conf.Identifier}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "create_resource_server");
                 var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully created resource server in Auth0 with ID {self.Id} and identifier {self.Identifier}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully created resource server in Auth0 with ID {self.Id} and identifier {self.Identifier}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = self.Id,
                     identifier = self.Identifier,
@@ -174,7 +183,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to create resource server in Auth0 with identifier {conf.Identifier} and name {conf.Name}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to create resource server in Auth0 with identifier {conf.Identifier} and name {conf.Name}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     identifier = conf.Identifier,
                     resourceServerName = conf.Name,
@@ -187,9 +197,10 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ResourceServerConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ResourceServerConf conf, List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} updating resource server in Auth0 with ID {id} and identifier {conf.Identifier}", new {
+            Logger.LogInformationJson($"{EntityTypeName} updating resource server in Auth0 with ID {id} and identifier {conf.Identifier}", new
+            {
                 entityTypeName = EntityTypeName,
                 resourceServerId = id,
                 identifier = conf.Identifier,
@@ -199,7 +210,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 LogAuth0ApiCall($"Updating Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "update_resource_server");
                 await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully updated resource server in Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully updated resource server in Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "update",
@@ -208,7 +220,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to update resource server in Auth0 with ID {id} and identifier {conf.Identifier}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to update resource server in Auth0 with ID {id} and identifier {conf.Identifier}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     identifier = conf.Identifier,
@@ -234,7 +247,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} deleting resource server from Auth0 with ID {id}", new {
+            Logger.LogInformationJson($"{EntityTypeName} deleting resource server from Auth0 with ID {id}", new
+            {
                 entityTypeName = EntityTypeName,
                 resourceServerId = id,
                 operation = "delete"
@@ -243,7 +257,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 LogAuth0ApiCall($"Deleting Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", id, "unknown", "delete_resource_server");
                 await api.ResourceServers.DeleteAsync(id, cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully deleted resource server from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully deleted resource server from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "delete",
@@ -252,7 +267,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to delete resource server from Auth0 with ID {id}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to delete resource server from Auth0 with ID {id}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "delete",

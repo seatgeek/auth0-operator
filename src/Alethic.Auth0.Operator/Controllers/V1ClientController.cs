@@ -551,7 +551,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientConf conf,
-            string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+            List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
             var startTime = DateTimeOffset.UtcNow;
             Logger.LogInformationJson($"{EntityTypeName} updating client in Auth0 with id: {id} and name: {conf.Name}",
