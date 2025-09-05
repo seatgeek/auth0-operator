@@ -559,10 +559,92 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     entityTypeName = EntityTypeName,
                     clientId = id,
-                    clientName = conf.Name
+                    clientName = conf.Name,
+                    driftingFields = driftingFields.ToArray()
                 });
 
-            // transform initial request
+            // Determine what needs to be updated based on drifting fields
+            var needsClientUpdate = driftingFields.Any(field => 
+                !string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
+            var needsConnectionUpdate = driftingFields.Any(field => 
+                string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
+
+            Logger.LogInformationJson($"{EntityTypeName} selective update analysis for client {id}: needsClientUpdate={needsClientUpdate}, needsConnectionUpdate={needsConnectionUpdate}",
+                new
+                {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    needsClientUpdate,
+                    needsConnectionUpdate,
+                    driftingFields = driftingFields.ToArray()
+                });
+
+            // Update client properties if any non-enabled_connections fields have drifted
+            if (needsClientUpdate)
+            {
+                await UpdateClientProperties(api, id, last, conf, cancellationToken);
+            }
+            else
+            {
+                Logger.LogInformationJson($"{EntityTypeName} skipping client property update for {id} - only enabled_connections has drifted",
+                    new
+                    {
+                        entityTypeName = EntityTypeName,
+                        clientId = id,
+                        reason = "only_enabled_connections_drifted"
+                    });
+            }
+
+            // Update enabled connections if enabled_connections field has drifted
+            if (needsConnectionUpdate)
+            {
+                await ReconcileEnabledConnections(tenantApiAccess, id, conf.EnabledConnections, defaultNamespace,
+                    cancellationToken);
+            }
+            else
+            {
+                Logger.LogInformationJson($"{EntityTypeName} skipping enabled connections update for {id} - enabled_connections field has not drifted",
+                    new
+                    {
+                        entityTypeName = EntityTypeName,
+                        clientId = id,
+                        reason = "enabled_connections_not_drifted"
+                    });
+            }
+
+            var duration = DateTimeOffset.UtcNow - startTime;
+            Logger.LogInformationJson(
+                $"{EntityTypeName} successfully completed selective update for client {id} in {duration.TotalMilliseconds}ms (client={needsClientUpdate}, connections={needsConnectionUpdate})",
+                new
+                {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    clientName = conf.Name,
+                    durationMs = duration.TotalMilliseconds,
+                    updatedClient = needsClientUpdate,
+                    updatedConnections = needsConnectionUpdate
+                });
+        }
+
+        /// <summary>
+        /// Updates the client properties (excluding enabled_connections) in Auth0.
+        /// </summary>
+        /// <param name="api">Auth0 Management API client</param>
+        /// <param name="id">Client ID</param>
+        /// <param name="last">Last known configuration from Auth0</param>
+        /// <param name="conf">Desired client configuration</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        private async Task UpdateClientProperties(IManagementApiClient api, string id, Hashtable? last, ClientConf conf, CancellationToken cancellationToken)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} updating client properties for {id}",
+                new
+                {
+                    entityTypeName = EntityTypeName,
+                    clientId = id,
+                    operation = "update_client_properties"
+                });
+
+            // Transform configuration to Auth0 client update request
             ClientUpdateRequest req;
             try
             {
@@ -579,7 +661,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw;
             }
 
-            // explicitely null out missing metadata if previously present
+            // Explicitly null out missing metadata if previously present
             if (last is not null && last.ContainsKey("client_metadata") && conf.ClientMetaData != null &&
                 last["client_metadata"] is Hashtable lastMetadata)
             {
@@ -592,34 +674,29 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
-                LogAuth0ApiCall($"Updating Auth0 client with ID: {id} and name: {conf.Name}", Auth0ApiCallType.Write,
-                    "A0Client", conf.Name ?? "unknown", "unknown", "update_client");
+                LogAuth0ApiCall($"Updating Auth0 client properties with ID: {id}", Auth0ApiCallType.Write,
+                    "A0Client", conf.Name ?? "unknown", "unknown", "update_client_properties");
                 await api.Clients.UpdateAsync(id, req, cancellationToken);
 
-                // Always attempt to reconcile the enabled connection as it might be that all were just removed
-                await ReconcileEnabledConnections(tenantApiAccess, id, conf.EnabledConnections, defaultNamespace,
-                    cancellationToken);
-
-                var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformationJson(
-                    $"{EntityTypeName} successfully updated client in Auth0 with id: {id} and name: {conf.Name} in {duration.TotalMilliseconds}ms",
+                    $"{EntityTypeName} successfully updated client properties for {id}",
                     new
                     {
                         entityTypeName = EntityTypeName,
                         clientId = id,
-                        clientName = conf.Name,
-                        durationMs = duration.TotalMilliseconds
+                        operation = "update_client_properties",
+                        status = "success"
                     });
             }
             catch (Exception ex)
             {
                 Logger.LogErrorJson(
-                    $"{EntityTypeName} failed to update client in Auth0 with id: {id} and name: {conf.Name}: {ex.Message}",
+                    $"{EntityTypeName} failed to update client properties for {id}: {ex.Message}",
                     new
                     {
                         entityTypeName = EntityTypeName,
                         clientId = id,
-                        clientName = conf.Name,
+                        operation = "update_client_properties",
                         errorMessage = ex.Message
                     }, ex);
                 throw;
