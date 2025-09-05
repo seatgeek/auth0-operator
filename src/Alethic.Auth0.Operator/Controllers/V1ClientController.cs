@@ -248,6 +248,11 @@ namespace Alethic.Auth0.Operator.Controllers
             if (conf is null)
                 return null;
 
+            if (conf.Name is null)
+            {
+                return null;
+            }
+
             Logger.LogDebugJson(
                 $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating name-based lookup for client: {conf.Name}",
                 new
@@ -649,7 +654,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     lastConf.Remove("client_secret");
             }
 
-            await base.ApplyStatus(api, entity, lastConf, defaultNamespace, cancellationToken);
+            await base.ApplyStatus(api, entity, lastConf ?? new Hashtable(), defaultNamespace, cancellationToken);
         }
 
         /// <summary>
@@ -1812,9 +1817,16 @@ namespace Alethic.Auth0.Operator.Controllers
                         operation = "enrich_auth0_state"
                     });
 
+                if (entity.Status.Id is null)
+                {
+                    Logger.LogWarningJson(
+                        $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has no ID in status, skipping enrichment of enabled connections",
+                        new { entityTypeName = EntityTypeName, entityNamespace = entity.Namespace(), entityName = entity.Name() });
+                    return auth0State;
+                }
+
                 // Enrich with enabled connections using the existing method
-                return await EnrichWithEnabledConnections(auth0State, tenantApiAccess, entity.Status.Id,
-                    cancellationToken);
+                return await EnrichWithEnabledConnections(auth0State, tenantApiAccess, entity.Status.Id, cancellationToken);
             }
             catch (Exception ex)
             {

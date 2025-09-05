@@ -14,7 +14,6 @@ using Alethic.Auth0.Operator.Services;
 
 using Auth0.ManagementApi;
 using Auth0.ManagementApi.Models;
-using Auth0.ManagementApi.Paging;
 
 using k8s.Models;
 
@@ -64,7 +63,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                Logger.LogInformationJson($"{EntityTypeName} fetching client grant from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} fetching client grant from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "fetch"
@@ -73,7 +73,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 var self = list.FirstOrDefault(i => i.Id == id);
                 if (self == null)
                 {
-                    Logger.LogWarningJson($"{EntityTypeName} client grant with ID {id} not found in Auth0", new {
+                    Logger.LogWarningJson($"{EntityTypeName} client grant with ID {id} not found in Auth0", new
+                    {
                         entityTypeName = EntityTypeName,
                         clientGrantId = id,
                         status = "not_found"
@@ -81,7 +82,8 @@ namespace Alethic.Auth0.Operator.Controllers
                     return null;
                 }
 
-                Logger.LogInformationJson($"{EntityTypeName} successfully retrieved client grant from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully retrieved client grant from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "fetch",
@@ -91,7 +93,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception e)
             {
-                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new {
+                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "fetch",
@@ -108,7 +111,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var conf = spec.Init ?? spec.Conf;
             if (conf is null)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no configuration available for find operation", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no configuration available for find operation", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -120,7 +124,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (conf.ClientRef is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing required ClientRef", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing required ClientRef", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -130,7 +135,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException("ClientRef is required.");
             }
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} resolving client reference for find operation", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} resolving client reference for find operation", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
@@ -139,7 +145,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var clientId = await ResolveClientRefToId(api, conf.ClientRef, defaultNamespace, cancellationToken);
             if (string.IsNullOrWhiteSpace(clientId))
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to resolve ClientRef to client ID", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to resolve ClientRef to client ID", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -151,7 +158,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (conf.Audience is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing required Audience", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing required Audience", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -161,7 +169,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException("Audience is required.");
             }
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} resolving audience reference for find operation", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} resolving audience reference for find operation", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
@@ -170,7 +179,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken);
             if (string.IsNullOrWhiteSpace(audience))
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to resolve Audience to resource server identifier", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to resolve Audience to resource server identifier", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -180,7 +190,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException();
             }
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for client grant with ClientId {clientId} and Audience {audience}", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searching Auth0 for client grant with ClientId {clientId} and Audience {audience}", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
@@ -189,13 +200,14 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "search_auth0"
             });
             var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
-            var result = list.Where(i => string.Equals(i.ClientId, clientId, StringComparison.OrdinalIgnoreCase) && 
+            var result = list.Where(i => string.Equals(i.ClientId, clientId, StringComparison.OrdinalIgnoreCase) &&
                                        string.Equals(i.Audience, audience, StringComparison.OrdinalIgnoreCase))
                             .Select(i => i.Id).FirstOrDefault();
-            
+
             if (result != null)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing client grant with ID {result}", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing client grant with ID {result}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -206,7 +218,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no existing client grant found for ClientId {clientId} and Audience {audience}", new {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no existing client grant found for ClientId {clientId} and Audience {audience}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -216,7 +229,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     status = "not_found"
                 });
             }
-            
+
             return result;
         }
 
@@ -237,13 +250,28 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task<string> Create(IManagementApiClient api, ClientGrantConf conf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var req = new ClientGrantCreateRequest();
-            req.ClientId = await ResolveClientRefToId(api, conf.ClientRef, defaultNamespace, cancellationToken);
-            req.Audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken);
-            req.Scope = conf.Scope?.ToList();
+
+            var clientId = await ResolveClientRefToId(api, conf?.ClientRef, defaultNamespace, cancellationToken);
+            if (clientId is null)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 - ClientRef could not be resolved to a valid client ID.", new
+                {
+                    entityTypeName = EntityTypeName,
+                    operation = "create",
+                    error = "client_ref_could_not_be_resolved"
+                });
+                throw new InvalidOperationException("ClientRef could not be resolved to a valid client ID.");
+            }
+            req.ClientId = clientId;
+
+
+            req.Audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken) ?? throw new InvalidOperationException("Audience could not be resolved to a valid resource server identifier.");
+            req.Scope = conf.Scope?.ToList() ?? new List<string>();
             req.AllowAnyOrganization = conf.AllowAnyOrganization;
             req.OrganizationUsage = Convert(conf.OrganizationUsage);
 
-            Logger.LogInformationJson($"{EntityTypeName} creating client grant in Auth0 for ClientId {req.ClientId} and Audience {req.Audience}", new {
+            Logger.LogInformationJson($"{EntityTypeName} creating client grant in Auth0 for ClientId {req.ClientId} and Audience {req.Audience}", new
+            {
                 entityTypeName = EntityTypeName,
                 clientId = req.ClientId,
                 audience = req.Audience,
@@ -255,7 +283,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
                 if (self is null)
                 {
-                    Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 - API returned null", new {
+                    Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 - API returned null", new
+                    {
                         entityTypeName = EntityTypeName,
                         operation = "create",
                         error = "api_returned_null"
@@ -263,7 +292,8 @@ namespace Alethic.Auth0.Operator.Controllers
                     throw new InvalidOperationException();
                 }
 
-                Logger.LogInformationJson($"{EntityTypeName} successfully created client grant in Auth0 with ID {self.Id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully created client grant in Auth0 with ID {self.Id}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = self.Id,
                     operation = "create",
@@ -273,7 +303,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 for ClientId {req.ClientId} and Audience {req.Audience}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 for ClientId {req.ClientId} and Audience {req.Audience}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientId = req.ClientId,
                     audience = req.Audience,
@@ -289,11 +320,12 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientGrantConf conf, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
         {
             var req = new ClientGrantUpdateRequest();
-            req.Scope = conf.Scope?.ToList();
+            req.Scope = conf.Scope?.ToList() ?? new List<string>();
             req.AllowAnyOrganization = conf.AllowAnyOrganization;
             req.OrganizationUsage = Convert(conf.OrganizationUsage);
 
-            Logger.LogInformationJson($"{EntityTypeName} updating client grant in Auth0 with ID {id}", new {
+            Logger.LogInformationJson($"{EntityTypeName} updating client grant in Auth0 with ID {id}", new
+            {
                 entityTypeName = EntityTypeName,
                 clientGrantId = id,
                 operation = "update"
@@ -302,7 +334,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "update_client_grant");
                 await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully updated client grant in Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully updated client grant in Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "update",
@@ -311,7 +344,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to update client grant in Auth0 with ID {id}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to update client grant in Auth0 with ID {id}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "update",
@@ -325,7 +359,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Delete(IManagementApiClient api, string id, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} deleting client grant from Auth0 with ID {id}", new {
+            Logger.LogInformationJson($"{EntityTypeName} deleting client grant from Auth0 with ID {id}", new
+            {
                 entityTypeName = EntityTypeName,
                 clientGrantId = id,
                 operation = "delete"
@@ -334,7 +369,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown", "delete_client_grant");
                 await api.ClientGrants.DeleteAsync(id, cancellationToken);
-                Logger.LogInformationJson($"{EntityTypeName} successfully deleted client grant from Auth0 with ID {id}", new {
+                Logger.LogInformationJson($"{EntityTypeName} successfully deleted client grant from Auth0 with ID {id}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "delete",
@@ -343,7 +379,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} failed to delete client grant from Auth0 with ID {id}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} failed to delete client grant from Auth0 with ID {id}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     clientGrantId = id,
                     operation = "delete",
