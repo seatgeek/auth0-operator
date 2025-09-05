@@ -264,8 +264,18 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             req.ClientId = clientId;
 
+            if (conf is null)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} failed to create client grant in Auth0 - Configuration is null.", new
+                {
+                    entityTypeName = EntityTypeName,
+                    operation = "create",
+                    error = "configuration_is_null"
+                });
+                throw new InvalidOperationException("Configuration is null.");
+            }
 
-            req.Audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken) ?? throw new InvalidOperationException("Audience could not be resolved to a valid resource server identifier.");
+            req.Audience = await ResolveResourceServerRefToIdentifier(api, conf.Audience, defaultNamespace, cancellationToken) ?? throw new InvalidOperationException("Failed to create client grant in Auth0 - Audience could not be resolved to a valid resource server identifier.");
             req.Scope = conf.Scope?.ToList() ?? new List<string>();
             req.AllowAnyOrganization = conf.AllowAnyOrganization;
             req.OrganizationUsage = Convert(conf.OrganizationUsage);

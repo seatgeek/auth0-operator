@@ -60,7 +60,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected async Task<ITenantApiAccess> GetOrCreateTenantApiAccessAsync(V1Tenant tenant, CancellationToken cancellationToken)
         {
             var cacheKey = $"{tenant.Namespace()}/{tenant.Name()}";
-            
+
             if (_tenantApiAccessCache.TryGetValue(cacheKey, out var existingTenantApiAccess))
             {
                 return existingTenantApiAccess;
@@ -68,7 +68,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var newTenantApiAccess = await TenantApiAccess.CreateAsync(tenant, Kube, Logger, cancellationToken);
             await newTenantApiAccess.RegenerateTokenAsync(cancellationToken);
-            
+
             _tenantApiAccessCache.TryAdd(cacheKey, newTenantApiAccess);
             return newTenantApiAccess;
         }
@@ -156,13 +156,13 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
-            
+
             entity = await EnsureEntityHasId(entity, api, cancellationToken);
-            
+
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
-            
+
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
-            
+
             await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
         }
 
@@ -172,16 +172,19 @@ namespace Alethic.Auth0.Operator.Controllers
             EnsureSpecConfExists(entity);
 
             var tenant = await ResolveTenantRef(entity, cancellationToken);
+            if (tenant is null)
+                throw new InvalidOperationException($"Failed to setup reconciliation context for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant (cannot resolve TenantRef).");
 
             var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
                 });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.");
+                throw new InvalidOperationException($"Failed to setup reconciliation context for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - failed to retrieve API client.");
             }
 
             // ensure we hold a reference to the tenant
@@ -199,19 +202,20 @@ namespace Alethic.Auth0.Operator.Controllers
                 return await ValidateExistingEntityId(entity);
             }
 
-            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has not yet been reconciled, checking if entity exists in Auth0.", new {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has not yet been reconciled, checking if entity exists in Auth0.", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name()
             });
 
             var entityId = await Find(api, entity, entity.Spec, entity.Namespace(), cancellationToken);
-            
+
             if (entityId is null)
             {
                 return await CreateNewEntity(entity, api, cancellationToken);
             }
-            
+
             return await AssociateWithExistingEntity(entity, entityId, cancellationToken);
         }
 
@@ -219,19 +223,22 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (string.IsNullOrWhiteSpace(entity.Status.Id))
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} reconciliation failed - ID is still not set after attempting to find or create entity.", new {
+                var errorMessage = $"Failed to validate existing entity ID for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - ID is still not set after attempting to find or create entity.";
+                Logger.LogErrorJson(errorMessage, new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
                 });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing an existing ID.");
+                throw new InvalidOperationException(errorMessage);
             }
             return Task.FromResult(entity);
         }
 
         private async Task<TEntity> CreateNewEntity(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not be located, creating.", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not be located, creating.", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name()
@@ -241,13 +248,14 @@ namespace Alethic.Auth0.Operator.Controllers
             var init = ValidateAndGetInitConfiguration(entity);
 
             entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
                 createdId = entity.Status.Id
             });
-            
+
             return await UpdateKubernetesStatus(entity, "creation", cancellationToken);
         }
 
@@ -255,7 +263,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (entity.HasPolicy(V1EntityPolicyType.Create) == false)
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support creation.", new {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support creation.", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
@@ -267,15 +276,19 @@ namespace Alethic.Auth0.Operator.Controllers
         private TConf ValidateAndGetInitConfiguration(TEntity entity)
         {
             var init = entity.Spec.Init ?? entity.Spec.Conf;
+            if (init is null)
+                throw new InvalidOperationException($"Failed to validate and get init configuration for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - has no Init or Conf configuration.");
+
             if (ValidateCreate(init) is string msg)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
                     validationMessage = msg
                 });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is invalid: {msg}");
+                throw new InvalidOperationException($"Failed to validate and get init configuration for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - is invalid: {msg}");
             }
             return init;
         }
@@ -283,13 +296,14 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<TEntity> AssociateWithExistingEntity(TEntity entity, string entityId, CancellationToken cancellationToken)
         {
             entity.Status.Id = entityId;
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found with {entity.Status.Id}", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found with {entity.Status.Id}", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
                 foundId = entity.Status.Id
             });
-            
+
             return await UpdateKubernetesStatus(entity, "finding entity", cancellationToken);
         }
 
@@ -301,7 +315,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception ex)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after {operation}: {ex.Message}", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after {operation}: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -330,9 +345,9 @@ namespace Alethic.Auth0.Operator.Controllers
             var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
             var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
             var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
-            
-            var reason = isFirstReconciliation ? "first reconciliation" : 
-                        hasLocalChanges ? "local configuration changes detected" : 
+
+            var reason = isFirstReconciliation ? "first reconciliation" :
+                        hasLocalChanges ? "local configuration changes detected" :
                         entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
                         "unknown";
 
@@ -341,14 +356,26 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task<Hashtable?> FetchFromAuth0WithValidation(TEntity entity, IManagementApiClient api, ITenantApiAccess tenantApiAccess, string reason, CancellationToken cancellationToken)
         {
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} checking if entity exists in Auth0 with ID {entity.Status.Id} (reason: {reason})", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} checking if entity exists in Auth0 with ID {entity.Status.Id} (reason: {reason})", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
                 entityId = entity.Status.Id,
                 checkReason = reason
             });
-                
+
+            if (entity.Status.Id is null)
+            {
+                var errorMessage = $"Failed to fetch {EntityTypeName} from Auth0 - {EntityTypeName} {entity.Namespace()}/{entity.Name()} has no ID in status.";
+                Logger.LogErrorJson(errorMessage, new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name()
+                });
+                throw new InvalidOperationException(errorMessage);
+            }
             var lastConf = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
             if (lastConf is null)
             {
@@ -358,7 +385,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // Allow derived controllers to enrich the Auth0 state (e.g., client controllers can add connection data)
             lastConf = await EnrichAuth0State(entity, api, tenantApiAccess, lastConf, cancellationToken);
-            
+
             return lastConf;
         }
 
@@ -382,22 +409,24 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task HandleMissingAuth0Entity(TEntity entity, CancellationToken cancellationToken)
         {
-            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} not found in Auth0, clearing status and scheduling recreation", new {
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} not found in Auth0, clearing status and scheduling recreation", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name()
             });
-            
+
             entity.Status.LastConf = null;
             entity.Status.Id = null;
-            
+
             await UpdateKubernetesStatus(entity, "reset", cancellationToken);
             throw new RetryException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has missing API object, invalidating.");
         }
 
         private Hashtable? GetCachedConfiguration(TEntity entity)
         {
-            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping Auth0 API call and update", new {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping Auth0 API call and update", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name()
@@ -419,7 +448,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             var needsUpdate = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
-            
+
             if (needsUpdate)
             {
                 return await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, cancellationToken);
@@ -430,7 +459,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private void LogUpdateNotSupported(TEntity entity)
         {
-            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support update.", new {
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support update.", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name()
@@ -441,7 +471,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
             var hasLocalChanges = !isFirstReconciliation && HasConfigurationChanged(entity, entity.Status.LastConf, conf);
-            
+
             bool needsUpdate;
             if (isFirstReconciliation)
             {
@@ -461,7 +491,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (needsUpdate)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} DRIFT DETECTED *** First reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} DRIFT DETECTED *** First reconciliation - configuration drift detected between Auth0 and desired state - applying updates", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -472,7 +503,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - Auth0 state matches desired state - skipping update", new {
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} first reconciliation - Auth0 state matches desired state - skipping update", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -486,7 +518,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (needsUpdate)
             {
-                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} local configuration changes detected - applying updates to Auth0", new {
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} local configuration changes detected - applying updates to Auth0", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -496,7 +529,8 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping update", new {
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} no local configuration changes detected - skipping update", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -508,8 +542,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task<Hashtable> PerformUpdate(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, TConf conf, CancellationToken cancellationToken)
         {
-            await Update(api, entity.Status.Id, lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
-            
+            await Update(api, entity.Status.Id ?? throw new InvalidOperationException($"Entity {entity.Namespace()}/{entity.Name()} has no ID in status."), lastConf, conf, entity.Namespace(), tenantApiAccess, cancellationToken);
+
             // Update lastConf to reflect the applied configuration to prevent false drift detection
             var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
             return TransformToSystemTextJson<Hashtable>(appliedJson);
@@ -525,7 +559,8 @@ namespace Alethic.Auth0.Operator.Controllers
         private void ScheduleNextReconciliation(TEntity entity)
         {
             var interval = _options.Value.Reconciliation.Interval;
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} scheduling next reconciliation in {interval.TotalSeconds}s", new {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} scheduling next reconciliation in {interval.TotalSeconds}s", new
+            {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
@@ -539,12 +574,14 @@ namespace Alethic.Auth0.Operator.Controllers
             var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
             if (tenant is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.", new {
+                var errorMessage = $"Failed to resolve tenant ref for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant.";
+                Logger.LogErrorJson(errorMessage, new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
                 });
-                throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant.");
+                throw new InvalidOperationException(errorMessage);
             }
 
             return tenant;
@@ -554,7 +591,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (entity.Spec.Conf is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing configuration.", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
@@ -567,7 +605,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             if (entity.Spec.TenantRef is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.", new {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} missing a tenant reference.", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name()
@@ -607,19 +646,20 @@ namespace Alethic.Auth0.Operator.Controllers
             try
             {
                 if (entity.Spec.TenantRef is null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing a tenant reference.");
+                    throw new InvalidOperationException($"Failed to delete {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant reference.");
 
                 var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
                 if (tenant is null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing a tenant.");
+                    throw new InvalidOperationException($"Failed to delete {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant.");
 
                 var api = await GetTenantApiClientAsync(tenant, cancellationToken);
                 if (api is null)
-                    throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.");
+                    throw new InvalidOperationException($"Failed to delete {EntityTypeName} {entity.Namespace()}/{entity.Name()} - failed to retrieve API client.");
 
                 if (string.IsNullOrWhiteSpace(entity.Status.Id))
                 {
-                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has no known ID, skipping delete (reason: entity was never successfully created in Auth0)", new {
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has no known ID, skipping delete (reason: entity was never successfully created in Auth0)", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -633,7 +673,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 var self = await Get(api, entity.Status.Id, entity.Namespace(), cancellationToken);
                 if (self is null)
                 {
-                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} with ID {entity.Status.Id} not found in Auth0, skipping delete (reason: already deleted externally)", new {
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} with ID {entity.Status.Id} not found in Auth0, skipping delete (reason: already deleted externally)", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -648,7 +689,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 // reject deletion if disallowed by policy
                 if (entity.HasPolicy(V1EntityPolicyType.Delete) == false)
                 {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support delete (reason: Delete policy not enabled)", new {
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} does not support delete (reason: Delete policy not enabled)", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -659,7 +701,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 else
                 {
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating deletion from Auth0 with ID: {entity.Status.Id} (reason: Kubernetes entity was deleted)", new {
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} initiating deletion from Auth0 with ID: {entity.Status.Id} (reason: Kubernetes entity was deleted)", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -669,7 +712,8 @@ namespace Alethic.Auth0.Operator.Controllers
                         status = "initiating"
                     });
                     await Delete(api, entity.Status.Id, cancellationToken);
-                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} deletion completed successfully", new {
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} deletion completed successfully", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -682,7 +726,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogErrorJson($"API error deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.ApiError?.Message}", new {
+                    Logger.LogErrorJson($"API error deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.ApiError?.Message}", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -694,7 +739,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new {
+                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new
+                    {
                         operation = "create_event",
                         errorType = "unexpected_exception",
                         errorMessage = e2.Message
@@ -705,7 +751,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogErrorJson($"Rate limit hit deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.ApiError?.Message ?? e.Message}", new {
+                    Logger.LogErrorJson($"Rate limit hit deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.ApiError?.Message ?? e.Message}", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -717,7 +764,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new {
+                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new
+                    {
                         operation = "create_event",
                         errorType = "unexpected_exception",
                         errorMessage = e2.Message
@@ -729,7 +777,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (n < TimeSpan.FromMinutes(1))
                     n = TimeSpan.FromMinutes(1);
 
-                Logger.LogInformationJson($"Rescheduling delete after {n}", new {
+                Logger.LogInformationJson($"Rescheduling delete after {n}", new
+                {
                     operation = "reschedule_delete",
                     timespan = n
                 });
@@ -739,7 +788,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogErrorJson($"Retry hit deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new {
+                    Logger.LogErrorJson($"Retry hit deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -751,14 +801,16 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new {
+                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new
+                    {
                         operation = "create_event",
                         errorType = "unexpected_exception",
                         errorMessage = e2.Message
                     }, e2);
                 }
 
-                Logger.LogInformationJson($"Rescheduling delete after {TimeSpan.FromMinutes(1)}", new {
+                Logger.LogInformationJson($"Rescheduling delete after {TimeSpan.FromMinutes(1)}", new
+                {
                     operation = "reschedule_delete",
                     timespan = TimeSpan.FromMinutes(1)
                 });
@@ -768,7 +820,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 try
                 {
-                    Logger.LogErrorJson($"Unexpected exception deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new {
+                    Logger.LogErrorJson($"Unexpected exception deleting {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new
+                    {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
@@ -780,7 +833,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new {
+                    Logger.LogCriticalJson($"Unexpected exception creating event: {e2.Message}", new
+                    {
                         operation = "create_event",
                         errorType = "unexpected_exception",
                         errorMessage = e2.Message
@@ -805,7 +859,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 if (lastConf is null)
                 {
-                    Logger.LogDebugJson($"{EntityTypeName} no previous configuration available - assuming changes exist", new {
+                    Logger.LogDebugJson($"{EntityTypeName} no previous configuration available - assuming changes exist", new
+                    {
                         entityTypeName = EntityTypeName,
                         configurationStatus = "no_previous_config",
                         assumingChanges = true
@@ -816,25 +871,26 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Convert desired configuration to Auth0 API format for comparison
                 var desiredJson = TransformToNewtonsoftJson<TConf, object>(desiredConf);
                 var desiredHashtable = TransformToSystemTextJson<Hashtable>(desiredJson);
-                
+
                 // Filter fields based on the entity's drift detection configuration
                 var filteredLast = FilterFieldsForComparison(lastConf);
                 var filteredDesired = FilterFieldsForComparison(desiredHashtable);
 
                 // Compare the filtered configurations but do NOT log drift details
                 var result = !AreHashtablesEqual(filteredLast, filteredDesired);
-                
+
                 return result;
             }
             catch (Exception ex)
             {
-                Logger.LogWarningJson($"{EntityTypeName} error comparing configurations, assuming changes exist: {ex.Message}", new {
+                Logger.LogWarningJson($"{EntityTypeName} error comparing configurations, assuming changes exist: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     operation = "configuration_comparison_quiet",
                     errorMessage = ex.Message,
                     assumingChanges = true
                 });
-                
+
                 return true; // Safe fallback: assume changes exist
             }
         }
@@ -853,7 +909,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 if (lastConf is null)
                 {
-                    Logger.LogDebugJson($"{EntityTypeName} no previous configuration available - assuming changes exist", new {
+                    Logger.LogDebugJson($"{EntityTypeName} no previous configuration available - assuming changes exist", new
+                    {
                         entityTypeName = EntityTypeName,
                         configurationStatus = "no_previous_config",
                         assumingChanges = true
@@ -864,24 +921,25 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Convert desired configuration to Auth0 API format for comparison
                 var desiredJson = TransformToNewtonsoftJson<TConf, object>(desiredConf);
                 var desiredHashtable = TransformToSystemTextJson<Hashtable>(desiredJson);
-                
+
                 // Filter fields based on the entity's drift detection configuration
                 var filteredLast = FilterFieldsForComparison(lastConf);
                 var filteredDesired = FilterFieldsForComparison(desiredHashtable);
 
                 // Compare the filtered configurations
                 var result = !AreHashtablesEqual(filteredLast, filteredDesired);
-                
+
                 if (result)
                 {
                     LogConfigurationDifferences(entity, filteredLast, filteredDesired);
                 }
-                
+
                 return result;
             }
             catch (Exception ex)
             {
-                Logger.LogWarningJson($"{EntityTypeName} error comparing configurations, assuming changes exist: {ex.Message}", new {
+                Logger.LogWarningJson($"{EntityTypeName} error comparing configurations, assuming changes exist: {ex.Message}", new
+                {
                     entityTypeName = EntityTypeName,
                     operation = "configuration_comparison",
                     errorMessage = ex.Message,
@@ -1042,7 +1100,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 return AreHashtablesEqual(leftHash, rightHash);
 
             // Handle arrays
-            if (left is IEnumerable leftEnum && right is IEnumerable rightEnum && 
+            if (left is IEnumerable leftEnum && right is IEnumerable rightEnum &&
                 !(left is string) && !(right is string))
             {
                 var leftArray = leftEnum.Cast<object>().ToArray();
@@ -1105,7 +1163,8 @@ namespace Alethic.Auth0.Operator.Controllers
             // Log changes by category with detailed before/after values
             if (addedFields.Count > 0)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - ADDED fields: {string.Join(", ", addedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - ADDED fields: {string.Join(", ", addedFields)}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1117,7 +1176,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (modifiedFields.Count > 0)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - MODIFIED fields: {string.Join(", ", modifiedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - MODIFIED fields: {string.Join(", ", modifiedFields)}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1129,7 +1189,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (removedFields.Count > 0)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - REMOVED fields: {string.Join(", ", removedFields)}", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION CHANGES - REMOVED fields: {string.Join(", ", removedFields)}", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1143,7 +1204,8 @@ namespace Alethic.Auth0.Operator.Controllers
             var totalChanges = addedFields.Count + modifiedFields.Count + removedFields.Count;
             if (totalChanges > 0)
             {
-                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION DRIFT DETECTED *** {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new {
+                Logger.LogWarningJson($"*** {EntityTypeName} {entity.Namespace()}/{entity.Name()} CONFIGURATION DRIFT DETECTED *** {totalChanges} field changes ({addedFields.Count} added, {modifiedFields.Count} modified, {removedFields.Count} removed)", new
+                {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
@@ -1173,25 +1235,25 @@ namespace Alethic.Auth0.Operator.Controllers
                 case string stringValue:
                     var quotedStr = $"\"{stringValue}\"";
                     return quotedStr.Length > 100 ? $"\"{stringValue[..95]}...\"" : quotedStr;
-                
+
                 case bool boolean:
                     return boolean.ToString().ToLowerInvariant();
-                
+
                 case int or long or float or double or decimal:
                     return value.ToString() ?? "(null)";
-                
+
                 case IEnumerable enumerable when value is not string:
                     var items = enumerable.Cast<object>().Take(5).Select(FormatValueForLogging);
                     var arrayPreview = string.Join(", ", items);
                     var count = enumerable.Cast<object>().Count();
                     return count > 5 ? $"[{arrayPreview}, ...] (total: {count} items)" : $"[{arrayPreview}]";
-                
+
                 case Hashtable hashtable:
                     var entries = hashtable.Cast<DictionaryEntry>().Take(3)
                         .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
                     var hashPreview = string.Join(", ", entries);
                     return hashtable.Count > 3 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
-                
+
                 default:
                     var objectStr = value.ToString() ?? "(null)";
                     var typeName = value.GetType().Name;

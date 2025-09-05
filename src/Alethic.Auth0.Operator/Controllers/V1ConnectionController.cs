@@ -270,8 +270,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 var req = new ConnectionCreateRequest();
                 ApplyConfToRequest(req, conf);
-                req.Strategy = conf.Strategy;
-                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+                req.Strategy = conf.Strategy ?? throw new InvalidOperationException("Strategy is required for connection creation.");
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options ?? new Hashtable()))) ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions()) : conf.Options ?? new Hashtable();
 
                 LogAuth0ApiCall($"Creating Auth0 connection with name: {conf.Name}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "create_connection");
                 var self = await api.Connections.CreateAsync(req, cancellationToken);
@@ -319,8 +319,8 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 var req = new ConnectionUpdateRequest();
                 ApplyConfToRequest(req, conf);
-                req.Name = null; // not allowed to be changed
-                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options))) : conf.Options;
+                req.Name = null!; // not allowed to be changed
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options ?? new Hashtable()))) ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions()) : conf.Options ?? new Hashtable();
 
                 // Handle metadata with special nulling logic (overriding what ApplyConfToRequest set)
                 req.Metadata = conf.Metadata ?? new Hashtable();
@@ -390,10 +390,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="conf"></param>
         static void ApplyConfToRequest(ConnectionBase req, ConnectionConf conf)
         {
-            req.Name = conf.Name;
-            req.DisplayName = conf.DisplayName;
-            req.Metadata = conf.Metadata;
-            req.Realms = conf.Realms;
+            req.Name = conf.Name!;
+            req.DisplayName = conf.DisplayName!;
+            req.Metadata = conf.Metadata ?? new Hashtable();
+            req.Realms = conf.Realms ?? new string[0];
             req.IsDomainConnection = conf.IsDomainConnection ?? false;
             req.ShowAsButton = conf.ShowAsButton;
         }
