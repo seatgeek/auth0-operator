@@ -12,7 +12,7 @@ namespace Alethic.Auth0.Operator
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="message"></param>
+        /// <param name="message">The error message that explains the reason for the retry</param>
         public RetryException(string? message) :
             base(message)
         {

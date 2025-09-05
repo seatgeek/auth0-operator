@@ -12,9 +12,9 @@ namespace Alethic.Auth0.Operator.Core.Extensions
         /// <summary>
         /// Copies the <see cref="JToken"/> to an anonymous hierarchy where objects are dictionaries.
         /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
+        /// <param name="token">The JToken to convert to dictionary hierarchy</param>
+        /// <returns>Dictionary representation of the JToken or null if the token is null</returns>
+        /// <exception cref="InvalidOperationException">Thrown when the token type is not supported</exception>
         public static object? ToDictionary(this JToken token)
         {
             return token switch
