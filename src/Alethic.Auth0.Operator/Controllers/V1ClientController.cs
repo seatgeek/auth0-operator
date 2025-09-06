@@ -834,10 +834,11 @@ namespace Alethic.Auth0.Operator.Controllers
                         });
                     try
                     {
+                        var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
                         secret = await Kube.CreateAsync(
                             new V1Secret(
                                     metadata: new V1ObjectMeta(
-                                        namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace,
+                                        namespaceProperty: resolvedNamespace,
                                         name: entity.Spec.SecretRef.Name))
                                 .WithOwnerReference(entity),
                             cancellationToken);
