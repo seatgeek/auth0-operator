@@ -454,7 +454,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 request,
                 api.Clients.GetAllAsync,
                 "clients",
-                cancellationToken);
+                cancellationToken,
+                cacheDurationMinutes: 15);
         }
 
         /// <summary>
