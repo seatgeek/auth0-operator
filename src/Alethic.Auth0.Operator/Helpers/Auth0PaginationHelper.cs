@@ -45,13 +45,13 @@ public static class Auth0PaginationHelper
         string resourceTypeName,
         string cacheSalt,
         CancellationToken cancellationToken,
-        int cacheDurationMinutes = 5)
+        int cacheDurationMinutes = 15)
         where T : class
     {
         // Create cache key using the provided cache salt for tenant isolation
         var cacheKey = $"auth0_{resourceTypeName}_all_{cacheSalt}";
         var mutex = _cacheMutexes.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-        
+
         await mutex.WaitAsync(cancellationToken);
         try
         {

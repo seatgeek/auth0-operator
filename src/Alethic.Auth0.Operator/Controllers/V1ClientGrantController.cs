@@ -428,13 +428,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Complete list of all client grants</returns>
         private async Task<List<ClientGrant>> GetAllClientGrantsWithPagination(IManagementApiClient api, V1ClientGrant? entity, CancellationToken cancellationToken)
         {
-            // Get tenant domain for cache salt
-            string tenantDomain = "unknown-tenant";
-            if (entity != null)
-            {
-                var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-                tenantDomain = tenant?.Spec.Auth?.Domain ?? "unknown-tenant";
-            }
+            var tenantDomain = entity != null
+                ? await GetTenantDomainForCacheSalt(entity, cancellationToken)
+                : "unknown-tenant";
 
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _clientGrantCache,

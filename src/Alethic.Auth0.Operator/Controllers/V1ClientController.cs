@@ -448,9 +448,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 IncludeFields = true
             };
 
-            // Get tenant domain for cache salt
-            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
-            var tenantDomain = tenant?.Spec.Auth?.Domain ?? "unknown-tenant";
+            var tenantDomain = await GetTenantDomainForCacheSalt(entity, cancellationToken);
 
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _clientCache,
@@ -570,9 +568,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
 
             // Determine what needs to be updated based on drifting fields
-            var needsClientUpdate = driftingFields.Any(field => 
+            var needsClientUpdate = driftingFields.Any(field =>
                 !string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
-            var needsConnectionUpdate = driftingFields.Any(field => 
+            var needsConnectionUpdate = driftingFields.Any(field =>
                 string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
 
             Logger.LogInformationJson($"{EntityTypeName} selective update analysis for client {id}: needsClientUpdate={needsClientUpdate}, needsConnectionUpdate={needsConnectionUpdate}",

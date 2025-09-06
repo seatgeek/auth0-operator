@@ -179,6 +179,38 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Extracts tenant domain from a tenant entity with defensive coding for cache salt usage.
+        /// </summary>
+        /// <param name="entity">Entity to extract tenant domain from</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Tenant domain for cache salt, or "unknown-tenant" if unavailable</returns>
+        protected async Task<string> GetTenantDomainForCacheSalt(TEntity? entity, CancellationToken cancellationToken)
+        {
+            const string fallbackDomain = "unknown-tenant";
+
+            try
+            {
+                // Use dynamic access to get Spec.TenantRef since we can't constrain TEntity properly
+                // This is safe because all entities using this method have the same structure
+                var spec = (entity as dynamic)?.Spec;
+                var tenantRef = spec?.TenantRef as V1TenantReference;
+                
+                if (tenantRef == null)
+                {
+                    return fallbackDomain;
+                }
+
+                var tenant = await ResolveTenantRef(tenantRef, entity.Namespace(), cancellationToken);
+                return tenant?.Spec?.Auth?.Domain ?? fallbackDomain;
+            }
+            catch (Exception)
+            {
+                // If tenant resolution fails, fall back to a safe default
+                return fallbackDomain;
+            }
+        }
+
+        /// <summary>
         /// Attempts to resolve the client document referenced by the client reference.
         /// </summary>
         /// <param name="api"></param>
