@@ -218,7 +218,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     operation = "search_by_name"
                 });
                 LogAuth0ApiCall($"Listing Auth0 connections to find by name: {conf.Name}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "list_connections_by_name");
-                var list = await GetAllConnectionsWithPagination(api, cancellationToken);
+                var list = await GetAllConnectionsWithPagination(api, entity, cancellationToken);
                 var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
                 if (self is not null)
                 {
@@ -438,17 +438,22 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Retrieves all Auth0 connections across all pages using pagination with caching.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Connection entity for tenant domain extraction</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Complete list of all connections</returns>
-        private async Task<List<Connection>> GetAllConnectionsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        private async Task<List<Connection>> GetAllConnectionsWithPagination(IManagementApiClient api, V1Connection entity, CancellationToken cancellationToken)
         {
+            // Get tenant domain for cache salt
+            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            var tenantDomain = tenant?.Spec.Auth?.Domain ?? "unknown-tenant";
+
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _connectionCache,
                 Logger,
-                api,
                 new GetConnectionsRequest(),
                 api.Connections.GetAllAsync,
                 "connections",
+                tenantDomain,
                 cancellationToken);
         }
 

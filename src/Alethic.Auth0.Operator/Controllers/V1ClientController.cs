@@ -265,7 +265,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
-            var list = await GetAllClientsWithPagination(api, cancellationToken);
+            var list = await GetAllClientsWithPagination(api, entity, cancellationToken);
             Logger.LogDebugJson(
                 $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searched {list.Count} clients for name-based lookup",
                 new
@@ -378,7 +378,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             LogAuth0ApiCall($"Getting all Auth0 clients for callback URL lookup", Auth0ApiCallType.Read, "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_callback_lookup");
-            var clients = await GetAllClientsWithPagination(api, cancellationToken);
+            var clients = await GetAllClientsWithPagination(api, entity, cancellationToken);
 
             var matchingClients = clients
                 .Where(client => HasMatchingCallbackUrls(client, targetCallbackUrls, isStrictMode)).ToList();
@@ -433,12 +433,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Retrieves all Auth0 clients across all pages using pagination with caching.
-        /// Always fetches client_id, name, and callbacks fields and caches for 5 minutes.
+        /// Always fetches client_id, name, and callbacks fields and caches for 15 minutes.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Client entity for tenant domain extraction</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Complete list of all clients with client_id, name, and callbacks fields</returns>
-        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api,
+        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, V1Client entity,
             CancellationToken cancellationToken)
         {
             var request = new GetClientsRequest()
@@ -447,13 +448,17 @@ namespace Alethic.Auth0.Operator.Controllers
                 IncludeFields = true
             };
 
+            // Get tenant domain for cache salt
+            var tenant = await ResolveTenantRef(entity.Spec.TenantRef, entity.Namespace(), cancellationToken);
+            var tenantDomain = tenant?.Spec.Auth?.Domain ?? "unknown-tenant";
+
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _clientCache,
                 Logger,
-                api,
                 request,
                 api.Clients.GetAllAsync,
                 "clients",
+                tenantDomain,
                 cancellationToken,
                 cacheDurationMinutes: 15);
         }
