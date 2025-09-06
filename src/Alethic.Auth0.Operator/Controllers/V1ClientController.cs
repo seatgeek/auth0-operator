@@ -265,7 +265,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
-            var list = await GetAllClientsWithPagination(api, cancellationToken);
+            var list = await GetAllClientsWithPagination(api, entity, cancellationToken);
             Logger.LogDebugJson(
                 $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} searched {list.Count} clients for name-based lookup",
                 new
@@ -378,7 +378,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             LogAuth0ApiCall($"Getting all Auth0 clients for callback URL lookup", Auth0ApiCallType.Read, "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_callback_lookup");
-            var clients = await GetAllClientsWithPagination(api, cancellationToken);
+            var clients = await GetAllClientsWithPagination(api, entity, cancellationToken);
 
             var matchingClients = clients
                 .Where(client => HasMatchingCallbackUrls(client, targetCallbackUrls, isStrictMode)).ToList();
@@ -433,12 +433,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Retrieves all Auth0 clients across all pages using pagination with caching.
-        /// Always fetches client_id, name, and callbacks fields and caches for 5 minutes.
+        /// Always fetches client_id, name, and callbacks fields and caches for 15 minutes.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Client entity for tenant domain extraction</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Complete list of all clients with client_id, name, and callbacks fields</returns>
-        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api,
+        private async Task<List<Client>> GetAllClientsWithPagination(IManagementApiClient api, V1Client entity,
             CancellationToken cancellationToken)
         {
             var request = new GetClientsRequest()
@@ -447,14 +448,17 @@ namespace Alethic.Auth0.Operator.Controllers
                 IncludeFields = true
             };
 
+            var tenantDomain = await GetTenantDomainForCacheSalt(entity, cancellationToken);
+
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _clientCache,
                 Logger,
-                api,
                 request,
                 api.Clients.GetAllAsync,
                 "clients",
-                cancellationToken);
+                tenantDomain,
+                cancellationToken,
+                cacheDurationMinutes: 15);
         }
 
         /// <summary>
@@ -564,9 +568,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
 
             // Determine what needs to be updated based on drifting fields
-            var needsClientUpdate = driftingFields.Any(field => 
+            var needsClientUpdate = driftingFields.Any(field =>
                 !string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
-            var needsConnectionUpdate = driftingFields.Any(field => 
+            var needsConnectionUpdate = driftingFields.Any(field =>
                 string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
 
             Logger.LogInformationJson($"{EntityTypeName} selective update analysis for client {id}: needsClientUpdate={needsClientUpdate}, needsConnectionUpdate={needsConnectionUpdate}",
@@ -819,7 +823,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 // Query the Kubernetes secret
                 var secret = await ResolveSecretRef(entity.Spec.SecretRef,
-                    entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
+                    string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty, cancellationToken);
 
                 if (secret is null)
                 {
@@ -834,10 +838,11 @@ namespace Alethic.Auth0.Operator.Controllers
                         });
                     try
                     {
+                        var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
                         secret = await Kube.CreateAsync(
                             new V1Secret(
                                     metadata: new V1ObjectMeta(
-                                        namespaceProperty: entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace,
+                                        namespaceProperty: resolvedNamespace,
                                         name: entity.Spec.SecretRef.Name))
                                 .WithOwnerReference(entity),
                             cancellationToken);
@@ -1775,7 +1780,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (!string.IsNullOrEmpty(connectionRef.Name))
             {
-                var connectionNamespace = connectionRef.Namespace ?? defaultNamespace;
+                var connectionNamespace = string.IsNullOrEmpty(connectionRef.Namespace) ? defaultNamespace : connectionRef.Namespace;
                 var connection =
                     await Kube.GetAsync<V1Connection>(connectionRef.Name, connectionNamespace, cancellationToken);
 

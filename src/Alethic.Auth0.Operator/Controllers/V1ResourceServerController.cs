@@ -119,7 +119,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 identifier = conf.Identifier,
                 operation = "search_by_identifier"
             });
-            var list = await GetAllResourceServersWithPagination(api, cancellationToken);
+            var list = await GetAllResourceServersWithPagination(api, entity, cancellationToken);
             var self = list.FirstOrDefault(i => string.Equals(i.Identifier, conf.Identifier, StringComparison.OrdinalIgnoreCase));
 
             if (self != null)
@@ -283,17 +283,20 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Retrieves all Auth0 resource servers across all pages using pagination with caching.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Resource server entity for tenant domain extraction</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Complete list of all resource servers</returns>
-        private async Task<List<ResourceServer>> GetAllResourceServersWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        private async Task<List<ResourceServer>> GetAllResourceServersWithPagination(IManagementApiClient api, V1ResourceServer entity, CancellationToken cancellationToken)
         {
+            var tenantDomain = await GetTenantDomainForCacheSalt(entity, cancellationToken);
+
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _resourceServerCache,
                 Logger,
-                api,
                 new ResourceServerGetRequest(),
                 api.ResourceServers.GetAllAsync,
                 "resource_servers",
+                tenantDomain,
                 cancellationToken);
         }
 

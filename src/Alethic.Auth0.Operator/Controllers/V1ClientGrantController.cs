@@ -69,7 +69,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     clientGrantId = id,
                     operation = "fetch"
                 });
-                var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
+                var list = await GetAllClientGrantsWithPagination(api, null, cancellationToken);
                 var self = list.FirstOrDefault(i => i.Id == id);
                 if (self == null)
                 {
@@ -199,7 +199,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 audience = audience,
                 operation = "search_auth0"
             });
-            var list = await GetAllClientGrantsWithPagination(api, cancellationToken);
+            var list = await GetAllClientGrantsWithPagination(api, entity, cancellationToken);
             var result = list.Where(i => string.Equals(i.ClientId, clientId, StringComparison.OrdinalIgnoreCase) &&
                                        string.Equals(i.Audience, audience, StringComparison.OrdinalIgnoreCase))
                             .Select(i => i.Id).FirstOrDefault();
@@ -423,17 +423,22 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Retrieves all Auth0 client grants across all pages using pagination with caching.
         /// </summary>
         /// <param name="api">Auth0 Management API client</param>
+        /// <param name="entity">Client grant entity for tenant domain extraction (optional)</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Complete list of all client grants</returns>
-        private async Task<List<ClientGrant>> GetAllClientGrantsWithPagination(IManagementApiClient api, CancellationToken cancellationToken)
+        private async Task<List<ClientGrant>> GetAllClientGrantsWithPagination(IManagementApiClient api, V1ClientGrant? entity, CancellationToken cancellationToken)
         {
+            var tenantDomain = entity != null
+                ? await GetTenantDomainForCacheSalt(entity, cancellationToken)
+                : "unknown-tenant";
+
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
                 _clientGrantCache,
                 Logger,
-                api,
                 new GetClientGrantsRequest(),
                 api.ClientGrants.GetAllAsync,
                 "client_grants",
+                tenantDomain,
                 cancellationToken);
         }
 

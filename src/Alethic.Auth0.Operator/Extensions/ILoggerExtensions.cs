@@ -15,7 +15,7 @@ namespace Alethic.Auth0.Operator.Extensions
         private const string ExceptionKey = "exception";
         private const string JsonLogTemplate = "{JsonLog}";
         private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
-        
+
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
             WriteIndented = false,
@@ -111,6 +111,29 @@ namespace Alethic.Auth0.Operator.Extensions
                     message = exception.Message,
                     stackTrace = exception.StackTrace
                 };
+            }
+
+            // based on the log level, override or set the `status` field, based on DataDog's status mapper: https://docs.datadoghq.com/service_management/events/pipelines_and_processors/status_remapper/
+            switch (logLevel)
+            {
+                case LogLevel.Information:
+                    logEntry["status"] = "info";
+                    break;
+                case LogLevel.Warning:
+                    logEntry["status"] = "warning";
+                    break;
+                case LogLevel.Error:
+                    logEntry["status"] = "error";
+                    break;
+                case LogLevel.Debug:
+                    logEntry["status"] = "debug";
+                    break;
+                case LogLevel.Critical:
+                    logEntry["status"] = "critical";
+                    break;
+                default:
+                    logEntry["status"] = "info";
+                    break;
             }
 
             var json = JsonSerializer.Serialize(logEntry, JsonOptions);
