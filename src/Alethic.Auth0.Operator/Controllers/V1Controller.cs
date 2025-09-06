@@ -141,7 +141,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(secretRef.Name))
                 throw new InvalidOperationException($"Secret reference {secretRef} has no name.");
 
-            var ns = secretRef.NamespaceProperty ?? defaultNamespace;
+            var ns = string.IsNullOrEmpty(secretRef.NamespaceProperty) ? defaultNamespace : secretRef.NamespaceProperty;
             if (string.IsNullOrWhiteSpace(ns))
                 throw new InvalidOperationException($"Secret reference {secretRef} has no discovered namesace.");
 
@@ -167,7 +167,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(tenantRef.Name))
                 throw new InvalidOperationException($"Tenant reference {tenantRef} has no name.");
 
-            var ns = tenantRef.Namespace ?? defaultNamespace;
+            var ns = string.IsNullOrEmpty(tenantRef.Namespace) ? defaultNamespace : tenantRef.Namespace;
             if (string.IsNullOrWhiteSpace(ns))
                 throw new InvalidOperationException($"Tenant reference {tenantRef} has no discovered namesace.");
 
@@ -194,7 +194,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (string.IsNullOrWhiteSpace(clientRef.Name))
                 throw new InvalidOperationException($"Client reference has no name.");
 
-            var ns = clientRef.Namespace ?? defaultNamespace;
+            var ns = string.IsNullOrEmpty(clientRef.Namespace) ? defaultNamespace : clientRef.Namespace;
             if (string.IsNullOrWhiteSpace(ns))
                 throw new InvalidOperationException($"Client reference has no discovered namesace.");
 
@@ -253,7 +253,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (resourceServerRef is null)
                 return null;
 
-            var ns = resourceServerRef.Namespace ?? defaultNamespace;
+            var ns = string.IsNullOrEmpty(resourceServerRef.Namespace) ? defaultNamespace : resourceServerRef.Namespace;
             if (string.IsNullOrWhiteSpace(ns))
                 throw new InvalidOperationException($"ResourceServer reference has no namespace.");
 
@@ -362,7 +362,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (string.IsNullOrWhiteSpace(secretRef.Name))
                     throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no secret name.");
 
-                var secret = _kube.Get<V1Secret>(secretRef.Name, secretRef.NamespaceProperty ?? tenant.Namespace());
+                var secret = _kube.Get<V1Secret>(secretRef.Name, string.IsNullOrEmpty(secretRef.NamespaceProperty) ? tenant.Namespace() : secretRef.NamespaceProperty);
                 if (secret == null)
                     throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing secret.");
 

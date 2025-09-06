@@ -819,7 +819,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 // Query the Kubernetes secret
                 var secret = await ResolveSecretRef(entity.Spec.SecretRef,
-                    entity.Spec.SecretRef.NamespaceProperty ?? defaultNamespace, cancellationToken);
+                    string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty, cancellationToken);
 
                 if (secret is null)
                 {
@@ -1776,7 +1776,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (!string.IsNullOrEmpty(connectionRef.Name))
             {
-                var connectionNamespace = connectionRef.Namespace ?? defaultNamespace;
+                var connectionNamespace = string.IsNullOrEmpty(connectionRef.Namespace) ? defaultNamespace : connectionRef.Namespace;
                 var connection =
                     await Kube.GetAsync<V1Connection>(connectionRef.Name, connectionNamespace, cancellationToken);
 

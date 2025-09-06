@@ -80,7 +80,7 @@ namespace Alethic.Auth0.Operator.Services
             if (string.IsNullOrWhiteSpace(secretRef.Name))
                 throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no secret name.");
 
-            var secret = kube.Get<V1Secret>(secretRef.Name, secretRef.NamespaceProperty ?? tenant.Namespace());
+            var secret = kube.Get<V1Secret>(secretRef.Name, string.IsNullOrEmpty(secretRef.NamespaceProperty) ? tenant.Namespace() : secretRef.NamespaceProperty);
             if (secret == null)
                 throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing secret.");
 
