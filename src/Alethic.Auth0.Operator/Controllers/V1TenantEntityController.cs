@@ -319,11 +319,13 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<(bool needsAuth0Fetch, string reason)> DetermineIfAuth0FetchIsNeeded(TEntity entity, CancellationToken cancellationToken)
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
+            var isEmptyCache = entity.Status.LastConf is not null && entity.Status.LastConf.Count == 0;
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && !isEmptyCache && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
             var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || isEmptyCache || entityControllerRequiresFetch;
 
             var reason = isFirstReconciliation ? "first reconciliation" :
+                        isEmptyCache ? "empty cached configuration detected" :
                         hasLocalChanges ? "local configuration changes detected" :
                         entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
                         "unknown";
