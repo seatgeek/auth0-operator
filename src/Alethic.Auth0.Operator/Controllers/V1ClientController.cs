@@ -707,9 +707,6 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        private const int MinSecretRetryDelaySeconds = 60;
-        private const int MaxSecretRetryDelaySeconds = 300;
-
         /// <inheritdoc />
         protected override async Task ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf,
             string defaultNamespace, CancellationToken cancellationToken)
@@ -732,11 +729,6 @@ namespace Alethic.Auth0.Operator.Controllers
                         await ApplySecret(entity, defaultNamespace, desiredClientId, desiredClientSecret,
                             cancellationToken);
                     }
-                    else
-                    {
-                        // Credentials are not available, schedule a retry
-                        needsSecretRetry = true;
-                    }
                 }
 
                 if (lastConf.ContainsKey("client_id"))
@@ -744,47 +736,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (lastConf.ContainsKey("client_secret"))
                     lastConf.Remove("client_secret");
             }
-            else if (entity.Spec.SecretRef is not null && entity.Status.Id is not null)
-            {
-                // lastConf is null but we need to create a secret - schedule a retry
-                needsSecretRetry = true;
-            }
 
             await base.ApplyStatus(api, entity, lastConf ?? new Hashtable(), defaultNamespace, cancellationToken);
-            
-            if (needsSecretRetry)
-            {
-                var retryDelaySeconds = GenerateRandomSecretRetryDelay();
-                ScheduleSecretRetryReconciliation(entity, retryDelaySeconds);
-            }
-        }
-
-        /// <summary>
-        /// Generates a random delay between MinSecretRetryDelaySeconds and MaxSecretRetryDelaySeconds for secret retry reconciliation.
-        /// </summary>
-        /// <returns>Random delay in seconds</returns>
-        private int GenerateRandomSecretRetryDelay()
-        {
-            var random = new Random();
-            return random.Next(MinSecretRetryDelaySeconds, MaxSecretRetryDelaySeconds + 1);
-        }
-
-        /// <summary>
-        /// Schedules a follow-up reconciliation for secret creation.
-        /// </summary>
-        /// <param name="entity">The client entity</param>
-        /// <param name="delaySeconds">Delay in seconds before reconciliation</param>
-        private void ScheduleSecretRetryReconciliation(V1Client entity, int delaySeconds)
-        {
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client credentials not available, scheduling reconciliation retry in {delaySeconds}s for secret creation", new
-            {
-                entityTypeName = EntityTypeName,
-                entityNamespace = entity.Namespace(),
-                entityName = entity.Name(),
-                retryDelaySeconds = delaySeconds
-            });
-            
-            Requeue(entity, TimeSpan.FromSeconds(delaySeconds));
         }
 
         /// <summary>

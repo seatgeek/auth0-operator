@@ -129,7 +129,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
+        protected override async Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
@@ -138,9 +138,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
 
-            lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
+            (lastConf, var needRequeue) = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
             await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+
+            return needRequeue;
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
@@ -413,27 +415,29 @@ namespace Alethic.Auth0.Operator.Controllers
             return entity.Status.LastConf;
         }
 
-        private async Task<Hashtable?> ApplyUpdatesIfNeeded(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<(Hashtable? lastConf, bool needRequeue)> ApplyUpdatesIfNeeded(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             if (!entity.HasPolicy(V1EntityPolicyType.Update))
             {
                 LogUpdateNotSupported(entity);
-                return lastConf;
+                return (lastConf, false);
             }
 
             if (entity.Spec.Conf is not { } conf)
             {
-                return lastConf;
+                return (lastConf, false);
             }
 
             var (needsUpdate, driftingFields) = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
 
             if (needsUpdate)
             {
-                return await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
+                var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
+                
+                return (processedConf, true);
             }
 
-            return lastConf;
+            return (lastConf, false);
         }
 
         private void LogUpdateNotSupported(TEntity entity)
@@ -534,7 +538,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
-            if (entity.Name() != "mt-azc-test")
+            if (entity.Name() != "mt-avalta-test")
             {
                 return;
             }
