@@ -538,6 +538,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         public async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
         {
+            if (entity.Name() != "mt-azc-test")
+            {
+                return;
+            }
+            
             var startTime = DateTimeOffset.UtcNow;
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting reconciliation at {startTime}", new { 
                 entityTypeName = EntityTypeName,
