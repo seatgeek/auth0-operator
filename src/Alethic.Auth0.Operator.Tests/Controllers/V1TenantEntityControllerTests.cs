@@ -52,25 +52,25 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         }
 
         [TestMethod]
-        public void AreValuesEqual_OrderSensitive_RegularArrays_DifferentOrder_ReturnsFalse()
+        public void AreValuesEqual_OrderInsensitive_RegularArrays_DifferentOrder_ReturnsTrue()
         {
             var leftArray = new[] { "string1", "string2" };
             var rightArray = new[] { "string2", "string1" };
 
             var result = V1ClientController.AreValuesEqual(leftArray, rightArray);
 
-            Assert.IsFalse(result, "Regular arrays should be order-sensitive");
+            Assert.IsTrue(result, "All arrays should be order-insensitive");
         }
 
         [TestMethod]
-        public void AreValuesEqual_OrderSensitive_RegularArrays_SameOrder_ReturnsTrue()
+        public void AreValuesEqual_OrderInsensitive_RegularArrays_SameOrder_ReturnsTrue()
         {
             var leftArray = new[] { "string1", "string2" };
             var rightArray = new[] { "string1", "string2" };
 
             var result = V1ClientController.AreValuesEqual(leftArray, rightArray);
 
-            Assert.IsTrue(result, "Regular arrays with same order should be equal");
+            Assert.IsTrue(result, "Arrays with same order should be equal");
         }
 
         [TestMethod]
@@ -115,7 +115,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var connection2 = new Hashtable { { "id", "con_456" } };
             
             var leftArray = new[] { connection1 };
-            var rightArray = new[] { connection1, connection2 }; // Different length
+            var rightArray = new[] { connection1, connection2 };
 
             var result = V1ClientController.AreValuesEqual(leftArray, rightArray);
 
@@ -123,7 +123,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         }
 
         [TestMethod]
-        public void AreValuesEqual_MixedObjects_WithAndWithoutId_OrderSensitive()
+        public void AreValuesEqual_MixedObjects_WithAndWithoutId_OrderInsensitive()
         {
             var connectionWithId = new Hashtable { { "id", "con_123" } };
             var objectWithoutId = new Hashtable { { "name", "some_object" } };
@@ -133,7 +133,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             var result = V1ClientController.AreValuesEqual(leftArray, rightArray);
 
-            Assert.IsFalse(result, "Mixed arrays (some with id, some without) should be order-sensitive");
+            Assert.IsTrue(result, "All arrays should be order-insensitive");
         }
     }
 }

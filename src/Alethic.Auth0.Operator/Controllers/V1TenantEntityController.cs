@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -1074,28 +1073,12 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Determines if a collection should be treated as a set (order-insensitive) rather than a sequence.
-        /// Collections containing objects with 'id' fields (like enabled_connections) are treated as sets.
-        /// </summary>
-        /// <param name="collection">Collection to check</param>
-        /// <returns>True if collection should be compared as a set, false for ordered comparison</returns>
-        internal static bool IsSetLikeCollection(object[] collection)
-        {
-            if (collection.Length == 0)
-                return false;
-
-            // Check if all items are hashtables with an 'id' field
-            // This covers enabled_connections and similar collections
-            return collection.All(item => item is Hashtable hash && hash.ContainsKey("id"));
-        }
-
-        /// <summary>
         /// Compares two collections as sets (order-insensitive) based on their element content.
         /// </summary>
         /// <param name="leftArray">First collection</param>
         /// <param name="rightArray">Second collection</param>
         /// <returns>True if collections contain the same elements regardless of order</returns>
-        internal static bool AreCollectionsEqualAsSet(object[] leftArray, object[] rightArray)
+        internal static bool AreArraysEqualOrderInsensitive(object[] leftArray, object[] rightArray)
         {
             if (leftArray.Length != rightArray.Length)
                 return false;
@@ -1133,11 +1116,9 @@ namespace Alethic.Auth0.Operator.Controllers
             if (left is null || right is null)
                 return false;
 
-            // Handle nested hashtables
             if (left is Hashtable leftHash && right is Hashtable rightHash)
                 return AreHashtablesEqual(leftHash, rightHash);
 
-            // Handle arrays
             if (left is IEnumerable leftEnum && right is IEnumerable rightEnum &&
                 !(left is string) && !(right is string))
             {
@@ -1147,21 +1128,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (leftArray.Length != rightArray.Length)
                     return false;
 
-                if (IsSetLikeCollection(leftArray) && IsSetLikeCollection(rightArray))
-                {
-                    return AreCollectionsEqualAsSet(leftArray, rightArray);
-                }
-
-                for (int i = 0; i < leftArray.Length; i++)
-                {
-                    if (!AreValuesEqual(leftArray[i], rightArray[i]))
-                        return false;
-                }
-
-                return true;
+                return AreArraysEqualOrderInsensitive(leftArray, rightArray);
             }
 
-            // Use standard equality comparison
             return left.Equals(right);
         }
 
