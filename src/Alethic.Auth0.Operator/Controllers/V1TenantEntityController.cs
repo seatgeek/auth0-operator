@@ -233,7 +233,35 @@ namespace Alethic.Auth0.Operator.Controllers
                 createdId = entity.Status.Id
             });
 
-            return await UpdateKubernetesStatus(entity, "creation", cancellationToken);
+            // Update Kubernetes status
+            entity = await UpdateKubernetesStatus(entity, "creation", cancellationToken);
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} applying status immediately after creation to handle secrets and other post-creation tasks", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "immediate_post_creation_status_apply"
+            });
+
+            var currentAuth0State = await Get(api, entity.Status.Id ?? throw new InvalidOperationException($"Entity {entity.Namespace()}/{entity.Name()} has no ID after creation."), entity.Namespace(), cancellationToken);
+            if (currentAuth0State != null)
+            {
+                await ApplyStatus(api, entity, currentAuth0State, entity.Namespace(), cancellationToken);
+            }
+            else
+            {
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not retrieve Auth0 state after creation, status application skipped", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "immediate_post_creation_status_apply",
+                    result = "skipped_due_to_null_state"
+                });
+            }
+
+            return entity;
         }
 
         private void ValidateCreatePolicy(TEntity entity)
