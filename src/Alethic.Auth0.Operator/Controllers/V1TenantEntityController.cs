@@ -131,6 +131,15 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} starting V1TenantEntityController.Reconcile()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "v1_tenant_entity_controller_reconcile_start",
+                troubleshooting = "secret_creation"
+            });
+
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
 
@@ -140,7 +149,25 @@ namespace Alethic.Auth0.Operator.Controllers
 
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} calling FinalizeReconciliation()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "calling_finalize_reconciliation",
+                troubleshooting = "secret_creation"
+            });
+
             await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} completed V1TenantEntityController.Reconcile()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "v1_tenant_entity_controller_reconcile_completed",
+                troubleshooting = "secret_creation"
+            });
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
@@ -236,28 +263,48 @@ namespace Alethic.Auth0.Operator.Controllers
             // Update Kubernetes status
             entity = await UpdateKubernetesStatus(entity, "creation", cancellationToken);
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} applying status immediately after creation to handle secrets and other post-creation tasks", new
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} applying status immediately after creation to handle secrets and other post-creation tasks", new
             {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
-                operation = "immediate_post_creation_status_apply"
+                operation = "immediate_post_creation_status_apply",
+                troubleshooting = "secret_creation"
             });
 
             var currentAuth0State = await Get(api, entity.Status.Id ?? throw new InvalidOperationException($"Entity {entity.Namespace()}/{entity.Name()} has no ID after creation."), entity.Namespace(), cancellationToken);
             if (currentAuth0State != null)
             {
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} calling ApplyStatus() immediately after creation", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "calling_apply_status_immediately_after_creation",
+                    troubleshooting = "secret_creation"
+                });
+
                 await ApplyStatus(api, entity, currentAuth0State, entity.Namespace(), cancellationToken);
+
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} ApplyStatus() completed immediately after creation", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "apply_status_completed_immediately_after_creation",
+                    troubleshooting = "secret_creation"
+                });
             }
             else
             {
-                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} could not retrieve Auth0 state after creation, status application skipped", new
+                Logger.LogWarningJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} could not retrieve Auth0 state after creation, status application skipped", new
                 {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
                     entityName = entity.Name(),
                     operation = "immediate_post_creation_status_apply",
-                    result = "skipped_due_to_null_state"
+                    result = "skipped_due_to_null_state",
+                    troubleshooting = "secret_creation"
                 });
             }
 
@@ -560,7 +607,26 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} starting FinalizeReconciliation() - calling ApplyStatus()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "finalize_reconciliation_calling_apply_status",
+                hasLastConf = lastConf != null,
+                troubleshooting = "secret_creation"
+            });
+
             await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
+
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} ApplyStatus() completed in FinalizeReconciliation()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "finalize_reconciliation_apply_status_completed",
+                troubleshooting = "secret_creation"
+            });
             await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
             ScheduleNextReconciliation(entity);
         }
@@ -636,6 +702,17 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>A task representing the asynchronous status application operation</returns>
         protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} V1TenantEntityController.ApplyStatus() called - base implementation", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "v1_tenant_entity_controller_apply_status_base",
+                hasLastConf = lastConf != null,
+                lastConfFields = lastConf?.Keys.Count ?? 0,
+                troubleshooting = "secret_creation"
+            });
+
             entity.Status.LastConf = lastConf;
             return Task.CompletedTask;
         }

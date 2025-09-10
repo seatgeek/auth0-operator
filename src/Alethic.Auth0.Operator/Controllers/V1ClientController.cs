@@ -711,6 +711,19 @@ namespace Alethic.Auth0.Operator.Controllers
         protected override async Task ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf,
             string defaultNamespace, CancellationToken cancellationToken)
         {
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} V1ClientController.ApplyStatus() called - starting secret processing", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "v1_client_controller_apply_status_start",
+                hasLastConf = lastConf != null,
+                hasSecretRef = entity.Spec.SecretRef != null,
+                secretRefName = entity.Spec.SecretRef?.Name,
+                secretRefNamespace = entity.Spec.SecretRef?.NamespaceProperty,
+                troubleshooting = "secret_creation"
+            });
+
             if (lastConf is not null)
             {
                 // Always attempt to apply secret if secretRef is specified
@@ -722,11 +735,66 @@ namespace Alethic.Auth0.Operator.Controllers
                         ? (string?)lastConf["client_secret"]
                         : null;
 
+                    Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} extracted client credentials from Auth0 response", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "extracted_client_credentials",
+                        hasClientId = !string.IsNullOrEmpty(desiredClientId),
+                        hasClientSecret = !string.IsNullOrEmpty(desiredClientSecret),
+                        clientIdLength = desiredClientId?.Length ?? 0,
+                        clientSecretLength = desiredClientSecret?.Length ?? 0,
+                        troubleshooting = "secret_creation"
+                    });
+
                     if (!string.IsNullOrEmpty(desiredClientId) && !string.IsNullOrEmpty(desiredClientSecret))
                     {
+                        Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} calling ApplySecret() with valid credentials", new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation = "calling_apply_secret",
+                            troubleshooting = "secret_creation"
+                        });
+
                         await ApplySecret(entity, defaultNamespace, desiredClientId, desiredClientSecret,
                             cancellationToken);
+
+                        Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} ApplySecret() completed", new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation = "apply_secret_completed",
+                            troubleshooting = "secret_creation"
+                        });
                     }
+                    else
+                    {
+                        Logger.LogWarningJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} missing client credentials - cannot create secret", new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation = "missing_client_credentials",
+                            hasClientId = !string.IsNullOrEmpty(desiredClientId),
+                            hasClientSecret = !string.IsNullOrEmpty(desiredClientSecret),
+                            troubleshooting = "secret_creation"
+                        });
+                    }
+                }
+                else
+                {
+                    Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} no secretRef specified - skipping secret creation", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "no_secret_ref_skipping_secret_creation",
+                        troubleshooting = "secret_creation"
+                    });
                 }
 
                 if (lastConf.ContainsKey("client_id"))
@@ -734,8 +802,37 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (lastConf.ContainsKey("client_secret"))
                     lastConf.Remove("client_secret");
             }
+            else
+            {
+                Logger.LogWarningJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} lastConf is null - cannot extract credentials for secret", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "last_conf_null_cannot_extract_credentials",
+                    troubleshooting = "secret_creation"
+                });
+            }
+
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} calling base.ApplyStatus()", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "calling_base_apply_status",
+                troubleshooting = "secret_creation"
+            });
 
             await base.ApplyStatus(api, entity, lastConf ?? new Hashtable(), defaultNamespace, cancellationToken);
+
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} V1ClientController.ApplyStatus() completed", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "v1_client_controller_apply_status_completed",
+                troubleshooting = "secret_creation"
+            });
         }
 
         /// <summary>
@@ -816,19 +913,65 @@ namespace Alethic.Auth0.Operator.Controllers
         async Task ApplySecret(V1Client entity, string defaultNamespace,
             string? desiredClientId, string? desiredClientSecret, CancellationToken cancellationToken)
         {
+            Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} ApplySecret() method started", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "apply_secret_method_started",
+                hasSecretRef = entity.Spec.SecretRef != null,
+                hasDesiredClientId = !string.IsNullOrEmpty(desiredClientId),
+                hasDesiredClientSecret = !string.IsNullOrEmpty(desiredClientSecret),
+                secretRefName = entity.Spec.SecretRef?.Name,
+                secretRefNamespace = entity.Spec.SecretRef?.NamespaceProperty,
+                troubleshooting = "secret_creation"
+            });
+
             try
             {
                 if (entity.Spec.SecretRef is null)
+                {
+                    Logger.LogWarningJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} secretRef is null - returning early", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "secret_ref_null_returning_early",
+                        troubleshooting = "secret_creation"
+                    });
                     return;
+                }
 
                 // Query the Kubernetes secret
-                var secret = await ResolveSecretRef(entity.Spec.SecretRef,
-                    string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty, cancellationToken);
+                var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
+                
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} resolving secret reference", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "resolving_secret_reference",
+                    secretName = entity.Spec.SecretRef.Name,
+                    secretNamespace = resolvedNamespace,
+                    troubleshooting = "secret_creation"
+                });
+
+                var secret = await ResolveSecretRef(entity.Spec.SecretRef, resolvedNamespace, cancellationToken);
+
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} secret resolution result", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "secret_resolution_result",
+                    secretExists = secret != null,
+                    secretName = entity.Spec.SecretRef.Name,
+                    secretNamespace = resolvedNamespace,
+                    troubleshooting = "secret_creation"
+                });
 
                 if (secret is null)
                 {
-                    var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
-                    
                     Logger.LogWarningJson(
                         $"*** SECRET MISSING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} which does not exist - creating secret in namespace {resolvedNamespace}",
                         new
@@ -838,8 +981,21 @@ namespace Alethic.Auth0.Operator.Controllers
                             entityName = entity.Name(),
                             secretName = entity.Spec.SecretRef.Name,
                             secretNamespace = resolvedNamespace,
-                            operation = "secret_creation_required"
+                            operation = "secret_creation_required",
+                            troubleshooting = "secret_creation"
                         });
+                    
+                    Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} creating new secret", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "creating_new_secret",
+                        secretName = entity.Spec.SecretRef.Name,
+                        secretNamespace = resolvedNamespace,
+                        troubleshooting = "secret_creation"
+                    });
+                    
                     try
                     {
                         secret = await Kube.CreateAsync(
@@ -859,8 +1015,20 @@ namespace Alethic.Auth0.Operator.Controllers
                                 entityName = entity.Name(),
                                 secretName = entity.Spec.SecretRef.Name,
                                 secretNamespace = resolvedNamespace,
-                                operation = "secret_created_successfully"
+                                operation = "secret_created_successfully",
+                                troubleshooting = "secret_creation"
                             });
+
+                        Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} new secret created successfully", new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation = "new_secret_created_successfully",
+                            secretName = entity.Spec.SecretRef.Name,
+                            secretNamespace = resolvedNamespace,
+                            troubleshooting = "secret_creation"
+                        });
                     }
                     catch (Exception ex)
                     {
@@ -879,20 +1047,44 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
 
                 // only apply actual values if we are the owner
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} checking secret ownership", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "checking_secret_ownership",
+                    isOwned = secret.IsOwnedBy(entity),
+                    secretName = entity.Spec.SecretRef.Name,
+                    troubleshooting = "secret_creation"
+                });
+
                 if (secret.IsOwnedBy(entity))
                 {
                     var updateNeeded = IsSecretUpdateNeeded(secret, desiredClientId, desiredClientSecret);
 
+                    Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} checked if secret update is needed", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "checked_secret_update_needed",
+                        updateNeeded = updateNeeded,
+                        secretName = entity.Spec.SecretRef.Name,
+                        troubleshooting = "secret_creation"
+                    });
+
                     if (updateNeeded)
                     {
                         Logger.LogInformationJson(
-                            $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name}: updating due to data changes.",
+                            $"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name}: updating due to data changes.",
                             new
                             {
                                 entityTypeName = EntityTypeName,
                                 entityNamespace = entity.Namespace(),
                                 entityName = entity.Name(),
-                                secretName = entity.Spec.SecretRef.Name
+                                secretName = entity.Spec.SecretRef.Name,
+                                operation = "updating_secret_due_to_data_changes",
+                                troubleshooting = "secret_creation"
                             });
 
                         secret.StringData ??= new Dictionary<string, string>();
@@ -939,15 +1131,27 @@ namespace Alethic.Auth0.Operator.Controllers
                 else
                 {
                     Logger.LogInformationJson(
-                        $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} secret {entity.Spec.SecretRef.Name} exists but is not owned by this client, skipping update",
+                        $"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} secret {entity.Spec.SecretRef.Name} exists but is not owned by this client, skipping update",
                         new
                         {
                             entityTypeName = EntityTypeName,
                             entityNamespace = entity.Namespace(),
                             entityName = entity.Name(),
-                            secretName = entity.Spec.SecretRef.Name
+                            secretName = entity.Spec.SecretRef.Name,
+                            operation = "secret_not_owned_skipping_update",
+                            troubleshooting = "secret_creation"
                         });
                 }
+
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} ApplySecret() method completed successfully", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "apply_secret_method_completed_successfully",
+                    secretName = entity.Spec.SecretRef.Name,
+                    troubleshooting = "secret_creation"
+                });
             }
             catch (Exception e)
             {

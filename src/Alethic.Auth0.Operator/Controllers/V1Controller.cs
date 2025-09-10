@@ -559,6 +559,14 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
 
                 // does the actual work of reconciling
+                Logger.LogInformationJson($"*** SECRET TROUBLESHOOTING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} calling Reconcile() method", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "calling_reconcile_method",
+                    troubleshooting = "secret_creation"
+                });
                 await Reconcile(entity, cancellationToken);
 
                 var duration = DateTimeOffset.UtcNow - startTime;
