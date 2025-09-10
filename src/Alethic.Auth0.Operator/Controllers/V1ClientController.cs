@@ -708,10 +708,10 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf,
+        protected override async Task<bool> ApplyStatus(IManagementApiClient api, V1Client entity, Hashtable lastConf,
             string defaultNamespace, CancellationToken cancellationToken)
         {
-            bool needsSecretRetry = false;
+            bool needsSecretCreationRetry = false;
             
             if (lastConf is not null)
             {
@@ -729,6 +729,10 @@ namespace Alethic.Auth0.Operator.Controllers
                         await ApplySecret(entity, defaultNamespace, desiredClientId, desiredClientSecret,
                             cancellationToken);
                     }
+
+                    {
+                        needsSecretCreationRetry = true;
+                    }
                 }
 
                 if (lastConf.ContainsKey("client_id"))
@@ -738,6 +742,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             await base.ApplyStatus(api, entity, lastConf ?? new Hashtable(), defaultNamespace, cancellationToken);
+            return needsSecretCreationRetry;
         }
 
         /// <summary>

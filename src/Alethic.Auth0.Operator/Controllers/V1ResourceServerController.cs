@@ -234,7 +234,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override Task ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
+        protected override Task<bool> ApplyStatus(IManagementApiClient api, V1ResourceServer entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             var identifier = (string?)lastConf["identifier"];
             if (string.IsNullOrWhiteSpace(identifier))

@@ -138,11 +138,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
 
-            (lastConf, var needRequeue) = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
+            lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
-            await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+            var needsSecretCreationRetry = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
 
-            return needRequeue;
+            return needsSecretCreationRetry;
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
@@ -415,17 +415,17 @@ namespace Alethic.Auth0.Operator.Controllers
             return entity.Status.LastConf;
         }
 
-        private async Task<(Hashtable? lastConf, bool needRequeue)> ApplyUpdatesIfNeeded(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<Hashtable?> ApplyUpdatesIfNeeded(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             if (!entity.HasPolicy(V1EntityPolicyType.Update))
             {
                 LogUpdateNotSupported(entity);
-                return (lastConf, false);
+                return lastConf;
             }
 
             if (entity.Spec.Conf is not { } conf)
             {
-                return (lastConf, false);
+                return lastConf;
             }
 
             var (needsUpdate, driftingFields) = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
@@ -434,10 +434,10 @@ namespace Alethic.Auth0.Operator.Controllers
             {
                 var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
                 
-                return (processedConf, true);
+                return processedConf;
             }
 
-            return (lastConf, false);
+            return lastConf;
         }
 
         private void LogUpdateNotSupported(TEntity entity)
@@ -536,16 +536,17 @@ namespace Alethic.Auth0.Operator.Controllers
             return TransformToSystemTextJson<Hashtable>(appliedJson);
         }
 
-        private async Task FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<bool> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             if (entity.Name() != "mt-avalta-test")
             {
-                return;
+                return false;
             }
             
-            await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
+            var needsSecretCreationRetry = await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
             await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
             ScheduleNextReconciliation(entity);
+            return needsSecretCreationRetry;
         }
 
         private void ScheduleNextReconciliation(TEntity entity)
@@ -617,10 +618,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace">Default namespace for the entity</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>A task representing the asynchronous status application operation</returns>
-        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
+        protected virtual Task<bool> ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             entity.Status.LastConf = lastConf;
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
 
         /// <summary>
