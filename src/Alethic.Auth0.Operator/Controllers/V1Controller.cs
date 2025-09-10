@@ -51,8 +51,8 @@ namespace Alethic.Auth0.Operator.Controllers
         where TStatus : V1EntityStatus
         where TConf : class
     {
-        private const int MinSecretRetryDelaySeconds = 10;
-        private const int MaxSecretRetryDelaySeconds = 20;
+        private const int MinSecretRetryDelaySeconds = 60;
+        private const int MaxSecretRetryDelaySeconds = 300;
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
@@ -540,11 +540,6 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         public async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
         {
-            if (entity.Name() != "mt-avalta-test")
-            {
-                return;
-            }
-            
             var startTime = DateTimeOffset.UtcNow;
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting reconciliation at {startTime}", new { 
                 entityTypeName = EntityTypeName,

@@ -538,11 +538,6 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task<bool> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
-            if (entity.Name() != "mt-avalta-test")
-            {
-                return false;
-            }
-            
             var needsSecretCreationRetry = await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
             await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
             ScheduleNextReconciliation(entity);

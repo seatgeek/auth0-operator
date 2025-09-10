@@ -729,7 +729,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         await ApplySecret(entity, defaultNamespace, desiredClientId, desiredClientSecret,
                             cancellationToken);
                     }
-
+                    else
                     {
                         needsSecretCreationRetry = true;
                     }
