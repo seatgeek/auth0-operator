@@ -24,7 +24,6 @@ namespace Alethic.Auth0.Operator.Services
         public required string TenantUid { get; init; }
         public string? AccessToken { get; set; }
         public DateTime? TokenExpiration { get; set; }
-        public readonly SemaphoreSlim TokenSemaphore = new(1, 1);
     }
 
     /// <summary>
@@ -37,6 +36,7 @@ namespace Alethic.Auth0.Operator.Services
         private readonly ILogger _logger;
         private readonly string _tenantNamespace;
         private readonly string _tenantName;
+        private readonly SemaphoreSlim accessTokenSemaphore = new(1, 1);
 
         private TenantApiAccess(CachedTenantCredentials credentials, ILogger logger, string tenantNamespace, string tenantName)
         {
@@ -50,14 +50,92 @@ namespace Alethic.Auth0.Operator.Services
         public Uri BaseUri => _credentials.BaseUri;
 
         /// <inheritdoc />
-        public string? AccessToken => _credentials.AccessToken;
+        public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+        {
+            await accessTokenSemaphore.WaitAsync(cancellationToken);
+            try
+            {
+                if (!string.IsNullOrEmpty(_credentials.AccessToken) && 
+                    _credentials.TokenExpiration.HasValue)
+                {
+                    var tokenExpiration = _credentials.TokenExpiration.Value;
+                    var now = DateTime.UtcNow;
+                    
+                    if (tokenExpiration > now)
+                    {
+                        _logger.LogDebugJson($"Using existing valid token for tenant {_tenantNamespace}/{_tenantName}", new 
+                        { 
+                            tenantNamespace = _tenantNamespace, 
+                            tenantName = _tenantName,
+                            tokenExpiresAt = tokenExpiration,
+                            timeUntilExpiration = (tokenExpiration - now).TotalMinutes
+                        });
+                        return _credentials.AccessToken;
+                    }
+                    else
+                    {
+                        _logger.LogWarningJson($"Token for tenant {_tenantNamespace}/{_tenantName} has reached 90% of expiration time - refreshing", new 
+                        { 
+                            tenantNamespace = _tenantNamespace, 
+                            tenantName = _tenantName,
+                            tokenExpiresAt = tokenExpiration,
+                            expiredMinutesAgo = (now - tokenExpiration).TotalMinutes
+                        });
+                    }
+                }
 
-        /// <summary>
-        /// Gets whether a valid access token is available
-        /// </summary>
-        public bool HasValidToken => 
-            !string.IsNullOrEmpty(_credentials.AccessToken) && 
-            _credentials.TokenExpiration > DateTime.UtcNow.AddMinutes(1);
+                return await RegenerateTokenAsync(cancellationToken);
+            }
+            finally
+            {
+                accessTokenSemaphore.Release();
+            }
+            
+            async Task<string> RegenerateTokenAsync(CancellationToken cancellationToken)
+            {
+                _logger.LogInformationJson($"Generating new access token for tenant {_tenantNamespace}/{_tenantName}", new 
+                { 
+                    tenantNamespace = _tenantNamespace, 
+                    tenantName = _tenantName,
+                    domain = _credentials.Domain
+                });
+
+                // Get Auth0 Management API token
+                var auth = new AuthenticationApiClient(new Uri($"https://{_credentials.Domain}"));
+                var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest() 
+                { 
+                    Audience = $"https://{_credentials.Domain}/api/v2/", 
+                    ClientId = _credentials.ClientId, 
+                    ClientSecret = _credentials.ClientSecret 
+                }, cancellationToken);
+                
+                if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
+                {
+                    _logger.LogErrorJson($"Failed to retrieve management API token for tenant {_tenantNamespace}/{_tenantName}", new 
+                    { 
+                        tenantNamespace = _tenantNamespace, 
+                        tenantName = _tenantName,
+                        domain = _credentials.Domain
+                    });
+                    
+                    throw new InvalidOperationException($"Tenant {_tenantNamespace}/{_tenantName} failed to retrieve management API token.");
+                }
+
+                // Update cached token with expiration (use 90% of the token lifetime for safety)
+                _credentials.AccessToken = authToken.AccessToken;
+                _credentials.TokenExpiration = DateTime.UtcNow.AddSeconds(authToken.ExpiresIn * 0.9);
+
+                _logger.LogInformationJson($"Successfully generated access token for tenant {_tenantNamespace}/{_tenantName}", new 
+                { 
+                    tenantNamespace = _tenantNamespace, 
+                    tenantName = _tenantName,
+                    tokenExpiresAt = _credentials.TokenExpiration.Value,
+                    tokenLifetimeSeconds = authToken.ExpiresIn
+                });
+
+                return authToken.AccessToken;
+            }
+        }
 
         /// <summary>
         /// Creates a TenantApiAccess instance for the specified tenant
@@ -112,86 +190,5 @@ namespace Alethic.Auth0.Operator.Services
 
             return Task.FromResult(new TenantApiAccess(credentials, logger, tenant.Namespace(), tenant.Name()));
         }
-
-        /// <inheritdoc />
-        public async Task<string> RegenerateTokenAsync(CancellationToken cancellationToken = default)
-        {
-            await _credentials.TokenSemaphore.WaitAsync(cancellationToken);
-            try
-            {
-                // Check if we have a valid token that hasn't expired
-                if (!string.IsNullOrEmpty(_credentials.AccessToken) && 
-                    _credentials.TokenExpiration.HasValue && 
-                    _credentials.TokenExpiration.Value > DateTime.UtcNow.AddMinutes(1)) // 1 minute buffer
-                {
-                    _logger.LogDebugJson($"Using existing valid token for tenant {_tenantNamespace}/{_tenantName}", new 
-                    { 
-                        tenantNamespace = _tenantNamespace, 
-                        tenantName = _tenantName,
-                        tokenExpiresAt = _credentials.TokenExpiration.Value
-                    });
-                    return _credentials.AccessToken;
-                }
-
-                _logger.LogInformationJson($"Generating new access token for tenant {_tenantNamespace}/{_tenantName}", new 
-                { 
-                    tenantNamespace = _tenantNamespace, 
-                    tenantName = _tenantName,
-                    domain = _credentials.Domain
-                });
-
-                // Get Auth0 Management API token
-                var auth = new AuthenticationApiClient(new Uri($"https://{_credentials.Domain}"));
-                var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest() 
-                { 
-                    Audience = $"https://{_credentials.Domain}/api/v2/", 
-                    ClientId = _credentials.ClientId, 
-                    ClientSecret = _credentials.ClientSecret 
-                }, cancellationToken);
-                
-                if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
-                {
-                    _logger.LogErrorJson($"Failed to retrieve management API token for tenant {_tenantNamespace}/{_tenantName}", new 
-                    { 
-                        tenantNamespace = _tenantNamespace, 
-                        tenantName = _tenantName,
-                        domain = _credentials.Domain
-                    });
-                    
-                    throw new InvalidOperationException($"Tenant {_tenantNamespace}/{_tenantName} failed to retrieve management API token.");
-                }
-
-                // Update cached token with expiration (use 90% of the token lifetime for safety)
-                _credentials.AccessToken = authToken.AccessToken;
-                _credentials.TokenExpiration = DateTime.UtcNow.AddSeconds(authToken.ExpiresIn * 0.9);
-
-                _logger.LogInformationJson($"Successfully generated access token for tenant {_tenantNamespace}/{_tenantName}", new 
-                { 
-                    tenantNamespace = _tenantNamespace, 
-                    tenantName = _tenantName,
-                    tokenExpiresAt = _credentials.TokenExpiration.Value,
-                    tokenLifetimeSeconds = authToken.ExpiresIn
-                });
-
-                return authToken.AccessToken;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogErrorJson($"Failed to generate access token for tenant {_tenantNamespace}/{_tenantName}: {ex.Message}", new 
-                { 
-                    tenantNamespace = _tenantNamespace, 
-                    tenantName = _tenantName,
-                    errorMessage = ex.Message,
-                    errorType = ex.GetType().Name
-                }, ex);
-                
-                throw;
-            }
-            finally
-            {
-                _credentials.TokenSemaphore.Release();
-            }
-        }
-
     }
 }

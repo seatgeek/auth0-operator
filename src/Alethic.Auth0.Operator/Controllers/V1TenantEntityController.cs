@@ -67,9 +67,15 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             var newTenantApiAccess = await TenantApiAccess.CreateAsync(tenant, Kube, Logger, cancellationToken);
-            await newTenantApiAccess.RegenerateTokenAsync(cancellationToken);
-
             _tenantApiAccessCache.TryAdd(cacheKey, newTenantApiAccess);
+            
+            Logger.LogInformationJson($"Cached new TenantApiAccess for tenant {tenant.Namespace()}/{tenant.Name()}", new
+            {
+                tenantNamespace = tenant.Namespace(),
+                tenantName = tenant.Name(),
+                cacheKey = cacheKey
+            });
+            
             return newTenantApiAccess;
         }
 

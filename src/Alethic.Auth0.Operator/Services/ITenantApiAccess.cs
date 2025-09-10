@@ -15,20 +15,11 @@ namespace Alethic.Auth0.Operator.Services
         Uri BaseUri { get; }
 
         /// <summary>
-        /// Gets the current access token for the Auth0 Management API, or null if not available
-        /// </summary>
-        string? AccessToken { get; }
-
-        /// <summary>
-        /// Gets whether a valid access token is available
-        /// </summary>
-        bool HasValidToken { get; }
-
-        /// <summary>
-        /// Requests regeneration of the access token (e.g., when the current token is expired)
+        /// Gets the current access token for the Auth0 Management API.
+        /// Automatically refreshes the token if it has reached 90% of its expiration time.
         /// </summary>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>The new access token</returns>
-        Task<string> RegenerateTokenAsync(CancellationToken cancellationToken = default);
+        /// <returns>A valid access token</returns>
+        Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default);
     }
 }
