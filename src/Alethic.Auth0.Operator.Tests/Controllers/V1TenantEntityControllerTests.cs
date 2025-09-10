@@ -135,5 +135,27 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             Assert.IsTrue(result, "All arrays should be order-insensitive");
         }
+
+        [TestMethod]
+        public void AreValuesEqual_StringComparison_CaseSensitive()
+        {
+            var leftValue = "Test String";
+            var rightValue = "test string";  // Different case
+
+            var result = V1ClientController.AreValuesEqual(leftValue, rightValue);
+
+            Assert.IsFalse(result, "String comparison should be case-sensitive by default");
+        }
+
+        [TestMethod]
+        public void AreValuesEqual_StringComparison_SameCase_ReturnsTrue()
+        {
+            var leftValue = "Test String";
+            var rightValue = "Test String";
+
+            var result = V1ClientController.AreValuesEqual(leftValue, rightValue);
+
+            Assert.IsTrue(result, "Identical strings should be equal");
+        }
     }
 }
