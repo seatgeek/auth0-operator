@@ -1079,7 +1079,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="collection">Collection to check</param>
         /// <returns>True if collection should be compared as a set, false for ordered comparison</returns>
-        private static bool IsSetLikeCollection(object[] collection)
+        internal static bool IsSetLikeCollection(object[] collection)
         {
             if (collection.Length == 0)
                 return false;
@@ -1095,7 +1095,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="leftArray">First collection</param>
         /// <param name="rightArray">Second collection</param>
         /// <returns>True if collections contain the same elements regardless of order</returns>
-        private static bool AreCollectionsEqualAsSet(object[] leftArray, object[] rightArray)
+        internal static bool AreCollectionsEqualAsSet(object[] leftArray, object[] rightArray)
         {
             if (leftArray.Length != rightArray.Length)
                 return false;
@@ -1125,7 +1125,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="left">First value to compare</param>
         /// <param name="right">Second value to compare</param>
         /// <returns>True if values are equal, false otherwise</returns>
-        private static bool AreValuesEqual(object? left, object? right)
+        internal static bool AreValuesEqual(object? left, object? right)
         {
             if (ReferenceEquals(left, right))
                 return true;

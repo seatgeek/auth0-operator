@@ -8,6 +8,12 @@
         <SelfContained>true</SelfContained>
         <ContainerRepository>auth0-operator-image</ContainerRepository>
     </PropertyGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>Alethic.Auth0.Operator.Tests</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
     
     <ItemGroup>
         <ContainerEnvironmentVariable Include="ASPNETCORE_FORWARDEDHEADERS_ENABLED" Value="true" />
