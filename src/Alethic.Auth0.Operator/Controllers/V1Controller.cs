@@ -51,10 +51,20 @@ namespace Alethic.Auth0.Operator.Controllers
         where TStatus : V1EntityStatus
         where TConf : class
     {
+        /// <summary>
+        /// Minimum retry delay in seconds for rate limit backoff.
+        /// </summary>
+        protected const int RATE_LIMIT_MIN_RETRY_SECONDS = 60;
+
+        /// <summary>
+        /// Maximum retry delay in seconds for rate limit backoff.
+        /// </summary>
+        protected const int RATE_LIMIT_MAX_RETRY_SECONDS = 600;
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
         static readonly SemaphoreSlim _getTenantApiClient = new(1);
+        static readonly Random _random = new();
 
         readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
@@ -168,7 +178,14 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var tenant = await _kube.GetAsync<V1Tenant>(tenantRef.Name, ns, cancellationToken);
             if (tenant is null)
+            {
+                Logger.LogWarningJson($"Tenant reference {tenantRef.Name} in namespace {ns} not found, scheduling retry", new {
+                    tenantName = tenantRef.Name,
+                    tenantNamespace = ns,
+                    retryReason = "tenant_reference_not_resolved"
+                });
                 throw new RetryException($"Tenant reference {tenantRef} cannot be resolved.");
+            }
 
             return tenant;
         }
@@ -227,7 +244,14 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var client = await _kube.GetAsync<V1Client>(clientRef.Name, ns, cancellationToken);
             if (client is null)
+            {
+                Logger.LogWarningJson($"Client reference {clientRef.Name} in namespace {ns} not found, scheduling retry", new {
+                    clientName = clientRef.Name,
+                    clientNamespace = ns,
+                    retryReason = "client_reference_not_resolved"
+                });
                 throw new RetryException($"Client reference cannot be resolved.");
+            }
 
             return client;
         }
@@ -289,7 +313,14 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var resourceServer = await _kube.GetAsync<V1ResourceServer>(resourceServerRef.Name, ns, cancellationToken);
             if (resourceServer is null)
+            {
+                Logger.LogWarningJson($"ResourceServer reference {resourceServerRef.Name} in namespace {ns} not found, scheduling retry", new {
+                    resourceServerName = resourceServerRef.Name,
+                    resourceServerNamespace = ns,
+                    retryReason = "resource_server_reference_not_resolved"
+                });
                 throw new RetryException($"ResourceServer reference cannot be resolved.");
+            }
 
             return resourceServer;
         }
@@ -317,7 +348,13 @@ namespace Alethic.Auth0.Operator.Controllers
                 LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
-                    throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");
+                {
+                    Logger.LogWarningJson($"Auth0 ResourceServer reference {id} not found, scheduling retry", new {
+                        resourceServerId = id,
+                        retryReason = "auth0_resource_server_not_found"
+                    });
+                    throw new RetryException($"Failed to resolve ResourceServer reference {id}.");
+                }
 
                 return self.Identifier;
             }
@@ -529,6 +566,16 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Gets a randomized retry delay for rate limit backoff to prevent thundering herd problems.
+        /// </summary>
+        /// <returns>A TimeSpan between RATE_LIMIT_MIN_RETRY_SECONDS and RATE_LIMIT_MAX_RETRY_SECONDS seconds</returns>
+        protected static TimeSpan GetRandomizedRateLimitRetryDelay()
+        {
+            var randomSeconds = _random.Next(RATE_LIMIT_MIN_RETRY_SECONDS, RATE_LIMIT_MAX_RETRY_SECONDS + 1);
+            return TimeSpan.FromSeconds(randomSeconds);
+        }
+
+        /// <summary>
         /// Implement this method to attempt the reconcillation.
         /// </summary>
         /// <param name="entity"></param>
@@ -628,15 +675,30 @@ namespace Alethic.Auth0.Operator.Controllers
                     }, e2);
                 }
 
-                // calculate next attempt time, floored to one minute
-                var n = e.RateLimit?.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
-                if (n < TimeSpan.FromMinutes(1))
-                    n = TimeSpan.FromMinutes(1);
+                // Use randomized backoff to prevent thundering herd problems
+                var retryDelay = GetRandomizedRateLimitRetryDelay();
+                
+                // If Auth0 provides a reset time, use it if it's shorter than our randomized delay
+                if (e.RateLimit?.Reset is DateTimeOffset resetTime)
+                {
+                    var resetDelay = resetTime - DateTimeOffset.Now;
+                    if (resetDelay > TimeSpan.Zero && resetDelay < retryDelay)
+                    {
+                        retryDelay = resetDelay;
+                        // Still enforce minimum delay to prevent immediate retry storms
+                        if (retryDelay < TimeSpan.FromSeconds(RATE_LIMIT_MIN_RETRY_SECONDS))
+                            retryDelay = TimeSpan.FromSeconds(RATE_LIMIT_MIN_RETRY_SECONDS);
+                    }
+                }
 
-                Logger.LogWarningJson($"Rate limit exceeded, rescheduling reconciliation after {n}", new { 
-                    rescheduleAfter = n.ToString() 
+                Logger.LogWarningJson($"Auth0 rate limit exceeded, rescheduling reconciliation after {retryDelay} (randomized backoff)", new { 
+                    rescheduleAfter = retryDelay.ToString(),
+                    randomizedBackoff = true,
+                    auth0ResetTime = e.RateLimit?.Reset?.ToString(),
+                    minRetrySeconds = RATE_LIMIT_MIN_RETRY_SECONDS,
+                    maxRetrySeconds = RATE_LIMIT_MAX_RETRY_SECONDS
                 });
-                Requeue(entity, n);
+                Requeue(entity, retryDelay);
             }
             catch (RetryException e)
             {
@@ -661,10 +723,16 @@ namespace Alethic.Auth0.Operator.Controllers
                     }, e2);
                 }
 
-                Logger.LogWarningJson($"Retry exception occurred, rescheduling reconciliation after {TimeSpan.FromMinutes(1)}", new { 
-                    rescheduleAfter = TimeSpan.FromMinutes(1).ToString() 
+                // Use randomized backoff to prevent thundering herd problems
+                var retryDelay = GetRandomizedRateLimitRetryDelay();
+                
+                Logger.LogWarningJson($"Retry exception occurred, rescheduling reconciliation after {retryDelay} (randomized backoff)", new { 
+                    rescheduleAfter = retryDelay.ToString(),
+                    randomizedBackoff = true,
+                    minRetrySeconds = RATE_LIMIT_MIN_RETRY_SECONDS,
+                    maxRetrySeconds = RATE_LIMIT_MAX_RETRY_SECONDS
                 });
-                Requeue(entity, TimeSpan.FromMinutes(1));
+                Requeue(entity, retryDelay);
             }
             catch (Exception e)
             {

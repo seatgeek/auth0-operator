@@ -80,13 +80,14 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception e)
             {
-                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new
+                Logger.LogWarningJson($"Error retrieving {EntityTypeName} with ID {id}, scheduling retry: {e.Message}", new
                 {
                     entityTypeName = EntityTypeName,
                     id = id,
-                    errorMessage = e.Message
-                }, e);
-                throw;
+                    errorMessage = e.Message,
+                    retryReason = "auth0_client_retrieval_failed"
+                });
+                throw new RetryException($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}");
             }
         }
 
@@ -1153,18 +1154,115 @@ namespace Alethic.Auth0.Operator.Controllers
                     troubleshooting = "secret_creation"
                 });
             }
-            catch (Exception e)
+            catch (HttpRequestException httpEx) when (IsRateLimitException(httpEx))
             {
-                Logger.LogErrorJson(
-                    $"Error applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new
+                Logger.LogWarningJson(
+                    $"*** SECRET TROUBLESHOOTING *** Kubernetes rate limit hit while applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {httpEx.Message}", new
                     {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
-                        errorMessage = e.Message
+                        operation = "kubernetes_rate_limit_hit_secret_creation",
+                        errorMessage = httpEx.Message,
+                        exceptionType = httpEx.GetType().Name,
+                        troubleshooting = "secret_creation"
+                    });
+
+                // Throw RetryException to trigger the same 1-minute rescheduling logic used for other retries
+                throw new RetryException($"Kubernetes rate limit exceeded while creating/updating secret {entity.Spec.SecretRef?.Name}: {httpEx.Message}");
+            }
+            catch (TaskCanceledException tcEx) when (tcEx.InnerException is TimeoutException || tcEx.Message.Contains("timeout"))
+            {
+                Logger.LogWarningJson(
+                    $"*** SECRET TROUBLESHOOTING *** Kubernetes timeout while applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {tcEx.Message}", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "kubernetes_timeout_secret_creation",
+                        errorMessage = tcEx.Message,
+                        exceptionType = tcEx.GetType().Name,
+                        troubleshooting = "secret_creation"
+                    });
+
+                // Throw RetryException to trigger rescheduling for timeout scenarios
+                throw new RetryException($"Kubernetes timeout while creating/updating secret {entity.Spec.SecretRef?.Name}: {tcEx.Message}");
+            }
+            catch (Exception e) when (IsKubernetesRateLimitResponse(e))
+            {
+                Logger.LogWarningJson(
+                    $"*** SECRET TROUBLESHOOTING *** Kubernetes rate limit (HTTP 429) hit while applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "kubernetes_http_429_rate_limit_secret_creation",
+                        errorMessage = e.Message,
+                        exceptionType = e.GetType().Name,
+                        troubleshooting = "secret_creation"
+                    });
+
+                // Throw RetryException to trigger rescheduling for HTTP 429 responses
+                throw new RetryException($"Kubernetes rate limit (HTTP 429) exceeded while creating/updating secret {entity.Spec.SecretRef?.Name}: {e.Message}");
+            }
+            catch (Exception e)
+            {
+                Logger.LogErrorJson(
+                    $"*** SECRET TROUBLESHOOTING *** Error applying secret for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.Message}", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        operation = "general_error_applying_secret",
+                        errorMessage = e.Message,
+                        troubleshooting = "secret_creation"
                     }, e);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Determines if an HttpRequestException is related to rate limiting based on the message content.
+        /// </summary>
+        /// <param name="httpEx">The HttpRequestException to examine</param>
+        /// <returns>True if the exception appears to be rate limit related</returns>
+        private static bool IsRateLimitException(HttpRequestException httpEx)
+        {
+            if (httpEx?.Message == null) return false;
+            
+            var message = httpEx.Message.ToLowerInvariant();
+            return message.Contains("429") || 
+                   message.Contains("too many requests") || 
+                   message.Contains("rate limit") ||
+                   message.Contains("quota exceeded") ||
+                   message.Contains("throttling") ||
+                   message.Contains("rate exceeded");
+        }
+
+        /// <summary>
+        /// Determines if a general exception contains indicators of Kubernetes rate limiting (HTTP 429 responses).
+        /// </summary>
+        /// <param name="ex">The exception to examine</param>
+        /// <returns>True if the exception appears to be a Kubernetes rate limit response</returns>
+        private static bool IsKubernetesRateLimitResponse(Exception ex)
+        {
+            if (ex?.Message == null) return false;
+            
+            var message = ex.Message.ToLowerInvariant();
+            var exceptionType = ex.GetType().Name.ToLowerInvariant();
+            
+            // Check for HTTP 429 status codes or rate limit indicators in various exception types
+            return message.Contains("429") ||
+                   message.Contains("too many requests") ||
+                   message.Contains("rate limit") ||
+                   message.Contains("quota exceeded") ||
+                   message.Contains("throttling") ||
+                   (exceptionType.Contains("http") && (
+                       message.Contains("rate") || 
+                       message.Contains("quota") || 
+                       message.Contains("throttl") ||
+                       message.Contains("limit exceeded")
+                   ));
         }
 
         /// <inheritdoc />

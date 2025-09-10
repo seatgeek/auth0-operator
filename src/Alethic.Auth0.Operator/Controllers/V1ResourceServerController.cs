@@ -82,15 +82,16 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (Exception e)
             {
-                Logger.LogErrorJson($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}", new
+                Logger.LogWarningJson($"Error retrieving {EntityTypeName} with ID {id}, scheduling retry: {e.Message}", new
                 {
                     entityTypeName = EntityTypeName,
                     resourceServerId = id,
                     operation = "fetch",
                     errorMessage = e.Message,
-                    status = "error"
-                }, e);
-                throw;
+                    retryReason = "auth0_resource_server_retrieval_failed",
+                    status = "retry_scheduled"
+                });
+                throw new RetryException($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}");
             }
         }
 

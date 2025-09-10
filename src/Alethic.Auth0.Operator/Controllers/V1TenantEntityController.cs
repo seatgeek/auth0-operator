@@ -141,6 +141,9 @@ namespace Alethic.Auth0.Operator.Controllers
             });
 
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
+            if (tenant is null || api is null)
+                return; // Retry has already been scheduled
+            
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
 
             entity = await EnsureEntityHasId(entity, api, cancellationToken);
@@ -170,7 +173,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
         }
 
-        private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
+        private async Task<(V1Tenant? tenant, IManagementApiClient? api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
         {
             EnsureValidTenantRef(entity);
             EnsureSpecConfExists(entity);
@@ -182,13 +185,16 @@ namespace Alethic.Auth0.Operator.Controllers
             var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
             {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client.", new
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to retrieve API client, scheduling retry", new
                 {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
-                    entityName = entity.Name()
+                    entityName = entity.Name(),
+                    retryReason = "api_client_retrieval_failed"
                 });
-                throw new InvalidOperationException($"Failed to setup reconciliation context for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - failed to retrieve API client.");
+                var retryDelay = GetRandomizedRateLimitRetryDelay();
+                Requeue(entity, retryDelay);
+                return (null, null);
             }
 
             // ensure we hold a reference to the tenant
@@ -858,17 +864,30 @@ namespace Alethic.Auth0.Operator.Controllers
                     }, e2);
                 }
 
-                // calculate next attempt time, floored to one minute
-                var n = e.RateLimit?.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
-                if (n < TimeSpan.FromMinutes(1))
-                    n = TimeSpan.FromMinutes(1);
-
-                Logger.LogInformationJson($"Rescheduling delete after {n}", new
+                // Use randomized backoff to prevent thundering herd problems
+                var retryDelay = GetRandomizedRateLimitRetryDelay();
+                
+                // If Auth0 provides a reset time, use it if it's shorter than our randomized delay
+                if (e.RateLimit?.Reset is DateTimeOffset resetTime)
                 {
-                    operation = "reschedule_delete",
-                    timespan = n
+                    var resetDelay = resetTime - DateTimeOffset.Now;
+                    if (resetDelay > TimeSpan.Zero && resetDelay < retryDelay)
+                    {
+                        retryDelay = resetDelay;
+                        // Still enforce minimum delay to prevent immediate retry storms
+                        if (retryDelay < TimeSpan.FromSeconds(RATE_LIMIT_MIN_RETRY_SECONDS))
+                            retryDelay = TimeSpan.FromSeconds(RATE_LIMIT_MIN_RETRY_SECONDS);
+                    }
+                }
+
+                Logger.LogInformationJson($"Auth0 rate limit hit during delete, rescheduling after {retryDelay} (randomized backoff)", new
+                {
+                    operation = "reschedule_delete_rate_limit",
+                    timespan = retryDelay,
+                    randomizedBackoff = true,
+                    auth0ResetTime = e.RateLimit?.Reset?.ToString()
                 });
-                Requeue(entity, n);
+                Requeue(entity, retryDelay);
             }
             catch (RetryException e)
             {
@@ -895,12 +914,16 @@ namespace Alethic.Auth0.Operator.Controllers
                     }, e2);
                 }
 
-                Logger.LogInformationJson($"Rescheduling delete after {TimeSpan.FromMinutes(1)}", new
+                // Use randomized backoff to prevent thundering herd problems
+                var retryDelay = GetRandomizedRateLimitRetryDelay();
+                
+                Logger.LogInformationJson($"Retry exception during delete, rescheduling after {retryDelay} (randomized backoff)", new
                 {
-                    operation = "reschedule_delete",
-                    timespan = TimeSpan.FromMinutes(1)
+                    operation = "reschedule_delete_retry",
+                    timespan = retryDelay,
+                    randomizedBackoff = true
                 });
-                Requeue(entity, TimeSpan.FromMinutes(1));
+                Requeue(entity, retryDelay);
             }
             catch (Exception e)
             {

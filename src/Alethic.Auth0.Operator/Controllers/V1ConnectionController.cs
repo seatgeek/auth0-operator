@@ -123,9 +123,10 @@ namespace Alethic.Auth0.Operator.Controllers
                     connectionId = id,
                     operation = "fetch",
                     errorMessage = e.Message,
-                    status = "error"
-                }, e);
-                throw;
+                    retryReason = "auth0_connection_retrieval_failed",
+                    status = "retry_scheduled"
+                });
+                throw new RetryException($"Error retrieving {EntityTypeName} with ID {id}: {e.Message}");
             }
         }
 
