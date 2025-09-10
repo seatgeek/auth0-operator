@@ -17,6 +17,7 @@ namespace Alethic.Auth0.Operator.Services
         /// <summary>
         /// Gets the current access token for the Auth0 Management API.
         /// Automatically refreshes the token if it has reached 90% of its expiration time.
+        /// IMPORTANT: Do not cache the token yourself, call this method each time you need a token.
         /// </summary>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>A valid access token</returns>

@@ -344,6 +344,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant.
+        /// IMPORTANT: Do not cache the returned client, call this method each time you need a client.
         /// </summary>
         /// <param name="tenant"></param>
         /// <param name="cancellationToken"></param>
