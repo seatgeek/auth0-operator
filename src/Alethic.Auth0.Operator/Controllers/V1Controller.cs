@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,8 +11,6 @@ using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Extensions;
 using Alethic.Auth0.Operator.Models;
 
-using Auth0.AuthenticationApi;
-using Auth0.AuthenticationApi.Models;
 using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 
@@ -49,7 +45,7 @@ namespace Alethic.Auth0.Operator.Controllers
         Write
     }
 
-    public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
+    public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : V1ControllerBase, IEntityController<TEntity>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
         where TSpec : V1EntitySpec<TConf>
         where TStatus : V1EntityStatus
@@ -58,11 +54,10 @@ namespace Alethic.Auth0.Operator.Controllers
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
-        static readonly ConcurrentDictionary<(string, string), SemaphoreSlim> _tenantSemaphores = new();
+        static readonly SemaphoreSlim _getTenantApiClient = new(1);
 
         readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
-        readonly IMemoryCache _cache;
         readonly ILogger _logger;
 
         /// <summary>
@@ -73,8 +68,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cache"></param>
         /// <param name="logger"></param>
         public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger)
+            : base(kube, logger)
         {
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _kube = kube ?? throw new ArgumentNullException(nameof(kube));
             _requeue = requeue ?? throw new ArgumentNullException(nameof(requeue));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -349,6 +344,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Gets an active <see cref="ManagementApiClient"/> for the specified tenant.
+        /// IMPORTANT: Do not cache the returned client, call this method each time you need a client.
         /// </summary>
         /// <param name="tenant"></param>
         /// <param name="cancellationToken"></param>
@@ -360,81 +356,24 @@ namespace Alethic.Auth0.Operator.Controllers
                 tenantName = tenant.Name() 
             });
             
-            var cacheKey = (tenant.Namespace(), tenant.Name());
-            
-            // Get or create a semaphore for this specific tenant to prevent race conditions
-            var semaphore = _tenantSemaphores.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-            
-            await semaphore.WaitAsync(cancellationToken);
+            await _getTenantApiClient.WaitAsync(cancellationToken);
             try
             {
-                // Check cache again after acquiring lock
-                if (_cache.TryGetValue(cacheKey, out var existingApi) && existingApi is IManagementApiClient cachedClient)
-                {
-                    Logger.LogDebugJson($"Successfully retrieved cached Auth0 API client for tenant {tenant.Namespace()}/{tenant.Name()}", new { 
-                        tenantNamespace = tenant.Namespace(), 
-                        tenantName = tenant.Name() 
-                    });
-                    return cachedClient;
-                }
-
                 Logger.LogInformationJson($"Creating new Auth0 API client for tenant {tenant.Namespace()}/{tenant.Name()}", new { 
                     tenantNamespace = tenant.Namespace(), 
                     tenantName = tenant.Name() 
                 });
                 
-                var domain = tenant.Spec.Auth?.Domain;
-                if (string.IsNullOrWhiteSpace(domain))
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no authentication domain.");
-
-                var secretRef = tenant.Spec.Auth?.SecretRef;
-                if (secretRef == null)
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no authentication secret.");
-
-                if (string.IsNullOrWhiteSpace(secretRef.Name))
-                    throw new InvalidOperationException($"Tenant {tenant.Namespace()}/{tenant.Name()} has no secret name.");
-
-                var secret = _kube.Get<V1Secret>(secretRef.Name, string.IsNullOrEmpty(secretRef.NamespaceProperty) ? tenant.Namespace() : secretRef.NamespaceProperty);
-                if (secret == null)
-                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing secret.");
-
-                if (secret.Data.TryGetValue("clientId", out var clientIdBuf) == false)
-                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientId value on secret.");
-
-                if (secret.Data.TryGetValue("clientSecret", out var clientSecretBuf) == false)
-                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} has missing clientSecret value on secret.");
-
-                // decode secret values
-                var clientId = Encoding.UTF8.GetString(clientIdBuf);
-                var clientSecret = Encoding.UTF8.GetString(clientSecretBuf);
-
-                Logger.LogInformationJson($"Authenticating with Auth0 domain {domain} for tenant {tenant.Namespace()}/{tenant.Name()}", new { 
-                    domain = domain,
-                    tenantNamespace = tenant.Namespace(), 
-                    tenantName = tenant.Name() 
-                });
-                // retrieve authentication token
-                var auth = new AuthenticationApiClient(new Uri($"https://{domain}"));
-                var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest() { Audience = $"https://{domain}/api/v2/", ClientId = clientId, ClientSecret = clientSecret }, cancellationToken);
-                if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
-                {
-                    Logger.LogErrorJson($"Failed to retrieve management API token for tenant {tenant.Namespace()}/{tenant.Name()} from domain {domain}", new { 
-                        tenantNamespace = tenant.Namespace(), 
-                        tenantName = tenant.Name(), 
-                        domain = domain 
-                    });
-                    throw new RetryException($"Tenant {tenant.Namespace()}/{tenant.Name()} failed to retrieve management API token.");
-                }
-
-                var api = new ManagementApiClient(authToken.AccessToken, new Uri($"https://{domain}/api/v2/"));
-                var cacheExpiration = TimeSpan.FromSeconds(authToken.ExpiresIn * 0.9);
-                _cache.Set(cacheKey, api, cacheExpiration);
+                var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
+                var accessToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
                 
-                return (IManagementApiClient)api;
+                var api = new ManagementApiClient(accessToken, tenantApiAccess.BaseUri);
+                
+                return api;
             }
             finally
             {
-                semaphore.Release();
+                _getTenantApiClient.Release();
             }
         }
 

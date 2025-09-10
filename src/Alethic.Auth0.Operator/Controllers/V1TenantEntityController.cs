@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -35,7 +34,6 @@ namespace Alethic.Auth0.Operator.Controllers
     {
 
         readonly IOptions<OperatorOptions> _options;
-        static readonly ConcurrentDictionary<string, ITenantApiAccess> _tenantApiAccessCache = new();
 
         /// <summary>
         /// Initializes a new instance.
@@ -51,27 +49,6 @@ namespace Alethic.Auth0.Operator.Controllers
             _options = options ?? throw new ArgumentNullException(nameof(options));
         }
 
-        /// <summary>
-        /// Gets or creates a TenantApiAccess instance for the given tenant, with lazy loading and caching.
-        /// </summary>
-        /// <param name="tenant">The tenant to get API access for</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>TenantApiAccess instance</returns>
-        protected async Task<ITenantApiAccess> GetOrCreateTenantApiAccessAsync(V1Tenant tenant, CancellationToken cancellationToken)
-        {
-            var cacheKey = $"{tenant.Namespace()}/{tenant.Name()}";
-
-            if (_tenantApiAccessCache.TryGetValue(cacheKey, out var existingTenantApiAccess))
-            {
-                return existingTenantApiAccess;
-            }
-
-            var newTenantApiAccess = await TenantApiAccess.CreateAsync(tenant, Kube, Logger, cancellationToken);
-            await newTenantApiAccess.RegenerateTokenAsync(cancellationToken);
-
-            _tenantApiAccessCache.TryAdd(cacheKey, newTenantApiAccess);
-            return newTenantApiAccess;
-        }
 
         /// <summary>
         /// Attempts to perform a get operation through the API.
@@ -1096,12 +1073,42 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Compares two collections as sets (order-insensitive) based on their element content.
+        /// </summary>
+        /// <param name="leftArray">First collection</param>
+        /// <param name="rightArray">Second collection</param>
+        /// <returns>True if collections contain the same elements regardless of order</returns>
+        internal static bool AreArraysEqualOrderInsensitive(object[] leftArray, object[] rightArray)
+        {
+            if (leftArray.Length != rightArray.Length)
+                return false;
+
+            foreach (var leftItem in leftArray)
+            {
+                bool foundMatch = false;
+                foreach (var rightItem in rightArray)
+                {
+                    if (AreValuesEqual(leftItem, rightItem))
+                    {
+                        foundMatch = true;
+                        break;
+                    }
+                }
+                if (!foundMatch)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Compares two values for equality, handling nested hashtables and arrays.
+        /// Arrays containing objects with 'id' fields are compared as sets (order-insensitive).
         /// </summary>
         /// <param name="left">First value to compare</param>
         /// <param name="right">Second value to compare</param>
         /// <returns>True if values are equal, false otherwise</returns>
-        private static bool AreValuesEqual(object? left, object? right)
+        internal static bool AreValuesEqual(object? left, object? right)
         {
             if (ReferenceEquals(left, right))
                 return true;
@@ -1109,11 +1116,9 @@ namespace Alethic.Auth0.Operator.Controllers
             if (left is null || right is null)
                 return false;
 
-            // Handle nested hashtables
             if (left is Hashtable leftHash && right is Hashtable rightHash)
                 return AreHashtablesEqual(leftHash, rightHash);
 
-            // Handle arrays
             if (left is IEnumerable leftEnum && right is IEnumerable rightEnum &&
                 !(left is string) && !(right is string))
             {
@@ -1123,16 +1128,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (leftArray.Length != rightArray.Length)
                     return false;
 
-                for (int i = 0; i < leftArray.Length; i++)
-                {
-                    if (!AreValuesEqual(leftArray[i], rightArray[i]))
-                        return false;
-                }
-
-                return true;
+                return AreArraysEqualOrderInsensitive(leftArray, rightArray);
             }
 
-            // Use standard equality comparison
             return left.Equals(right);
         }
 

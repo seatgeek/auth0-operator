@@ -827,18 +827,21 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 if (secret is null)
                 {
-                    Logger.LogInformationJson(
-                        $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} which does not exist: creating.",
+                    var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
+                    
+                    Logger.LogWarningJson(
+                        $"*** SECRET MISSING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} which does not exist - creating secret in namespace {resolvedNamespace}",
                         new
                         {
                             entityTypeName = EntityTypeName,
                             entityNamespace = entity.Namespace(),
                             entityName = entity.Name(),
-                            secretName = entity.Spec.SecretRef.Name
+                            secretName = entity.Spec.SecretRef.Name,
+                            secretNamespace = resolvedNamespace,
+                            operation = "secret_creation_required"
                         });
                     try
                     {
-                        var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
                         secret = await Kube.CreateAsync(
                             new V1Secret(
                                     metadata: new V1ObjectMeta(
@@ -846,6 +849,18 @@ namespace Alethic.Auth0.Operator.Controllers
                                         name: entity.Spec.SecretRef.Name))
                                 .WithOwnerReference(entity),
                             cancellationToken);
+                        
+                        Logger.LogWarningJson(
+                            $"*** SECRET CREATED *** Successfully created secret {entity.Spec.SecretRef.Name} in namespace {resolvedNamespace} for {EntityTypeName} {entity.Namespace()}/{entity.Name()}",
+                            new
+                            {
+                                entityTypeName = EntityTypeName,
+                                entityNamespace = entity.Namespace(),
+                                entityName = entity.Name(),
+                                secretName = entity.Spec.SecretRef.Name,
+                                secretNamespace = resolvedNamespace,
+                                operation = "secret_created_successfully"
+                            });
                     }
                     catch (Exception ex)
                     {
@@ -1160,70 +1175,6 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Gets a connection from cache with lazy loading and 15-minute timeout.
-        /// </summary>
-        /// <param name="api">Auth0 Management API client</param>
-        /// <param name="connectionId">Connection ID to retrieve</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Connection object or null if not found</returns>
-        async Task<Connection?> GetConnectionFromCache(IManagementApiClient api, string connectionId,
-            CancellationToken cancellationToken)
-        {
-            var cacheKey = $"connection:{connectionId}";
-
-            if (_connectionCache.TryGetValue(cacheKey, out Connection? cachedConnection))
-            {
-                return cachedConnection;
-            }
-
-            try
-            {
-                Logger.LogInformationJson($"{EntityTypeName} loading connection from Auth0 for caching: {connectionId}",
-                    new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId,
-                        operation = "cache_load"
-                    });
-
-                LogAuth0ApiCall($"Getting Auth0 connection for cache: {connectionId}", Auth0ApiCallType.Read,
-                    "A0Connection", connectionId, "unknown", "cache_connection_lookup");
-                var connection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
-
-                if (connection != null)
-                {
-                    var cacheOptions = new MemoryCacheEntryOptions
-                    {
-                        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
-                    };
-                    _connectionCache.Set(cacheKey, connection, cacheOptions);
-
-                    Logger.LogInformationJson($"{EntityTypeName} cached connection: {connectionId} ({connection.Name})",
-                        new
-                        {
-                            entityTypeName = EntityTypeName,
-                            connectionId,
-                            connectionName = connection.Name,
-                            operation = "cache_store"
-                        });
-                }
-
-                return connection;
-            }
-            catch (ErrorApiException e) when (e.StatusCode == HttpStatusCode.NotFound)
-            {
-                Logger.LogWarningJson($"{EntityTypeName} connection not found for caching: {connectionId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    operation = "cache_load",
-                    status = "not_found"
-                });
-                return null;
-            }
-        }
-
-        /// <summary>
         /// Invalidates connection cache when a connection is modified.
         /// </summary>
         /// <param name="connectionId">Connection ID to invalidate</param>
@@ -1254,13 +1205,7 @@ namespace Alethic.Auth0.Operator.Controllers
             LogAuth0ApiCall($"Getting enabled connections for client: {clientId}", Auth0ApiCallType.Read,
                 "A0Connection", "client_direct", "unknown", "get_client_connections_direct");
 
-            // Ensure we have a valid access token
-            if (!tenantApiAccess.HasValidToken)
-            {
-                await tenantApiAccess.RegenerateTokenAsync(cancellationToken);
-            }
-
-            var accessToken = tenantApiAccess.AccessToken!;
+            var accessToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
 
             // Use the direct Auth0 Management API endpoint: GET /api/v2/clients/{id}/connections
             var requestUri = new Uri(tenantApiAccess.BaseUri, $"clients/{clientId}/connections");
@@ -1284,7 +1229,7 @@ namespace Alethic.Auth0.Operator.Controllers
                             operation = "token_regeneration"
                         });
 
-                    var newToken = await tenantApiAccess.RegenerateTokenAsync(cancellationToken);
+                    var newToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
                     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", newToken);
 
                     response = await httpClient.GetAsync(requestUri, cancellationToken);
@@ -1336,9 +1281,9 @@ namespace Alethic.Auth0.Operator.Controllers
                         defaultNamespace, cancellationToken);
                 var (connectionsToAdd, connectionsToRemove) =
                     CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
-                var api = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
+                var managementApiClient = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
 
-                await ApplyConnectionChanges(api, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
+                await ApplyConnectionChanges(managementApiClient, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
                 LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count,
                     connectionsToRemove.Count);
             }
@@ -1405,25 +1350,21 @@ namespace Alethic.Auth0.Operator.Controllers
             if (connectionsToAdd.Count == 0 && connectionsToRemove.Count == 0)
                 return null;
 
-            if (!tenantApiAccess.HasValidToken)
-            {
-                await tenantApiAccess.RegenerateTokenAsync(CancellationToken.None);
-            }
-
-            return new ManagementApiClient(tenantApiAccess.AccessToken!, tenantApiAccess.BaseUri);
+            var accessToken = await tenantApiAccess.GetAccessTokenAsync(CancellationToken.None);
+            return new ManagementApiClient(accessToken, tenantApiAccess.BaseUri);
         }
 
-        private async Task ApplyConnectionChanges(IManagementApiClient? api, string clientId,
+        private async Task ApplyConnectionChanges(IManagementApiClient? managementApiClient, string clientId,
             List<string> connectionsToAdd, List<string> connectionsToRemove, CancellationToken cancellationToken)
         {
             if (connectionsToAdd.Count > 0)
             {
-                await AddConnectionsToClient(api!, clientId, connectionsToAdd, cancellationToken);
+                await AddConnectionsToClient(managementApiClient!, clientId, connectionsToAdd, cancellationToken);
             }
 
             if (connectionsToRemove.Count > 0)
             {
-                await RemoveConnectionsFromClient(api!, clientId, connectionsToRemove, cancellationToken);
+                await RemoveConnectionsFromClient(managementApiClient!, clientId, connectionsToRemove, cancellationToken);
             }
         }
 
