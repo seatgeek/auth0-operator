@@ -1281,9 +1281,9 @@ namespace Alethic.Auth0.Operator.Controllers
                         defaultNamespace, cancellationToken);
                 var (connectionsToAdd, connectionsToRemove) =
                     CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
-                var api = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
+                var managementApiClient = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
 
-                await ApplyConnectionChanges(api, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
+                await ApplyConnectionChanges(managementApiClient, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
                 LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count,
                     connectionsToRemove.Count);
             }
@@ -1354,17 +1354,17 @@ namespace Alethic.Auth0.Operator.Controllers
             return new ManagementApiClient(accessToken, tenantApiAccess.BaseUri);
         }
 
-        private async Task ApplyConnectionChanges(IManagementApiClient? api, string clientId,
+        private async Task ApplyConnectionChanges(IManagementApiClient? managementApiClient, string clientId,
             List<string> connectionsToAdd, List<string> connectionsToRemove, CancellationToken cancellationToken)
         {
             if (connectionsToAdd.Count > 0)
             {
-                await AddConnectionsToClient(api!, clientId, connectionsToAdd, cancellationToken);
+                await AddConnectionsToClient(managementApiClient!, clientId, connectionsToAdd, cancellationToken);
             }
 
             if (connectionsToRemove.Count > 0)
             {
-                await RemoveConnectionsFromClient(api!, clientId, connectionsToRemove, cancellationToken);
+                await RemoveConnectionsFromClient(managementApiClient!, clientId, connectionsToRemove, cancellationToken);
             }
         }
 
