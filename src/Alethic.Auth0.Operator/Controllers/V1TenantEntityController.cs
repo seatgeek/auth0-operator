@@ -1074,7 +1074,53 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Determines if a collection should be treated as a set (order-insensitive) rather than a sequence.
+        /// Collections containing objects with 'id' fields (like enabled_connections) are treated as sets.
+        /// </summary>
+        /// <param name="collection">Collection to check</param>
+        /// <returns>True if collection should be compared as a set, false for ordered comparison</returns>
+        private static bool IsSetLikeCollection(object[] collection)
+        {
+            if (collection.Length == 0)
+                return false;
+
+            // Check if all items are hashtables with an 'id' field
+            // This covers enabled_connections and similar collections
+            return collection.All(item => item is Hashtable hash && hash.ContainsKey("id"));
+        }
+
+        /// <summary>
+        /// Compares two collections as sets (order-insensitive) based on their element content.
+        /// </summary>
+        /// <param name="leftArray">First collection</param>
+        /// <param name="rightArray">Second collection</param>
+        /// <returns>True if collections contain the same elements regardless of order</returns>
+        private static bool AreCollectionsEqualAsSet(object[] leftArray, object[] rightArray)
+        {
+            if (leftArray.Length != rightArray.Length)
+                return false;
+
+            foreach (var leftItem in leftArray)
+            {
+                bool foundMatch = false;
+                foreach (var rightItem in rightArray)
+                {
+                    if (AreValuesEqual(leftItem, rightItem))
+                    {
+                        foundMatch = true;
+                        break;
+                    }
+                }
+                if (!foundMatch)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Compares two values for equality, handling nested hashtables and arrays.
+        /// Arrays containing objects with 'id' fields are compared as sets (order-insensitive).
         /// </summary>
         /// <param name="left">First value to compare</param>
         /// <param name="right">Second value to compare</param>
@@ -1100,6 +1146,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 if (leftArray.Length != rightArray.Length)
                     return false;
+
+                if (IsSetLikeCollection(leftArray) && IsSetLikeCollection(rightArray))
+                {
+                    return AreCollectionsEqualAsSet(leftArray, rightArray);
+                }
 
                 for (int i = 0; i < leftArray.Length; i++)
                 {
