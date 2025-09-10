@@ -51,6 +51,8 @@ namespace Alethic.Auth0.Operator.Controllers
         where TStatus : V1EntityStatus
         where TConf : class
     {
+        private const int MinSecretRetryDelaySeconds = 60;
+        private const int MaxSecretRetryDelaySeconds = 300;
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
@@ -533,7 +535,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity"></param>
         /// <param name="cancellationToken"></param>
-        protected abstract Task Reconcile(TEntity entity, CancellationToken cancellationToken);
+        protected abstract Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
@@ -558,8 +560,18 @@ namespace Alethic.Auth0.Operator.Controllers
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing configuration.");
                 }
 
-                // does the actual work of reconciling
-                await Reconcile(entity, cancellationToken);
+                var needRequeue = await Reconcile(entity, cancellationToken);
+                if (needRequeue)
+                {
+                    Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} reconciliation requested requeue", new { 
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(), 
+                        entityName = entity.Name() 
+                    });
+                    
+                    var retryDelaySeconds = GenerateRandomSecretRetryDelay();
+                    ScheduleSecretRetryReconciliation(entity, retryDelaySeconds);
+                }
 
                 var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} reconciliation completed successfully in {duration.TotalMilliseconds}ms", new { 
@@ -689,6 +701,33 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Schedules a follow-up reconciliation for secret creation.
+        /// </summary>
+        /// <param name="entity">The client entity</param>
+        /// <param name="delaySeconds">Delay in seconds before reconciliation</param>
+        private void ScheduleSecretRetryReconciliation(TEntity entity, int delaySeconds)
+        {
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} client credentials not available, scheduling reconciliation retry in {delaySeconds}s for secret creation", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                retryDelaySeconds = delaySeconds
+            });
+            
+            Requeue(entity, TimeSpan.FromSeconds(delaySeconds));
+        }
+        
+        /// <summary>
+        /// Generates a random delay between MinSecretRetryDelaySeconds and MaxSecretRetryDelaySeconds for secret retry reconciliation.
+        /// </summary>
+        /// <returns>Random delay in seconds</returns>
+        private int GenerateRandomSecretRetryDelay()
+        {
+            var random = new Random();
+            return random.Next(MinSecretRetryDelaySeconds, MaxSecretRetryDelaySeconds + 1);
+        }
     }
 
 }

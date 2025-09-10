@@ -77,7 +77,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Reconcile(V1Tenant entity, CancellationToken cancellationToken)
+        protected override async Task<bool> Reconcile(V1Tenant entity, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting reconciliation", new {
                 entityTypeName = EntityTypeName,
@@ -253,6 +253,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 status = "completed"
             });
             await ReconcileSuccessAsync(entity, cancellationToken);
+
+            return false;
         }
 
         /// <summary>

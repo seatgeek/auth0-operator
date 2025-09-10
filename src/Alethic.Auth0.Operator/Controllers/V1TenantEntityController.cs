@@ -129,7 +129,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Reconcile(TEntity entity, CancellationToken cancellationToken)
+        protected override async Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
             var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
@@ -140,7 +140,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
-            await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+            var needsSecretCreationRetry = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+
+            return needsSecretCreationRetry;
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
@@ -319,11 +321,13 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<(bool needsAuth0Fetch, string reason)> DetermineIfAuth0FetchIsNeeded(TEntity entity, CancellationToken cancellationToken)
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
-            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
+            var isEmptyCache = entity.Status.LastConf is not null && entity.Status.LastConf.Count == 0;
+            var hasLocalChanges = entity.Spec.Conf is { } currentConf && !isFirstReconciliation && !isEmptyCache && HasConfigurationChangedQuiet(entity, entity.Status.LastConf, currentConf);
             var (entityControllerRequiresFetch, entityControllerReason) = await RequiresAuth0Fetch(entity, cancellationToken);
-            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || entityControllerRequiresFetch;
+            var needsAuth0Fetch = hasLocalChanges || isFirstReconciliation || isEmptyCache || entityControllerRequiresFetch;
 
             var reason = isFirstReconciliation ? "first reconciliation" :
+                        isEmptyCache ? "empty cached configuration detected" :
                         hasLocalChanges ? "local configuration changes detected" :
                         entityControllerRequiresFetch ? $"requested by the entity controller: {entityControllerReason}" :
                         "unknown";
@@ -428,7 +432,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
             if (needsUpdate)
             {
-                return await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
+                var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
+                
+                return processedConf;
             }
 
             return lastConf;
@@ -530,11 +536,12 @@ namespace Alethic.Auth0.Operator.Controllers
             return TransformToSystemTextJson<Hashtable>(appliedJson);
         }
 
-        private async Task FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<bool> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
-            await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
+            var needsSecretCreationRetry = await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
             await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
             ScheduleNextReconciliation(entity);
+            return needsSecretCreationRetry;
         }
 
         private void ScheduleNextReconciliation(TEntity entity)
@@ -606,10 +613,10 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="defaultNamespace">Default namespace for the entity</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>A task representing the asynchronous status application operation</returns>
-        protected virtual Task ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
+        protected virtual Task<bool> ApplyStatus(IManagementApiClient api, TEntity entity, Hashtable lastConf, string defaultNamespace, CancellationToken cancellationToken)
         {
             entity.Status.LastConf = lastConf;
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
 
         /// <summary>
