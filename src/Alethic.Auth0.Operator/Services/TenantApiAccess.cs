@@ -93,47 +93,67 @@ namespace Alethic.Auth0.Operator.Services
             
             async Task<string> RegenerateTokenAsync(CancellationToken cancellationToken)
             {
-                _logger.LogInformationJson($"Generating new access token for tenant {_tenantNamespace}/{_tenantName}", new 
-                { 
-                    tenantNamespace = _tenantNamespace, 
-                    tenantName = _tenantName,
-                    domain = _credentials.Domain
-                });
-
-                // Get Auth0 Management API token
-                var auth = new AuthenticationApiClient(new Uri($"https://{_credentials.Domain}"));
-                var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest() 
-                { 
-                    Audience = $"https://{_credentials.Domain}/api/v2/", 
-                    ClientId = _credentials.ClientId, 
-                    ClientSecret = _credentials.ClientSecret 
-                }, cancellationToken);
-                
-                if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
+                try
                 {
-                    _logger.LogErrorJson($"Failed to retrieve management API token for tenant {_tenantNamespace}/{_tenantName}", new 
-                    { 
-                        tenantNamespace = _tenantNamespace, 
-                        tenantName = _tenantName,
-                        domain = _credentials.Domain
-                    });
-                    
-                    throw new InvalidOperationException($"Tenant {_tenantNamespace}/{_tenantName} failed to retrieve management API token.");
+                    _logger.LogInformationJson(
+                        $"Generating new access token for tenant {_tenantNamespace}/{_tenantName}", new
+                        {
+                            tenantNamespace = _tenantNamespace,
+                            tenantName = _tenantName,
+                            domain = _credentials.Domain
+                        });
+
+                    // Get Auth0 Management API token
+                    var auth = new AuthenticationApiClient(new Uri($"https://{_credentials.Domain}"));
+                    var authToken = await auth.GetTokenAsync(new ClientCredentialsTokenRequest()
+                    {
+                        Audience = $"https://{_credentials.Domain}/api/v2/",
+                        ClientId = _credentials.ClientId,
+                        ClientSecret = _credentials.ClientSecret
+                    }, cancellationToken);
+
+                    if (authToken.AccessToken == null || authToken.AccessToken.Length == 0)
+                    {
+                        _logger.LogErrorJson(
+                            $"Failed to retrieve management API token for tenant {_tenantNamespace}/{_tenantName}", new
+                            {
+                                tenantNamespace = _tenantNamespace,
+                                tenantName = _tenantName,
+                                domain = _credentials.Domain
+                            });
+
+                        throw new InvalidOperationException(
+                            $"Tenant {_tenantNamespace}/{_tenantName} failed to retrieve management API token.");
+                    }
+
+                    // Update cached token with expiration (use 90% of the token lifetime for safety)
+                    _credentials.AccessToken = authToken.AccessToken;
+                    _credentials.TokenExpiration = DateTime.UtcNow.AddSeconds(authToken.ExpiresIn * 0.9);
+
+                    _logger.LogInformationJson(
+                        $"Successfully generated access token for tenant {_tenantNamespace}/{_tenantName}", new
+                        {
+                            tenantNamespace = _tenantNamespace,
+                            tenantName = _tenantName,
+                            tokenExpiresAt = _credentials.TokenExpiration.Value,
+                            tokenLifetimeSeconds = authToken.ExpiresIn
+                        });
+
+                    return authToken.AccessToken;
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogErrorJson(
+                        $"Exception occurred while generating access token for tenant {_tenantNamespace}/{_tenantName}: {ex.Message}", new
+                        {
+                            tenantNamespace = _tenantNamespace,
+                            tenantName = _tenantName,
+                            domain = _credentials.Domain
+                        }, ex);
 
-                // Update cached token with expiration (use 90% of the token lifetime for safety)
-                _credentials.AccessToken = authToken.AccessToken;
-                _credentials.TokenExpiration = DateTime.UtcNow.AddSeconds(authToken.ExpiresIn * 0.9);
-
-                _logger.LogInformationJson($"Successfully generated access token for tenant {_tenantNamespace}/{_tenantName}", new 
-                { 
-                    tenantNamespace = _tenantNamespace, 
-                    tenantName = _tenantName,
-                    tokenExpiresAt = _credentials.TokenExpiration.Value,
-                    tokenLifetimeSeconds = authToken.ExpiresIn
-                });
-
-                return authToken.AccessToken;
+                    throw new InvalidOperationException(
+                        $"Tenant {_tenantNamespace}/{_tenantName} failed to retrieve management API token.", ex);
+                }
             }
         }
 
