@@ -35,7 +35,6 @@ namespace Alethic.Auth0.Operator.Controllers
     {
 
         readonly IOptions<OperatorOptions> _options;
-        static readonly ConcurrentDictionary<string, ITenantApiAccess> _tenantApiAccessCache = new();
 
         /// <summary>
         /// Initializes a new instance.
@@ -51,33 +50,6 @@ namespace Alethic.Auth0.Operator.Controllers
             _options = options ?? throw new ArgumentNullException(nameof(options));
         }
 
-        /// <summary>
-        /// Gets or creates a TenantApiAccess instance for the given tenant, with lazy loading and caching.
-        /// </summary>
-        /// <param name="tenant">The tenant to get API access for</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>TenantApiAccess instance</returns>
-        protected async Task<ITenantApiAccess> GetOrCreateTenantApiAccessAsync(V1Tenant tenant, CancellationToken cancellationToken)
-        {
-            var cacheKey = $"{tenant.Namespace()}/{tenant.Name()}";
-
-            if (_tenantApiAccessCache.TryGetValue(cacheKey, out var existingTenantApiAccess))
-            {
-                return existingTenantApiAccess;
-            }
-
-            var newTenantApiAccess = await TenantApiAccess.CreateAsync(tenant, Kube, Logger, cancellationToken);
-            _tenantApiAccessCache.TryAdd(cacheKey, newTenantApiAccess);
-            
-            Logger.LogInformationJson($"Cached new TenantApiAccess for tenant {tenant.Namespace()}/{tenant.Name()}", new
-            {
-                tenantNamespace = tenant.Namespace(),
-                tenantName = tenant.Name(),
-                cacheKey = cacheKey
-            });
-            
-            return newTenantApiAccess;
-        }
 
         /// <summary>
         /// Attempts to perform a get operation through the API.

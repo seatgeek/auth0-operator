@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
@@ -46,7 +45,7 @@ namespace Alethic.Auth0.Operator.Controllers
         Write
     }
 
-    public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : IEntityController<TEntity>
+    public abstract class V1Controller<TEntity, TSpec, TStatus, TConf> : V1ControllerBase, IEntityController<TEntity>
         where TEntity : IKubernetesObject<V1ObjectMeta>, V1Entity<TSpec, TStatus, TConf>
         where TSpec : V1EntitySpec<TConf>
         where TStatus : V1EntityStatus
@@ -55,11 +54,10 @@ namespace Alethic.Auth0.Operator.Controllers
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
-        static readonly ConcurrentDictionary<(string, string), SemaphoreSlim> _tenantSemaphores = new();
+        static readonly SemaphoreSlim _getTenantApiClient = new(1);
 
         readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
-        readonly IMemoryCache _cache;
         readonly ILogger _logger;
 
         /// <summary>
@@ -70,8 +68,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cache"></param>
         /// <param name="logger"></param>
         public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger)
+            : base(kube, logger)
         {
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _kube = kube ?? throw new ArgumentNullException(nameof(kube));
             _requeue = requeue ?? throw new ArgumentNullException(nameof(requeue));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -357,38 +355,24 @@ namespace Alethic.Auth0.Operator.Controllers
                 tenantName = tenant.Name() 
             });
             
-            var cacheKey = (tenant.Namespace(), tenant.Name());
-            
-            var semaphore = _tenantSemaphores.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-            
-            await semaphore.WaitAsync(cancellationToken);
+            await _getTenantApiClient.WaitAsync(cancellationToken);
             try
             {
-                if (_cache.TryGetValue(cacheKey, out var existingApi) && existingApi is IManagementApiClient cachedClient)
-                {
-                    Logger.LogDebugJson($"Successfully retrieved cached Auth0 API client for tenant {tenant.Namespace()}/{tenant.Name()}", new { 
-                        tenantNamespace = tenant.Namespace(), 
-                        tenantName = tenant.Name() 
-                    });
-                    return cachedClient;
-                }
-
                 Logger.LogInformationJson($"Creating new Auth0 API client for tenant {tenant.Namespace()}/{tenant.Name()}", new { 
                     tenantNamespace = tenant.Namespace(), 
                     tenantName = tenant.Name() 
                 });
                 
                 var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
-
-                var api = new ManagementApiClient(authToken.AccessToken, new Uri($"https://{domain}/api/v2/"));
-                var cacheExpiration = TimeSpan.FromSeconds(authToken.ExpiresIn * 0.9);
-                _cache.Set(cacheKey, api, cacheExpiration);
+                var accessToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
                 
-                return (IManagementApiClient)api;
+                var api = new ManagementApiClient(accessToken, tenantApiAccess.BaseUri);
+                
+                return api;
             }
             finally
             {
-                semaphore.Release();
+                _getTenantApiClient.Release();
             }
         }
 
