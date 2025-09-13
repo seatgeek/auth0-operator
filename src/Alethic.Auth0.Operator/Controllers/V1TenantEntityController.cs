@@ -433,7 +433,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (needsUpdate)
             {
                 var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
-                
+
                 return processedConf;
             }
 
@@ -1304,6 +1304,22 @@ namespace Alethic.Auth0.Operator.Controllers
                     var typeName = value.GetType().Name;
                     return objectStr.Length > 80 ? $"({typeName}) {objectStr[..75]}..." : $"({typeName}) {objectStr}";
             }
+        }
+
+        /// <summary>
+        /// Override ReconcileAsync to include partition filtering.
+        /// </summary>
+        /// <param name="entity">The entity to reconcile</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Task representing the reconciliation operation</returns>
+        public override async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
+        {
+            if (!ShouldProcessEntityByPartition(entity, _options, typeof(TEntity).Name))
+            {
+                return;
+            }
+
+            await base.ReconcileAsync(entity, cancellationToken);
         }
 
     }

@@ -538,7 +538,7 @@ namespace Alethic.Auth0.Operator.Controllers
         protected abstract Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken);
 
         /// <inheritdoc />
-        public async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
+        public virtual async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
         {
             var startTime = DateTimeOffset.UtcNow;
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} starting reconciliation at {startTime}", new { 
