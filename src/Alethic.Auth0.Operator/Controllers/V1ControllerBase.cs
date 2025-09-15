@@ -95,13 +95,13 @@ namespace Alethic.Auth0.Operator.Controllers
             where TEntity : IKubernetesObject<V1ObjectMeta>
         {
             var configuredPartition = options.Value.Partition;
+            var annotations = entity.Metadata?.Annotations;
 
             if (string.IsNullOrEmpty(configuredPartition))
             {
-                return true;
+                return annotations == null || !annotations.ContainsKey(Constants.PartitionAnnotationKey);
             }
 
-            var annotations = entity.Metadata?.Annotations;
             if (annotations == null || !annotations.TryGetValue(Constants.PartitionAnnotationKey, out var entityPartition))
             {
                 return false;
