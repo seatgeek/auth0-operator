@@ -536,7 +536,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity"></param>
         /// <param name="cancellationToken"></param>
-        protected abstract Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken);
+        /// <returns>A tuple containing whether requeue is needed and the updated entity</returns>
+        protected abstract Task<(bool needsRequeue, TEntity updatedEntity)> Reconcile(TEntity entity, CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public virtual async Task ReconcileAsync(TEntity entity, CancellationToken cancellationToken)
@@ -561,7 +562,9 @@ namespace Alethic.Auth0.Operator.Controllers
                     throw new InvalidOperationException($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} is missing configuration.");
                 }
 
-                var needRequeue = await Reconcile(entity, cancellationToken);
+                var (needRequeue, updatedEntity) = await Reconcile(entity, cancellationToken);
+                entity = updatedEntity; // Use the updated entity for subsequent operations
+                
                 if (needRequeue)
                 {
                     Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} reconciliation requested requeue", new { 

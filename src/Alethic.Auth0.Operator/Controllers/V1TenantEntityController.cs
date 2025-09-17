@@ -129,7 +129,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken)
+        protected override async Task<(bool needsRequeue, TEntity updatedEntity)> Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
             var (tenant, api, entityAfterSetup) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
@@ -145,7 +145,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // Clear tenant change retry counter on successful reconciliation using the updated entity
             entity = await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
 
-            return needsSecretCreationRetry;
+            return (needsSecretCreationRetry, entity);
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api, TEntity updatedEntity)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
