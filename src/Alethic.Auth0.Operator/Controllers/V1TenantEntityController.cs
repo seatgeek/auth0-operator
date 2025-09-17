@@ -131,24 +131,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <inheritdoc />
         protected override async Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
-            var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
+            var (tenant, api, entityAfterSetup) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
 
-            entity = await EnsureEntityHasId(entity, api, cancellationToken);
+            entity = await EnsureEntityHasId(entityAfterSetup, api, cancellationToken);
 
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
 
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
-            var needsSecretCreationRetry = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+            var (updatedEntity, needsSecretCreationRetry) = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
 
-            // Clear tenant change retry counter on successful reconciliation
-            await ClearTenantChangeRetryCounter(entity, cancellationToken);
+            // Clear tenant change retry counter on successful reconciliation using the updated entity
+            await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
 
             return needsSecretCreationRetry;
         }
 
-        private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
+        private async Task<(V1Tenant tenant, IManagementApiClient api, TEntity updatedEntity)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
         {
             EnsureValidTenantRef(entity);
             EnsureSpecConfExists(entity);
@@ -214,7 +214,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
             }
 
-            return (tenant, api);
+            return (tenant, api, entity);
         }
 
         private async Task<TEntity> EnsureEntityHasId(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
@@ -612,12 +612,12 @@ namespace Alethic.Auth0.Operator.Controllers
             return TransformToSystemTextJson<Hashtable>(appliedJson);
         }
 
-        private async Task<bool> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<(TEntity updatedEntity, bool needsSecretCreationRetry)> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             var needsSecretCreationRetry = await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
-            await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
-            ScheduleNextReconciliation(entity);
-            return needsSecretCreationRetry;
+            var updatedEntity = await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
+            ScheduleNextReconciliation(updatedEntity);
+            return (updatedEntity, needsSecretCreationRetry);
         }
 
         private void ScheduleNextReconciliation(TEntity entity)
