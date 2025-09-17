@@ -1394,18 +1394,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Task representing the operation</returns>
         private async Task HandleTenantRefChange(TEntity entity, string oldTenantUid, string newTenantUid, CancellationToken cancellationToken)
         {
-            Logger.LogWarningJson($"*** TENANT REFERENCE CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference changed from {oldTenantUid} to {newTenantUid}", new
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            // Get tenant names for meaningful logging
+            var oldTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
+            var newTenantName = entity.Spec.TenantRef?.Name ?? "unknown";
+            
+            Logger.LogWarningJson($"*** TENANT REFERENCE CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference changed from '{oldTenantName}' ({oldTenantUid}) to '{newTenantName}' ({newTenantUid})", new
             {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
                 oldTenantUid,
                 newTenantUid,
+                oldTenantName,
+                newTenantName,
                 operation = "tenant_ref_change"
             });
-
-            var md = entity.EnsureMetadata();
-            var an = md.EnsureAnnotations();
 
             // Always store historical data in annotations (before they get cleared)
             var previousTenantRef = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var prevTenantName) ? prevTenantName : "unknown";
