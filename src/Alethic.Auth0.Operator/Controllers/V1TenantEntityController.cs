@@ -143,7 +143,7 @@ namespace Alethic.Auth0.Operator.Controllers
             var (updatedEntity, needsSecretCreationRetry) = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
 
             // Clear tenant change retry counter on successful reconciliation using the updated entity
-            await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
+            entity = await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
 
             return needsSecretCreationRetry;
         }
@@ -158,7 +158,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 throw new InvalidOperationException($"Failed to setup reconciliation context for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant (cannot resolve TenantRef).");
 
             // Check for tenant reference changes before proceeding
-            await DetectAndHandleTenantRefChange(entity, tenant, cancellationToken);
+            entity = await DetectAndHandleTenantRefChange(entity, tenant, cancellationToken);
 
             var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
@@ -1404,8 +1404,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="entity">The entity being reconciled</param>
         /// <param name="newTenant">The newly resolved tenant</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task representing the operation</returns>
-        private async Task DetectAndHandleTenantRefChange(TEntity entity, V1Tenant newTenant, CancellationToken cancellationToken)
+        /// <returns>The updated entity if changes were detected, otherwise the original entity</returns>
+        private async Task<TEntity> DetectAndHandleTenantRefChange(TEntity entity, V1Tenant newTenant, CancellationToken cancellationToken)
         {
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
@@ -1413,13 +1413,13 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // If no stored tenant UID, this is first reconciliation - no change to handle
             if (string.IsNullOrEmpty(storedTenantUid))
-                return;
+                return entity;
 
             var newTenantUid = newTenant.Uid();
             
             // If tenant UID hasn't changed, no action needed
             if (string.Equals(storedTenantUid, newTenantUid, StringComparison.OrdinalIgnoreCase))
-                return;
+                return entity;
 
             // Get tenant names for meaningful logging
             var storedTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
@@ -1439,7 +1439,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "config_change_detected"
             });
 
-            await HandleTenantRefChange(entity, storedTenantUid, newTenantUid, cancellationToken);
+            return await HandleTenantRefChange(entity, storedTenantUid, newTenantUid, cancellationToken);
         }
 
         /// <summary>
@@ -1450,8 +1450,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="oldTenantUid">The old tenant UID</param>
         /// <param name="newTenantUid">The new tenant UID</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task representing the operation</returns>
-        private async Task HandleTenantRefChange(TEntity entity, string oldTenantUid, string newTenantUid, CancellationToken cancellationToken)
+        /// <returns>The updated entity with latest resourceVersion</returns>
+        private async Task<TEntity> HandleTenantRefChange(TEntity entity, string oldTenantUid, string newTenantUid, CancellationToken cancellationToken)
         {
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
@@ -1506,6 +1506,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 newTenantUid,
                 operation = "tenant_change_complete"
             });
+
+            return entity;
         }
 
         /// <summary>
@@ -1595,9 +1597,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity">The entity to clear retry counter for</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task representing the operation</returns>
-        private async Task ClearTenantChangeRetryCounter(TEntity entity, CancellationToken cancellationToken)
+        /// <returns>The updated entity with latest resourceVersion</returns>
+        private async Task<TEntity> ClearTenantChangeRetryCounter(TEntity entity, CancellationToken cancellationToken)
         {
+            var resolvedEntity = entity
+            
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
             
@@ -1614,10 +1618,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 
                 // Use UpdateKubernetesMetadata to persist annotation removal
-                await UpdateKubernetesMetadata(entity, "clear_retry_counter", cancellationToken);
+                resolvedEntity = await UpdateKubernetesMetadata(entity, "clear_retry_counter", cancellationToken);
             }
-        }
 
+            return resolvedEntity;
+        }
+        
     }
 
 }
