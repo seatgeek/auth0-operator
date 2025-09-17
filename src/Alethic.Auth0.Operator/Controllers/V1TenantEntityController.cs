@@ -1600,7 +1600,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>The updated entity with latest resourceVersion</returns>
         private async Task<TEntity> ClearTenantChangeRetryCounter(TEntity entity, CancellationToken cancellationToken)
         {
-            var resolvedEntity = entity
+            var resolvedEntity = entity;
             
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
