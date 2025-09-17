@@ -352,6 +352,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Updates the entire Kubernetes resource including metadata (annotations, labels) and status.
         /// Use this method when you need to persist annotation changes.
+        /// 
+        /// Note: PatchAsync would be more efficient but is currently in preview in KubeOps SDK.
+        /// UpdateAsync is the stable, production-ready approach for metadata updates.
         /// </summary>
         /// <param name="entity">The entity to update</param>
         /// <param name="operation">Description of the operation for logging</param>
@@ -361,6 +364,8 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
+                // Use UpdateAsync for metadata changes - stable and production-ready
+                // PatchAsync would be more efficient but is currently in preview
                 return await Kube.UpdateAsync(entity, cancellationToken);
             }
             catch (Exception ex)
