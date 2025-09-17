@@ -189,16 +189,20 @@ namespace Alethic.Auth0.Operator.Controllers
                 annotationChanges = true;
             }
             
-            // Store baseline annotations for existing clients that don't have them yet (audit trail consistency)
-            if (!an.ContainsKey("kubernetes.auth0.com/current-tenant-ref"))
+            // Ensure annotations always reflect current state (for audit trail consistency)
+            var currentTenantRefFromSpec = entity.Spec.TenantRef?.Name ?? "unknown";
+            if (an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var existingTenantRef) == false || existingTenantRef != currentTenantRefFromSpec)
             {
-                an["kubernetes.auth0.com/current-tenant-ref"] = entity.Spec.TenantRef?.Name ?? "unknown";
+                an["kubernetes.auth0.com/current-tenant-ref"] = currentTenantRefFromSpec;
                 annotationChanges = true;
             }
-            if (!string.IsNullOrEmpty(entity.Status.Id) && !an.ContainsKey("kubernetes.auth0.com/current-client-id"))
+            if (!string.IsNullOrEmpty(entity.Status.Id))
             {
-                an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
-                annotationChanges = true;
+                if (an.TryGetValue("kubernetes.auth0.com/current-client-id", out var existingClientId) == false || existingClientId != entity.Status.Id)
+                {
+                    an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
+                    annotationChanges = true;
+                }
             }
 
             // Persist annotation changes if any were made
