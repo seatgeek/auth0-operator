@@ -1882,7 +1882,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="entity">The client entity to reset</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Task representing the operation</returns>
-        protected override async Task ResetEntityStatusForNewTenant(V1Client entity, CancellationToken cancellationToken)
+        protected override async Task<V1Client> ResetEntityStatusForNewTenant(V1Client entity, CancellationToken cancellationToken)
         {
             // Clear client-specific status fields
             entity.Status.Id = null;
@@ -1899,8 +1899,8 @@ namespace Alethic.Auth0.Operator.Controllers
             // Delete the associated secret for tenant change
             await DeleteSecretForTenantChange(entity, cancellationToken);
 
-            // Update the entity in Kubernetes to persist the changes
-            await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
+            // Update the entity in Kubernetes to persist the changes and return updated entity
+            return await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
         }
 
         /// <summary>

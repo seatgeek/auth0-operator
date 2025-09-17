@@ -1493,7 +1493,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
 
             // Reset entity status to prepare for new tenant
-            await ResetEntityStatusForNewTenant(entity, cancellationToken);
+            entity = await ResetEntityStatusForNewTenant(entity, cancellationToken);
 
             // Schedule retry reconciliation for new tenant client creation
             await ScheduleTenantChangeRetryReconciliation(entity, cancellationToken);
@@ -1514,8 +1514,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         /// <param name="entity">The entity to reset</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task representing the operation</returns>
-        protected virtual async Task ResetEntityStatusForNewTenant(TEntity entity, CancellationToken cancellationToken)
+        /// <returns>The updated entity with latest resource version</returns>
+        protected virtual async Task<TEntity> ResetEntityStatusForNewTenant(TEntity entity, CancellationToken cancellationToken)
         {
             // Clear basic status fields that are tenant-specific
             entity.Status.Id = null;
@@ -1529,8 +1529,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "reset_status_basic"
             });
 
-            // Update the entity in Kubernetes to persist the changes
-            await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
+            // Update the entity in Kubernetes to persist the changes and return updated entity
+            return await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
         }
 
         /// <summary>
