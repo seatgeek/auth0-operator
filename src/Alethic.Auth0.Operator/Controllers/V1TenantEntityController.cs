@@ -1496,7 +1496,7 @@ namespace Alethic.Auth0.Operator.Controllers
             entity = await ResetEntityStatusForNewTenant(entity, cancellationToken);
 
             // Schedule retry reconciliation for new tenant client creation
-            await ScheduleTenantChangeRetryReconciliation(entity, cancellationToken);
+            entity = await ScheduleTenantChangeRetryReconciliation(entity, cancellationToken);
 
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference change handling complete - retry reconciliation scheduled", new
             {
@@ -1542,7 +1542,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="entity">The entity to schedule retry for</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Task representing the operation</returns>
-        private async Task ScheduleTenantChangeRetryReconciliation(TEntity entity, CancellationToken cancellationToken)
+        private async Task<TEntity> ScheduleTenantChangeRetryReconciliation(TEntity entity, CancellationToken cancellationToken)
         {
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
@@ -1566,7 +1566,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     maxRetryAttempts = MaxTenantChangeRetryAttempts,
                     operation = "retry_limit_exceeded"
                 });
-                return;
+                return entity;
             }
 
             // Increment retry count
@@ -1590,6 +1590,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             
             Requeue(entity, TimeSpan.FromSeconds(retryDelaySeconds));
+            return entity;
         }
 
         /// <summary>
