@@ -176,6 +176,17 @@ namespace Alethic.Auth0.Operator.Controllers
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
             an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
+            an["kubernetes.auth0.com/tenant-name"] = tenant.Name(); // Store tenant name for human readability
+            
+            // Store baseline annotations for existing clients that don't have them yet (audit trail consistency)
+            if (!an.ContainsKey("kubernetes.auth0.com/current-tenant-ref"))
+            {
+                an["kubernetes.auth0.com/current-tenant-ref"] = entity.Spec.TenantRef?.Name ?? "unknown";
+            }
+            if (!string.IsNullOrEmpty(entity.Status.Id) && !an.ContainsKey("kubernetes.auth0.com/current-client-id"))
+            {
+                an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
+            }
 
             return (tenant, api);
         }
@@ -1352,8 +1363,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 return;
 
             // Get tenant names for meaningful logging
-            var storedTenantName = an.TryGetValue("kubernetes.auth0.com/previous-tenant-ref", out var prevName) ? prevName : "unknown";
-            var newTenantName = entity.Spec.TenantRef?.Name ?? "unknown";
+            var storedTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
+            var newTenantName = newTenant.Name();
 
             // Log configuration change with spec field, previous and new values
             Logger.LogWarningJson($"*** CONFIGURATION CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} spec field 'tenantRef' changed from '{storedTenantName}' to '{newTenantName}' (UID: {storedTenantUid} -> {newTenantUid})", new
@@ -1396,20 +1407,20 @@ namespace Alethic.Auth0.Operator.Controllers
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
 
-            // Always store historical data in annotations
-            var currentTenantRef = entity.Spec.TenantRef?.Name ?? "unknown";
-            var currentClientId = entity.Status.Id ?? "unknown";
+            // Always store historical data in annotations (before they get cleared)
+            var previousTenantRef = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var prevTenantName) ? prevTenantName : "unknown";
+            var previousClientId = entity.Status.Id ?? "unknown";
 
-            an["kubernetes.auth0.com/previous-tenant-ref"] = currentTenantRef;
-            an["kubernetes.auth0.com/previous-client-id"] = currentClientId;
+            an["kubernetes.auth0.com/previous-tenant-ref"] = previousTenantRef;
+            an["kubernetes.auth0.com/previous-client-id"] = previousClientId;
 
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} stored historical data - previous tenant: {currentTenantRef}, previous client: {currentClientId}", new
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} stored historical data - previous tenant: {previousTenantRef}, previous client: {previousClientId}", new
             {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
-                previousTenantRef = currentTenantRef,
-                previousClientId = currentClientId,
+                previousTenantRef = previousTenantRef,
+                previousClientId = previousClientId,
                 operation = "store_historical_data"
             });
 
