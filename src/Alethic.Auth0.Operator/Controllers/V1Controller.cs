@@ -51,8 +51,9 @@ namespace Alethic.Auth0.Operator.Controllers
         where TStatus : V1EntityStatus
         where TConf : class
     {
-        private const int MinSecretRetryDelaySeconds = 60;
-        private const int MaxSecretRetryDelaySeconds = 300;
+        private const int MinRetryDelaySeconds = 60;
+        private const int MaxRetryDelaySeconds = 300;
+        protected const int MaxTenantChangeRetryAttempts = 2;
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
@@ -720,13 +721,23 @@ namespace Alethic.Auth0.Operator.Controllers
         }
         
         /// <summary>
-        /// Generates a random delay between MinSecretRetryDelaySeconds and MaxSecretRetryDelaySeconds for secret retry reconciliation.
+        /// Generates a random delay between MinRetryDelaySeconds and MaxRetryDelaySeconds for secret retry reconciliation.
         /// </summary>
         /// <returns>Random delay in seconds</returns>
         private int GenerateRandomSecretRetryDelay()
         {
+            return GenerateRandomRetryDelay();
+        }
+
+        /// <summary>
+        /// Generates a random delay between MinRetryDelaySeconds and MaxRetryDelaySeconds.
+        /// Shared method to avoid code duplication for different retry scenarios.
+        /// </summary>
+        /// <returns>Random delay in seconds</returns>
+        protected int GenerateRandomRetryDelay()
+        {
             var random = new Random();
-            return random.Next(MinSecretRetryDelaySeconds, MaxSecretRetryDelaySeconds + 1);
+            return random.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
         }
     }
 

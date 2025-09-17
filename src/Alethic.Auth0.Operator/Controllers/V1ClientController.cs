@@ -712,7 +712,7 @@ namespace Alethic.Auth0.Operator.Controllers
             string defaultNamespace, CancellationToken cancellationToken)
         {
             bool needsSecretCreationRetry = false;
-            
+
             if (lastConf is not null)
             {
                 // Always attempt to apply secret if secretRef is specified
@@ -835,7 +835,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (secret is null)
                 {
                     var resolvedNamespace = string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? defaultNamespace : entity.Spec.SecretRef.NamespaceProperty;
-                    
+
                     Logger.LogWarningJson(
                         $"*** SECRET MISSING *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} which does not exist - creating secret in namespace {resolvedNamespace}",
                         new
@@ -856,7 +856,7 @@ namespace Alethic.Auth0.Operator.Controllers
                                         name: entity.Spec.SecretRef.Name))
                                 .WithOwnerReference(entity),
                             cancellationToken);
-                        
+
                         Logger.LogWarningJson(
                             $"*** SECRET CREATED *** Successfully created secret {entity.Spec.SecretRef.Name} in namespace {resolvedNamespace} for {EntityTypeName} {entity.Namespace()}/{entity.Name()}",
                             new
@@ -1873,6 +1873,126 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 // Return original state if enrichment fails to avoid breaking reconciliation
                 return auth0State;
+            }
+        }
+
+        /// <summary>
+        /// Overrides the base reset method to clear client-specific status fields and secret data.
+        /// </summary>
+        /// <param name="entity">The client entity to reset</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Task representing the operation</returns>
+        protected override async Task ResetEntityStatusForNewTenant(V1Client entity, CancellationToken cancellationToken)
+        {
+            // Clear client-specific status fields
+            entity.Status.Id = null;
+            entity.Status.LastConf = null;
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cleared client-specific status fields for new tenant", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "reset_client_status"
+            });
+
+            // Delete the associated secret for tenant change
+            await DeleteSecretForTenantChange(entity, cancellationToken);
+
+            // Update the entity in Kubernetes to persist the changes
+            await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
+        }
+
+        /// <summary>
+        /// Deletes the secret when tenant reference changes to remove stale credentials.
+        /// A fresh secret will be created with new client credentials during reconciliation.
+        /// </summary>
+        /// <param name="entity">The client entity</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Task representing the operation</returns>
+        private async Task DeleteSecretForTenantChange(V1Client entity, CancellationToken cancellationToken)
+        {
+            if (entity.Spec.SecretRef is null)
+            {
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has no secretRef - skipping secret deletion for tenant change", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "skip_secret_delete"
+                });
+                return;
+            }
+
+            try
+            {
+                var secret = await ResolveSecretRef(entity.Spec.SecretRef,
+                    string.IsNullOrEmpty(entity.Spec.SecretRef.NamespaceProperty) ? entity.Namespace() : entity.Spec.SecretRef.NamespaceProperty,
+                    cancellationToken);
+
+                if (secret is null)
+                {
+                    Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} referenced secret {entity.Spec.SecretRef.Name} does not exist - nothing to delete", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        secretName = entity.Spec.SecretRef.Name,
+                        operation = "secret_not_found_for_delete"
+                    });
+                    return;
+                }
+
+                // Only delete if we are the owner of the secret
+                if (!secret.IsOwnedBy(entity))
+                {
+                    Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cannot delete secret {entity.Spec.SecretRef.Name} - not owned by this entity", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        secretName = entity.Spec.SecretRef.Name,
+                        operation = "secret_not_owned"
+                    });
+                    return;
+                }
+
+                Logger.LogWarningJson($"*** SECRET DELETION *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} deleting secret {entity.Spec.SecretRef.Name} due to tenant reference change - stale credentials must be removed", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretName = entity.Spec.SecretRef.Name,
+                    secretNamespace = secret.Namespace(),
+                    operation = "secret_delete_for_tenant_change"
+                });
+
+                await Kube.DeleteAsync<V1Secret>(secret.Name(), secret.Namespace(), cancellationToken);
+
+                Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} successfully deleted secret {entity.Spec.SecretRef.Name} for tenant change - new secret will be created with fresh credentials", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretName = entity.Spec.SecretRef.Name,
+                    secretNamespace = secret.Namespace(),
+                    operation = "secret_delete_complete"
+                });
+
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to delete secret {entity.Spec.SecretRef?.Name} during tenant change: {ex.Message}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    secretName = entity.Spec.SecretRef?.Name,
+                    errorMessage = ex.Message,
+                    operation = "secret_delete_failed"
+                }, ex);
+
+                // Don't throw - secret deletion failure shouldn't block tenant change handling
             }
         }
     }
