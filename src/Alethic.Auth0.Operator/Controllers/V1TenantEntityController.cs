@@ -136,6 +136,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
             entity = await EnsureEntityHasId(entityAfterSetup, api, cancellationToken);
 
+            // Update client ID annotation after entity has correct ID
+            entity = await UpdateClientIdAnnotation(entity, cancellationToken);
+
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
 
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
@@ -146,6 +149,42 @@ namespace Alethic.Auth0.Operator.Controllers
             entity = await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
 
             return (needsSecretCreationRetry, entity);
+        }
+
+        /// <summary>
+        /// Updates the current-client-id annotation to match the entity's actual client ID.
+        /// This is called after the entity has been assigned its correct ID.
+        /// </summary>
+        /// <param name="entity">The entity to update</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity</returns>
+        private async Task<TEntity> UpdateClientIdAnnotation(TEntity entity, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(entity.Status.Id))
+            {
+                return entity; // No ID yet, nothing to update
+            }
+
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            if (an.TryGetValue("kubernetes.auth0.com/current-client-id", out var existingClientId) == false || existingClientId != entity.Status.Id)
+            {
+                an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
+                
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} updating current-client-id annotation to {entity.Status.Id}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    clientId = entity.Status.Id,
+                    operation = "update_client_id_annotation"
+                });
+                
+                return await UpdateKubernetesMetadata(entity, "update_client_id_annotation", cancellationToken);
+            }
+
+            return entity; // No change needed
         }
 
         private async Task<(V1Tenant tenant, IManagementApiClient api, TEntity updatedEntity)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
@@ -189,20 +228,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 annotationChanges = true;
             }
             
-            // Ensure annotations always reflect current state (for audit trail consistency)
+            // Ensure tenant reference annotation always reflects current state (for audit trail consistency)
             var currentTenantRefFromSpec = entity.Spec.TenantRef?.Name ?? "unknown";
             if (an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var existingTenantRef) == false || existingTenantRef != currentTenantRefFromSpec)
             {
                 an["kubernetes.auth0.com/current-tenant-ref"] = currentTenantRefFromSpec;
                 annotationChanges = true;
-            }
-            if (!string.IsNullOrEmpty(entity.Status.Id))
-            {
-                if (an.TryGetValue("kubernetes.auth0.com/current-client-id", out var existingClientId) == false || existingClientId != entity.Status.Id)
-                {
-                    an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
-                    annotationChanges = true;
-                }
             }
 
             // Persist annotation changes if any were made
@@ -1477,8 +1508,8 @@ namespace Alethic.Auth0.Operator.Controllers
             });
 
             // Always store historical data in annotations (before they get cleared)
-            var previousTenantRef = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var prevTenantName) ? prevTenantName : "unknown";
-            var previousClientId = entity.Status.Id ?? "unknown";
+            var previousTenantRef = an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var prevTenantRef) ? prevTenantRef : "unknown";
+            var previousClientId = an.TryGetValue("kubernetes.auth0.com/current-client-id", out var prevClientId) ? prevClientId : (entity.Status.Id ?? "unknown");
 
             an["kubernetes.auth0.com/previous-tenant-ref"] = previousTenantRef;
             an["kubernetes.auth0.com/previous-client-id"] = previousClientId;
