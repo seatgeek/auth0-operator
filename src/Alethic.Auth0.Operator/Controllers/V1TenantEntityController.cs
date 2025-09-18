@@ -129,23 +129,65 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task<bool> Reconcile(TEntity entity, CancellationToken cancellationToken)
+        protected override async Task<(bool needsRequeue, TEntity updatedEntity)> Reconcile(TEntity entity, CancellationToken cancellationToken)
         {
-            var (tenant, api) = await SetupReconciliationContext(entity, cancellationToken);
+            var (tenant, api, entityAfterSetup) = await SetupReconciliationContext(entity, cancellationToken);
             var tenantApiAccess = await GetOrCreateTenantApiAccessAsync(tenant, cancellationToken);
 
-            entity = await EnsureEntityHasId(entity, api, cancellationToken);
+            entity = await EnsureEntityHasId(entityAfterSetup, api, cancellationToken);
+
+            // Update client ID annotation after entity has correct ID
+            entity = await UpdateClientIdAnnotation(entity, cancellationToken);
 
             var lastConf = await RetrieveCurrentAuth0State(entity, api, tenantApiAccess, cancellationToken);
 
             lastConf = await ApplyUpdatesIfNeeded(entity, tenantApiAccess, api, lastConf, cancellationToken);
 
-            var needsSecretCreationRetry = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
+            var (updatedEntity, needsSecretCreationRetry) = await FinalizeReconciliation(entity, api, lastConf, cancellationToken);
 
-            return needsSecretCreationRetry;
+            // Clear tenant change retry counter on successful reconciliation using the updated entity
+            entity = await ClearTenantChangeRetryCounter(updatedEntity, cancellationToken);
+
+            return (needsSecretCreationRetry, entity);
         }
 
-        private async Task<(V1Tenant tenant, IManagementApiClient api)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
+        /// <summary>
+        /// Updates the current-client-id annotation to match the entity's actual client ID.
+        /// This is called after the entity has been assigned its correct ID.
+        /// </summary>
+        /// <param name="entity">The entity to update</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity</returns>
+        private async Task<TEntity> UpdateClientIdAnnotation(TEntity entity, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(entity.Status.Id))
+            {
+                return entity; // No ID yet, nothing to update
+            }
+
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            if (an.TryGetValue("kubernetes.auth0.com/current-client-id", out var existingClientId) == false || existingClientId != entity.Status.Id)
+            {
+                an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
+                
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} updating current-client-id annotation to {entity.Status.Id}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    clientId = entity.Status.Id,
+                    operation = "update_client_id_annotation"
+                });
+                
+                return await UpdateKubernetesMetadata(entity, "update_client_id_annotation", cancellationToken);
+            }
+
+            return entity; // No change needed
+        }
+
+        private async Task<(V1Tenant tenant, IManagementApiClient api, TEntity updatedEntity)> SetupReconciliationContext(TEntity entity, CancellationToken cancellationToken)
         {
             EnsureValidTenantRef(entity);
             EnsureSpecConfExists(entity);
@@ -153,6 +195,9 @@ namespace Alethic.Auth0.Operator.Controllers
             var tenant = await ResolveTenantRef(entity, cancellationToken);
             if (tenant is null)
                 throw new InvalidOperationException($"Failed to setup reconciliation context for {EntityTypeName} {entity.Namespace()}/{entity.Name()} - missing a tenant (cannot resolve TenantRef).");
+
+            // Check for tenant reference changes before proceeding
+            entity = await DetectAndHandleTenantRefChange(entity, tenant, cancellationToken);
 
             var api = await GetTenantApiClientAsync(tenant, cancellationToken);
             if (api is null)
@@ -169,9 +214,42 @@ namespace Alethic.Auth0.Operator.Controllers
             // ensure we hold a reference to the tenant
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
-            an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
+            bool annotationChanges = false;
+            
+            // Update tenant tracking annotations if needed
+            if (an.TryGetValue("kubernetes.auth0.com/tenant-uid", out var existingUid) == false || existingUid != tenant.Uid())
+            {
+                an["kubernetes.auth0.com/tenant-uid"] = tenant.Uid();
+                annotationChanges = true;
+            }
+            if (an.TryGetValue("kubernetes.auth0.com/tenant-name", out var existingName) == false || existingName != tenant.Name())
+            {
+                an["kubernetes.auth0.com/tenant-name"] = tenant.Name(); // Store tenant name for human readability
+                annotationChanges = true;
+            }
+            
+            // Ensure tenant reference annotation always reflects current state (for audit trail consistency)
+            var currentTenantRefFromSpec = entity.Spec.TenantRef?.Name ?? "unknown";
+            if (an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var existingTenantRef) == false || existingTenantRef != currentTenantRefFromSpec)
+            {
+                an["kubernetes.auth0.com/current-tenant-ref"] = currentTenantRefFromSpec;
+                annotationChanges = true;
+            }
 
-            return (tenant, api);
+            // Persist annotation changes if any were made
+            if (annotationChanges)
+            {
+                entity = await UpdateKubernetesMetadata(entity, "setup_reconciliation_context", cancellationToken);
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} persisted annotation updates during reconciliation context setup", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "persist_annotations"
+                });
+            }
+
+            return (tenant, api, entity);
         }
 
         private async Task<TEntity> EnsureEntityHasId(TEntity entity, IManagementApiClient api, CancellationToken cancellationToken)
@@ -286,7 +364,7 @@ namespace Alethic.Auth0.Operator.Controllers
             return await UpdateKubernetesStatus(entity, "finding entity", cancellationToken);
         }
 
-        private async Task<TEntity> UpdateKubernetesStatus(TEntity entity, string operation, CancellationToken cancellationToken)
+        protected async Task<TEntity> UpdateKubernetesStatus(TEntity entity, string operation, CancellationToken cancellationToken)
         {
             try
             {
@@ -295,6 +373,39 @@ namespace Alethic.Auth0.Operator.Controllers
             catch (Exception ex)
             {
                 Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after {operation}: {ex.Message}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation,
+                    errorMessage = ex.Message
+                }, ex);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Updates the entire Kubernetes resource including metadata (annotations, labels) and status.
+        /// Use this method when you need to persist annotation changes.
+        /// 
+        /// Note: PatchAsync would be more efficient but is currently in preview in KubeOps SDK.
+        /// UpdateAsync is the stable, production-ready approach for metadata updates.
+        /// </summary>
+        /// <param name="entity">The entity to update</param>
+        /// <param name="operation">Description of the operation for logging</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity</returns>
+        protected async Task<TEntity> UpdateKubernetesMetadata(TEntity entity, string operation, CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Use UpdateAsync for metadata changes - stable and production-ready
+                // PatchAsync would be more efficient but is currently in preview
+                return await Kube.UpdateAsync(entity, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes metadata after {operation}: {ex.Message}", new
                 {
                     entityTypeName = EntityTypeName,
                     entityNamespace = entity.Namespace(),
@@ -536,12 +647,12 @@ namespace Alethic.Auth0.Operator.Controllers
             return TransformToSystemTextJson<Hashtable>(appliedJson);
         }
 
-        private async Task<bool> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
+        private async Task<(TEntity updatedEntity, bool needsSecretCreationRetry)> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
         {
             var needsSecretCreationRetry = await ApplyStatus(api, entity, lastConf ?? new Hashtable(), entity.Namespace(), cancellationToken);
-            await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
-            ScheduleNextReconciliation(entity);
-            return needsSecretCreationRetry;
+            var updatedEntity = await UpdateKubernetesStatus(entity, "applying configuration", cancellationToken);
+            ScheduleNextReconciliation(updatedEntity);
+            return (updatedEntity, needsSecretCreationRetry);
         }
 
         private void ScheduleNextReconciliation(TEntity entity)
@@ -1322,6 +1433,233 @@ namespace Alethic.Auth0.Operator.Controllers
             await base.ReconcileAsync(entity, cancellationToken);
         }
 
+        /// <summary>
+        /// Detects if the tenant reference has changed and handles the transition.
+        /// </summary>
+        /// <param name="entity">The entity being reconciled</param>
+        /// <param name="newTenant">The newly resolved tenant</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity if changes were detected, otherwise the original entity</returns>
+        private async Task<TEntity> DetectAndHandleTenantRefChange(TEntity entity, V1Tenant newTenant, CancellationToken cancellationToken)
+        {
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            var storedTenantUid = an.TryGetValue("kubernetes.auth0.com/tenant-uid", out var uid) ? uid : null;
+
+            // If no stored tenant UID, this is first reconciliation - no change to handle
+            if (string.IsNullOrEmpty(storedTenantUid))
+                return entity;
+
+            var newTenantUid = newTenant.Uid();
+            
+            // If tenant UID hasn't changed, no action needed
+            if (string.Equals(storedTenantUid, newTenantUid, StringComparison.OrdinalIgnoreCase))
+                return entity;
+
+            // Get tenant names for meaningful logging
+            var storedTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
+            var newTenantName = newTenant.Name();
+
+            // Log configuration change with spec field, previous and new values
+            Logger.LogWarningJson($"*** CONFIGURATION CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} spec field 'tenantRef' changed from '{storedTenantName}' to '{newTenantName}' (UID: {storedTenantUid} -> {newTenantUid})", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                specField = "tenantRef",
+                previousValue = storedTenantName,
+                newValue = newTenantName,
+                previousTenantUid = storedTenantUid,
+                newTenantUid = newTenantUid,
+                operation = "config_change_detected"
+            });
+
+            return await HandleTenantRefChange(entity, storedTenantUid, newTenantUid, cancellationToken);
+        }
+
+        /// <summary>
+        /// Handles the transition when a tenant reference changes.
+        /// Stores historical data and resets entity status for new tenant.
+        /// </summary>
+        /// <param name="entity">The entity with changed tenant reference</param>
+        /// <param name="oldTenantUid">The old tenant UID</param>
+        /// <param name="newTenantUid">The new tenant UID</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity with latest resourceVersion</returns>
+        private async Task<TEntity> HandleTenantRefChange(TEntity entity, string oldTenantUid, string newTenantUid, CancellationToken cancellationToken)
+        {
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            // Get tenant names for meaningful logging
+            var oldTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
+            var newTenantName = entity.Spec.TenantRef?.Name ?? "unknown";
+            
+            Logger.LogWarningJson($"*** TENANT REFERENCE CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference changed from '{oldTenantName}' ({oldTenantUid}) to '{newTenantName}' ({newTenantUid})", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                oldTenantUid,
+                newTenantUid,
+                oldTenantName,
+                newTenantName,
+                operation = "tenant_ref_change"
+            });
+
+            // Always store historical data in annotations (before they get cleared)
+            var previousTenantRef = an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var prevTenantRef) ? prevTenantRef : "unknown";
+            var previousClientId = an.TryGetValue("kubernetes.auth0.com/current-client-id", out var prevClientId) ? prevClientId : (entity.Status.Id ?? "unknown");
+
+            an["kubernetes.auth0.com/previous-tenant-ref"] = previousTenantRef;
+            an["kubernetes.auth0.com/previous-client-id"] = previousClientId;
+
+            // Persist historical annotations immediately
+            entity = await UpdateKubernetesMetadata(entity, "store_historical_data", cancellationToken);
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} stored historical data - previous tenant: {previousTenantRef}, previous client: {previousClientId}", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                previousTenantRef = previousTenantRef,
+                previousClientId = previousClientId,
+                operation = "store_historical_data"
+            });
+
+            // Reset entity status to prepare for new tenant
+            entity = await ResetEntityStatusForNewTenant(entity, cancellationToken);
+
+            // Schedule retry reconciliation for new tenant client creation
+            entity = await ScheduleTenantChangeRetryReconciliation(entity, cancellationToken);
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference change handling complete - retry reconciliation scheduled", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                newTenantUid,
+                operation = "tenant_change_complete"
+            });
+
+            return entity;
+        }
+
+        /// <summary>
+        /// Resets entity status fields for transition to new tenant.
+        /// Virtual method to allow entity-specific implementations.
+        /// </summary>
+        /// <param name="entity">The entity to reset</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity with latest resource version</returns>
+        protected virtual async Task<TEntity> ResetEntityStatusForNewTenant(TEntity entity, CancellationToken cancellationToken)
+        {
+            // Clear basic status fields that are tenant-specific
+            entity.Status.Id = null;
+            entity.Status.LastConf = null;
+
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cleared basic status fields for new tenant", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                operation = "reset_status_basic"
+            });
+
+            // Update the entity in Kubernetes to persist the changes and return updated entity
+            return await UpdateKubernetesStatus(entity, "tenant_change_reset", cancellationToken);
+        }
+
+        /// <summary>
+        /// Schedules a retry reconciliation after tenant reference change with random delay.
+        /// Checks retry limits before scheduling.
+        /// </summary>
+        /// <param name="entity">The entity to schedule retry for</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Task representing the operation</returns>
+        private async Task<TEntity> ScheduleTenantChangeRetryReconciliation(TEntity entity, CancellationToken cancellationToken)
+        {
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            // Get current retry count
+            var retryCountStr = an.TryGetValue("kubernetes.auth0.com/tenant-change-retry-count", out var countStr) ? countStr : "0";
+            if (!int.TryParse(retryCountStr, out var currentRetryCount))
+            {
+                currentRetryCount = 0;
+            }
+
+            // Check if we've exceeded the maximum retry attempts
+            if (currentRetryCount >= MaxTenantChangeRetryAttempts)
+            {
+                Logger.LogWarningJson($"*** RETRY LIMIT EXCEEDED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} has exceeded maximum tenant change retry attempts ({MaxTenantChangeRetryAttempts}) - waiting for next reconciliation loop", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    currentRetryCount,
+                    maxRetryAttempts = MaxTenantChangeRetryAttempts,
+                    operation = "retry_limit_exceeded"
+                });
+                return entity;
+            }
+
+            // Increment retry count
+            currentRetryCount++;
+            an["kubernetes.auth0.com/tenant-change-retry-count"] = currentRetryCount.ToString();
+
+            // Persist retry counter immediately
+            entity = await UpdateKubernetesMetadata(entity, "increment_retry_counter", cancellationToken);
+
+            var retryDelaySeconds = GenerateRandomRetryDelay();
+            
+            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} scheduling tenant change retry reconciliation #{currentRetryCount}/{MaxTenantChangeRetryAttempts} in {retryDelaySeconds}s for new client creation", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                retryDelaySeconds,
+                currentRetryCount,
+                maxRetryAttempts = MaxTenantChangeRetryAttempts,
+                operation = "schedule_tenant_change_retry"
+            });
+            
+            Requeue(entity, TimeSpan.FromSeconds(retryDelaySeconds));
+            return entity;
+        }
+
+        /// <summary>
+        /// Clears the tenant change retry counter on successful reconciliation.
+        /// </summary>
+        /// <param name="entity">The entity to clear retry counter for</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The updated entity with latest resourceVersion</returns>
+        private async Task<TEntity> ClearTenantChangeRetryCounter(TEntity entity, CancellationToken cancellationToken)
+        {
+            var resolvedEntity = entity;
+            
+            var md = entity.EnsureMetadata();
+            var an = md.EnsureAnnotations();
+            
+            if (an.ContainsKey("kubernetes.auth0.com/tenant-change-retry-count"))
+            {
+                an.Remove("kubernetes.auth0.com/tenant-change-retry-count");
+                
+                Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cleared tenant change retry counter on successful reconciliation", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    operation = "clear_retry_counter"
+                });
+                
+                // Use UpdateKubernetesMetadata to persist annotation removal
+                resolvedEntity = await UpdateKubernetesMetadata(entity, "clear_retry_counter", cancellationToken);
+            }
+
+            return resolvedEntity;
+        }
+        
     }
 
 }
