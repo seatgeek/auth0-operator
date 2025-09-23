@@ -304,13 +304,22 @@ namespace Alethic.Auth0.Operator.Controllers
             ValidateCreatePolicy(entity);
             var init = ValidateAndGetInitConfiguration(entity);
 
-            entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} calling Auth0 API to create entity", new
             {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
-                createdId = entity.Status.Id
+                auth0ApiCallType = "write"
+            });
+
+            entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                createdId = entity.Status.Id,
+                auth0ApiCallType = "write"
             });
 
             return await UpdateKubernetesStatus(entity, "creation", cancellationToken);
@@ -1169,18 +1178,38 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Performs deep comparison of two hashtables to detect configuration differences.
+        /// Hash keys with null values are ignored during comparison.
         /// </summary>
         /// <param name="left">First hashtable to compare</param>
         /// <param name="right">Second hashtable to compare</param>
         /// <returns>True if hashtables are equal, false otherwise</returns>
         private static bool AreHashtablesEqual(Hashtable left, Hashtable right)
         {
-            if (left.Count != right.Count)
-                return false;
+            // Filter out entries with null values from both hashtables
+            var leftFiltered = new List<DictionaryEntry>();
+            var rightFiltered = new List<DictionaryEntry>();
 
             foreach (DictionaryEntry entry in left)
             {
-                if (!right.ContainsKey(entry.Key))
+                if (entry.Value is not null)
+                    leftFiltered.Add(entry);
+            }
+
+            foreach (DictionaryEntry entry in right)
+            {
+                if (entry.Value is not null)
+                    rightFiltered.Add(entry);
+            }
+
+            // Compare counts after filtering null values
+            if (leftFiltered.Count != rightFiltered.Count)
+                return false;
+
+            // Compare each non-null entry from left hashtable
+            foreach (var entry in leftFiltered)
+            {
+                // Check if right hashtable contains the key with a non-null value
+                if (!right.ContainsKey(entry.Key) || right[entry.Key] is null)
                     return false;
 
                 if (!AreValuesEqual(entry.Value, right[entry.Key]))
