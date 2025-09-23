@@ -121,6 +121,10 @@ namespace Alethic.Auth0.Operator.Controllers
             };
             
             var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry);
+            if (apiCallType == Auth0ApiCallType.Write)
+            {
+                Logger.LogWarning(jsonLog);
+            }
             Logger.LogInformation(jsonLog);
         }
 

@@ -1547,7 +1547,7 @@ namespace Alethic.Auth0.Operator.Controllers
 #pragma warning restore CS0618 // Type or member is obsolete
             };
 
-            Logger.LogInformationJson(
+            Logger.LogWarningJson(
                 $"{EntityTypeName} updating connection {connectionId} to include client {clientId} in enabled_clients",
                 new
                 {
@@ -1557,13 +1557,13 @@ namespace Alethic.Auth0.Operator.Controllers
                     operation = "update_enabled_clients"
                 });
 
-            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients: {connectionId}", Auth0ApiCallType.Write,
+            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients: connection ID = {connectionId}", Auth0ApiCallType.Write,
                 "A0Connection", connectionId, "unknown", "update_connection_enabled_clients");
             await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
 
             InvalidateConnectionCache(connectionId);
 
-            Logger.LogInformationJson(
+            Logger.LogWarningJson(
                 $"{EntityTypeName} successfully updated connection {connectionId} enabled_clients to include client {clientId}",
                 new
                 {
