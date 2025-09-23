@@ -304,13 +304,22 @@ namespace Alethic.Auth0.Operator.Controllers
             ValidateCreatePolicy(entity);
             var init = ValidateAndGetInitConfiguration(entity);
 
-            entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
-            Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new
+            Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} calling Auth0 API to create entity", new
             {
                 entityTypeName = EntityTypeName,
                 entityNamespace = entity.Namespace(),
                 entityName = entity.Name(),
-                createdId = entity.Status.Id
+                auth0ApiCallType = "write"
+            });
+
+            entity.Status.Id = await Create(api, init, entity.Namespace(), cancellationToken);
+            Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} created with {entity.Status.Id}", new
+            {
+                entityTypeName = EntityTypeName,
+                entityNamespace = entity.Namespace(),
+                entityName = entity.Name(),
+                createdId = entity.Status.Id,
+                auth0ApiCallType = "write"
             });
 
             return await UpdateKubernetesStatus(entity, "creation", cancellationToken);
