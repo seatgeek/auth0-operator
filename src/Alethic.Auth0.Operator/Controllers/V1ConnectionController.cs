@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,7 @@ using Auth0.ManagementApi.Models;
 using k8s.Models;
 
 using KubeOps.Abstractions.Controller;
+using KubeOps.Abstractions.Entities;
 using KubeOps.Abstractions.Queue;
 using KubeOps.Abstractions.Rbac;
 using KubeOps.KubernetesClient;
@@ -58,6 +60,99 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <inheritdoc />
         protected override string EntityTypeName => "A0Connection";
+
+        /// <summary>
+        /// Override to validate Azure AD v1.0 connections before reconciliation
+        /// </summary>
+        public override async Task ReconcileAsync(V1Connection entity, CancellationToken cancellationToken)
+        {
+            // Check for unsupported Azure AD v1.0 extended attributes
+            if (HasUnsupportedAzureADv1Options(entity, out var unsupportedOptions))
+            {
+                var unsupportedList = string.Join(", ", unsupportedOptions);
+                Logger.LogWarningJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} has unsupported Azure AD v1.0 options: {unsupportedList}. Skipping reconciliation.", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    unsupportedOptions,
+                    reason = "azure_ad_v1_extended_attributes_not_supported",
+                    action = "skip_reconciliation"
+                });
+
+                try
+                {
+                    await Kube.CreateAsync(new Eventsv1Event(
+                            DateTime.Now,
+                            metadata: new V1ObjectMeta(namespaceProperty: entity.Namespace(), generateName: "auth0"),
+                            reportingController: "kubernetes.auth0.com/operator",
+                            reportingInstance: Dns.GetHostName(),
+                            regarding: entity.MakeObjectReference(),
+                            action: "Reconcile",
+                            type: "Warning",
+                            reason: "UnsupportedAzureADv1Options",
+                            note: $"Azure AD v1.0 connection has unsupported options ({unsupportedList}) due to Microsoft's retirement of Azure AD Graph API. " +
+                                  $"Extended attributes (ext_profile, ext_groups, ext_nested_groups, basic_profile) are no longer supported. " +
+                                  $"Please remove these options or migrate to identity_api: 'microsoft-identity-platform-v2.0' to continue using extended attributes."),
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogErrorJson($"Failed to create Kubernetes warning event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {ex.Message}", new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
+                        errorMessage = ex.Message
+                    }, ex);
+                    // Don't rethrow - event creation failure shouldn't block the skip
+                }
+
+                return; // Skip reconciliation
+            }
+
+            await base.ReconcileAsync(entity, cancellationToken);
+        }
+
+        /// <summary>
+        /// Checks if the connection has unsupported Azure AD v1.0 options
+        /// </summary>
+        private bool HasUnsupportedAzureADv1Options(V1Connection entity, out List<string> unsupportedOptions)
+        {
+            unsupportedOptions = new List<string>();
+
+            var conf = entity.Spec.Conf ?? entity.Spec.Init;
+            if (conf?.Options == null)
+                return false;
+
+            // Check if this is an Azure AD v1.0 connection
+            if (conf.Options.ContainsKey("identity_api") &&
+                conf.Options["identity_api"] is string identityApi &&
+                identityApi == "azure-active-directory-v1.0")
+            {
+                // Check for unsupported extended attribute options
+                var unsupportedOptionNames = new[] { "ext_profile", "ext_groups", "ext_nested_groups", "basic_profile" };
+
+                foreach (var optionName in unsupportedOptionNames)
+                {
+                    if (conf.Options.ContainsKey(optionName))
+                    {
+                        var value = conf.Options[optionName];
+                        // Check if the value is true (for boolean options) or non-null
+                        if (value is bool boolValue && boolValue)
+                        {
+                            unsupportedOptions.Add(optionName);
+                        }
+                        else if (value != null && value is not bool)
+                        {
+                            unsupportedOptions.Add(optionName);
+                        }
+                    }
+                }
+            }
+
+            return unsupportedOptions.Count > 0;
+        }
 
         /// <inheritdoc />
         protected override async Task<Hashtable?> Get(IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
@@ -114,6 +209,18 @@ namespace Alethic.Auth0.Operator.Controllers
                     status = "not_found"
                 });
                 return null;
+            }
+            catch (ErrorApiException e) when (e.Message.Contains("Extended attributes retrieval is no longer available"))
+            {
+                Logger.LogErrorJson($"{EntityTypeName} failed to retrieve connection from Auth0 with ID {id} - Azure AD Graph extended attributes are no longer supported: {e.Message}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    operation = "fetch",
+                    status = "failed",
+                    errorType = "azure_ad_extended_attributes_not_supported"
+                });
+                throw new InvalidOperationException($"Azure AD connection (ID: {id}) cannot be retrieved because extended attributes (ext_profile, ext_groups) are no longer supported due to Microsoft's retirement of Azure AD Graph. Please remove extended attributes from the connection options or upgrade to a newer Identity API version.", e);
             }
             catch (Exception e)
             {
@@ -180,6 +287,20 @@ namespace Alethic.Auth0.Operator.Controllers
                             status = "not_found"
                         });
                         return null;
+                    }
+                    catch (ErrorApiException e) when (e.Message.Contains("Extended attributes retrieval is no longer available"))
+                    {
+                        Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to find connection with ID {connectionId} - Azure AD Graph extended attributes are no longer supported: {e.Message}", new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            connectionId,
+                            operation = "search_by_id",
+                            status = "failed",
+                            errorType = "azure_ad_extended_attributes_not_supported"
+                        });
+                        throw new InvalidOperationException($"Azure AD connection (ID: {connectionId}) cannot be retrieved because extended attributes (ext_profile, ext_groups) are no longer supported due to Microsoft's retirement of Azure AD Graph. Please remove extended attributes from the connection options or upgrade to a newer Identity API version.", e);
                     }
                 }
 
@@ -289,6 +410,19 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 return self.Id;
             }
+            catch (ErrorApiException ex) when (ex.Message.Contains("Extended attributes retrieval is no longer available"))
+            {
+                Logger.LogErrorJson($"{EntityTypeName} failed to create connection in Auth0 with name: {conf.Name} and strategy: {conf.Strategy} - Azure AD Graph extended attributes are no longer supported: {ex.Message}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "create",
+                    status = "failed",
+                    errorType = "azure_ad_extended_attributes_not_supported"
+                });
+                throw new InvalidOperationException($"Azure AD connection '{conf.Name}' cannot be created because extended attributes (ext_profile, ext_groups) are no longer supported due to Microsoft's retirement of Azure AD Graph. Please remove extended attributes from the connection options or upgrade to a newer Identity API version.", ex);
+            }
             catch (Exception ex)
             {
                 Logger.LogErrorJson($"{EntityTypeName} failed to create connection in Auth0 with name: {conf.Name} and strategy: {conf.Strategy}: {ex.Message}", new
@@ -320,7 +454,25 @@ namespace Alethic.Auth0.Operator.Controllers
                 var req = new ConnectionUpdateRequest();
                 ApplyConfToRequest(req, conf);
                 req.Name = null!; // not allowed to be changed
-                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options ?? new Hashtable()))) ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions()) : conf.Options ?? new Hashtable();
+
+                // Merge Auth0's current options with desired options to preserve unmanaged fields
+                var mergedOptions = MergeConnectionOptions(last, conf.Options);
+
+                Logger.LogDebugJson($"{EntityTypeName} merged options for update", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    desiredOptionsCount = conf.Options?.Count ?? 0,
+                    auth0OptionsCount = (last?.ContainsKey("options") == true && last["options"] is Hashtable h) ? h.Count : 0,
+                    mergedOptionsCount = mergedOptions.Count,
+                    operation = "merge_options_for_update"
+                });
+
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase)
+                    ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(
+                        JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(mergedOptions)))
+                        ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions())
+                    : mergedOptions;
 
                 // Handle metadata with special nulling logic (overriding what ApplyConfToRequest set)
                 req.Metadata = conf.Metadata ?? new Hashtable();
@@ -366,6 +518,20 @@ namespace Alethic.Auth0.Operator.Controllers
                     operation = "update",
                     status = "success"
                 });
+            }
+            catch (ErrorApiException ex) when (ex.Message.Contains("Extended attributes retrieval is no longer available"))
+            {
+                Logger.LogErrorJson($"{EntityTypeName} failed to update connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy} - Azure AD Graph extended attributes are no longer supported: {ex.Message}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    connectionName = conf.Name,
+                    strategy = conf.Strategy,
+                    operation = "update",
+                    status = "failed",
+                    errorType = "azure_ad_extended_attributes_not_supported"
+                });
+                throw new InvalidOperationException($"Azure AD connection '{conf.Name}' (ID: {id}) cannot be updated because extended attributes (ext_profile, ext_groups) are no longer supported due to Microsoft's retirement of Azure AD Graph. Please remove extended attributes from the connection options or upgrade to a newer Identity API version.", ex);
             }
             catch (Exception ex)
             {
@@ -507,6 +673,86 @@ namespace Alethic.Auth0.Operator.Controllers
 
 
             return filtered;
+        }
+
+        /// <summary>
+        /// Filters the options field to only compare keys present in the desired Kubernetes configuration.
+        /// This prevents false drift detection for Auth0-managed fields not specified in the K8s spec.
+        /// </summary>
+        /// <param name="fieldName">Name of the field being compared</param>
+        /// <param name="auth0Value">Value from Auth0 API (current state)</param>
+        /// <param name="desiredValue">Value from Kubernetes spec (desired state)</param>
+        /// <returns>Tuple of filtered values ready for comparison</returns>
+        protected override (object? filteredAuth0, object? filteredDesired) FilterNestedFieldForComparison(
+            string fieldName,
+            object? auth0Value,
+            object? desiredValue)
+        {
+            // Special handling for options field - only compare fields present in desired state
+            if (string.Equals(fieldName, "options", StringComparison.OrdinalIgnoreCase))
+            {
+                if (desiredValue is not Hashtable desiredOptions)
+                    return (auth0Value, desiredValue);
+
+                if (auth0Value is not Hashtable auth0Options)
+                    return (auth0Value, desiredValue);
+
+                // Create filtered Auth0 options containing only keys from desired spec
+                var filteredAuth0Options = new Hashtable();
+                foreach (DictionaryEntry entry in desiredOptions)
+                {
+                    if (auth0Options.ContainsKey(entry.Key))
+                    {
+                        filteredAuth0Options[entry.Key] = auth0Options[entry.Key];
+                    }
+                    // Keys in desired but not in Auth0 are omitted (will be detected as "added")
+                }
+
+                Logger.LogDebugJson($"{EntityTypeName} filtered options for comparison", new
+                {
+                    entityTypeName = EntityTypeName,
+                    desiredKeyCount = desiredOptions.Count,
+                    auth0OriginalKeyCount = auth0Options.Count,
+                    auth0FilteredKeyCount = filteredAuth0Options.Count,
+                    operation = "filter_options_for_comparison"
+                });
+
+                return (filteredAuth0Options, desiredOptions);
+            }
+
+            return base.FilterNestedFieldForComparison(fieldName, auth0Value, desiredValue);
+        }
+
+        /// <summary>
+        /// Merges Auth0's current options with desired options to preserve Auth0-managed fields.
+        /// Fields in desiredOptions override corresponding fields in Auth0's current options.
+        /// </summary>
+        /// <param name="lastConf">Last known Auth0 configuration (from Get() call)</param>
+        /// <param name="desiredOptions">Desired options from Kubernetes spec.conf</param>
+        /// <returns>Merged Hashtable with Auth0 fields preserved and desired fields applied</returns>
+        private static Hashtable MergeConnectionOptions(Hashtable? lastConf, Hashtable? desiredOptions)
+        {
+            var merged = new Hashtable();
+
+            // Step 1: Start with Auth0's current options (base layer)
+            if (lastConf?.ContainsKey("options") == true && lastConf["options"] is Hashtable currentOptions)
+            {
+                foreach (DictionaryEntry entry in currentOptions)
+                {
+                    merged[entry.Key] = entry.Value;
+                }
+            }
+
+            // Step 2: Override with desired options (Kubernetes spec wins)
+            if (desiredOptions is not null)
+            {
+                foreach (DictionaryEntry entry in desiredOptions)
+                {
+                    merged[entry.Key] = entry.Value;
+                }
+            }
+
+            return merged;
         }
 
         private bool WasConnectionMetadataValuesRemoved(Hashtable metadata)

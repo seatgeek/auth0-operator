@@ -167,11 +167,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
-            
+
             if (an.TryGetValue("kubernetes.auth0.com/current-client-id", out var existingClientId) == false || existingClientId != entity.Status.Id)
             {
                 an["kubernetes.auth0.com/current-client-id"] = entity.Status.Id;
-                
+
                 Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} updating current-client-id annotation to {entity.Status.Id}", new
                 {
                     entityTypeName = EntityTypeName,
@@ -180,7 +180,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     clientId = entity.Status.Id,
                     operation = "update_client_id_annotation"
                 });
-                
+
                 return await UpdateKubernetesMetadata(entity, "update_client_id_annotation", cancellationToken);
             }
 
@@ -215,7 +215,7 @@ namespace Alethic.Auth0.Operator.Controllers
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
             bool annotationChanges = false;
-            
+
             // Update tenant tracking annotations if needed
             if (an.TryGetValue("kubernetes.auth0.com/tenant-uid", out var existingUid) == false || existingUid != tenant.Uid())
             {
@@ -227,7 +227,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 an["kubernetes.auth0.com/tenant-name"] = tenant.Name(); // Store tenant name for human readability
                 annotationChanges = true;
             }
-            
+
             // Ensure tenant reference annotation always reflects current state (for audit trail consistency)
             var currentTenantRefFromSpec = entity.Spec.TenantRef?.Name ?? "unknown";
             if (an.TryGetValue("kubernetes.auth0.com/current-tenant-ref", out var existingTenantRef) == false || existingTenantRef != currentTenantRefFromSpec)
@@ -1042,8 +1042,12 @@ namespace Alethic.Auth0.Operator.Controllers
                 var filteredLast = FilterFieldsForComparison(lastConf);
                 var filteredDesired = FilterFieldsForComparison(desiredHashtable);
 
+                // Apply nested field filtering to the options field
+                // Only filter the Auth0 state (filteredLast) - the desired state is our reference
+                var nestedFilteredLast = ApplyNestedFilteringToOptionsField(filteredLast, filteredDesired);
+
                 // Compare the filtered configurations
-                var result = !AreHashtablesEqual(filteredLast, filteredDesired);
+                var result = !AreHashtablesEqual(nestedFilteredLast, filteredDesired);
 
                 var driftFieldDetails = new List<DriftFieldDetails>();
                 if (result)
@@ -1075,6 +1079,50 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>The hashtable with entity-specific filtering applied</returns>
         protected virtual Hashtable PostProcessFilteredConfiguration(Hashtable filtered)
         {
+            return filtered;
+        }
+
+        /// <summary>
+        /// Filters nested field values before comparison. Override in derived classes to implement
+        /// entity-specific logic for comparing nested structures like options or metadata.
+        /// This allows partial comparison where only fields present in the desired configuration
+        /// are compared, ignoring additional fields that may exist in the Auth0 state.
+        /// </summary>
+        /// <param name="fieldName">Name of the top-level field being compared</param>
+        /// <param name="auth0Value">Value from Auth0 API (current state)</param>
+        /// <param name="desiredValue">Value from Kubernetes spec (desired state)</param>
+        /// <returns>Tuple of filtered values ready for comparison</returns>
+        protected virtual (object? filteredAuth0, object? filteredDesired) FilterNestedFieldForComparison(
+            string fieldName,
+            object? auth0Value,
+            object? desiredValue)
+        {
+            // Base implementation: no filtering, compare values as-is
+            return (auth0Value, desiredValue);
+        }
+
+        /// <summary>
+        /// Applies nested field filtering only to the "options" field if it exists.
+        /// </summary>
+        /// <param name="auth0Config">The Auth0 configuration Hashtable to filter</param>
+        /// <param name="desiredConfig">The desired state Hashtable used as reference for filtering</param>
+        /// <returns>New Hashtable with filtered options field (if present), other fields unchanged</returns>
+        private Hashtable ApplyNestedFilteringToOptionsField(Hashtable auth0Config, Hashtable desiredConfig)
+        {
+            // Start with a copy of the Auth0 config
+            var filtered = new Hashtable(auth0Config);
+
+            // Only apply filtering if "options" field exists in both configurations
+            if (auth0Config.ContainsKey("options") && desiredConfig.ContainsKey("options"))
+            {
+                var auth0Options = auth0Config["options"];
+                var desiredOptions = desiredConfig["options"];
+
+                // Apply nested filtering specifically to options field
+                var (filteredOptions, _) = FilterNestedFieldForComparison("options", auth0Options, desiredOptions);
+                filtered["options"] = filteredOptions;
+            }
+
             return filtered;
         }
 
@@ -1313,11 +1361,17 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Added, FieldName = key, OldValue = null, NewValue = entry.Value });
                 }
-                else if (!AreValuesEqual(entry.Value, last[entry.Key]))
+                else
                 {
-                    var oldValue = FormatValueForLogging(last[entry.Key]);
-                    var newValue = FormatValueForLogging(entry.Value);
-                    driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Modified, FieldName = key, OldValue = oldValue, NewValue = newValue });
+                    // Apply nested field filtering before comparison
+                    var (filteredAuth0, filteredDesired) = FilterNestedFieldForComparison(key, last[entry.Key], entry.Value);
+
+                    if (!AreValuesEqual(filteredDesired, filteredAuth0))
+                    {
+                        var oldValue = FormatValueForLogging(filteredAuth0);
+                        var newValue = FormatValueForLogging(filteredDesired);
+                        driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Modified, FieldName = key, OldValue = oldValue, NewValue = newValue });
+                    }
                 }
             }
 
@@ -1415,6 +1469,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 return "(null)";
 
             // Handle different value types with more detail
+            // IMPORTANT: Check Hashtable before IEnumerable since Hashtable implements IEnumerable
             switch (value)
             {
                 case string stringValue:
@@ -1427,17 +1482,18 @@ namespace Alethic.Auth0.Operator.Controllers
                 case int or long or float or double or decimal:
                     return value.ToString() ?? "(null)";
 
+                case Hashtable hashtable:
+                    // Show up to 10 entries for Hashtables (useful for debugging options drift)
+                    var entries = hashtable.Cast<DictionaryEntry>().Take(10)
+                        .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
+                    var hashPreview = string.Join(", ", entries);
+                    return hashtable.Count > 10 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
+
                 case IEnumerable enumerable when value is not string:
                     var items = enumerable.Cast<object>().Take(5).Select(FormatValueForLogging);
                     var arrayPreview = string.Join(", ", items);
                     var count = enumerable.Cast<object>().Count();
                     return count > 5 ? $"[{arrayPreview}, ...] (total: {count} items)" : $"[{arrayPreview}]";
-
-                case Hashtable hashtable:
-                    var entries = hashtable.Cast<DictionaryEntry>().Take(3)
-                        .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
-                    var hashPreview = string.Join(", ", entries);
-                    return hashtable.Count > 3 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
 
                 default:
                     var objectStr = value.ToString() ?? "(null)";
@@ -1480,7 +1536,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 return entity;
 
             var newTenantUid = newTenant.Uid();
-            
+
             // If tenant UID hasn't changed, no action needed
             if (string.Equals(storedTenantUid, newTenantUid, StringComparison.OrdinalIgnoreCase))
                 return entity;
@@ -1519,11 +1575,11 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
-            
+
             // Get tenant names for meaningful logging
             var oldTenantName = an.TryGetValue("kubernetes.auth0.com/tenant-name", out var storedName) ? storedName : "unknown";
             var newTenantName = entity.Spec.TenantRef?.Name ?? "unknown";
-            
+
             Logger.LogWarningJson($"*** TENANT REFERENCE CHANGE DETECTED *** {EntityTypeName} {entity.Namespace()}/{entity.Name()} tenant reference changed from '{oldTenantName}' ({oldTenantUid}) to '{newTenantName}' ({newTenantUid})", new
             {
                 entityTypeName = EntityTypeName,
@@ -1610,7 +1666,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
-            
+
             // Get current retry count
             var retryCountStr = an.TryGetValue("kubernetes.auth0.com/tenant-change-retry-count", out var countStr) ? countStr : "0";
             if (!int.TryParse(retryCountStr, out var currentRetryCount))
@@ -1641,7 +1697,7 @@ namespace Alethic.Auth0.Operator.Controllers
             entity = await UpdateKubernetesMetadata(entity, "increment_retry_counter", cancellationToken);
 
             var retryDelaySeconds = GenerateRandomRetryDelay();
-            
+
             Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} scheduling tenant change retry reconciliation #{currentRetryCount}/{MaxTenantChangeRetryAttempts} in {retryDelaySeconds}s for new client creation", new
             {
                 entityTypeName = EntityTypeName,
@@ -1652,7 +1708,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 maxRetryAttempts = MaxTenantChangeRetryAttempts,
                 operation = "schedule_tenant_change_retry"
             });
-            
+
             Requeue(entity, TimeSpan.FromSeconds(retryDelaySeconds));
             return entity;
         }
@@ -1666,14 +1722,14 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<TEntity> ClearTenantChangeRetryCounter(TEntity entity, CancellationToken cancellationToken)
         {
             var resolvedEntity = entity;
-            
+
             var md = entity.EnsureMetadata();
             var an = md.EnsureAnnotations();
-            
+
             if (an.ContainsKey("kubernetes.auth0.com/tenant-change-retry-count"))
             {
                 an.Remove("kubernetes.auth0.com/tenant-change-retry-count");
-                
+
                 Logger.LogDebugJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} cleared tenant change retry counter on successful reconciliation", new
                 {
                     entityTypeName = EntityTypeName,
@@ -1681,14 +1737,14 @@ namespace Alethic.Auth0.Operator.Controllers
                     entityName = entity.Name(),
                     operation = "clear_retry_counter"
                 });
-                
+
                 // Use UpdateKubernetesMetadata to persist annotation removal
                 resolvedEntity = await UpdateKubernetesMetadata(entity, "clear_retry_counter", cancellationToken);
             }
 
             return resolvedEntity;
         }
-        
+
     }
 
 }
