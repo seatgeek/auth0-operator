@@ -320,7 +320,25 @@ namespace Alethic.Auth0.Operator.Controllers
                 var req = new ConnectionUpdateRequest();
                 ApplyConfToRequest(req, conf);
                 req.Name = null!; // not allowed to be changed
-                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options ?? new Hashtable()))) ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions()) : conf.Options ?? new Hashtable();
+
+                // Merge Auth0's current options with desired options to preserve unmanaged fields
+                var mergedOptions = MergeConnectionOptions(last, conf.Options);
+
+                Logger.LogDebugJson($"{EntityTypeName} merged options for update", new
+                {
+                    entityTypeName = EntityTypeName,
+                    connectionId = id,
+                    desiredOptionsCount = conf.Options?.Count ?? 0,
+                    auth0OptionsCount = (last?.ContainsKey("options") == true && last["options"] is Hashtable h) ? h.Count : 0,
+                    mergedOptionsCount = mergedOptions.Count,
+                    operation = "merge_options_for_update"
+                });
+
+                req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase)
+                    ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(
+                        JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(mergedOptions)))
+                        ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions())
+                    : mergedOptions;
 
                 // Handle metadata with special nulling logic (overriding what ApplyConfToRequest set)
                 req.Metadata = conf.Metadata ?? new Hashtable();
@@ -507,6 +525,86 @@ namespace Alethic.Auth0.Operator.Controllers
 
 
             return filtered;
+        }
+
+        /// <summary>
+        /// Filters the options field to only compare keys present in the desired Kubernetes configuration.
+        /// This prevents false drift detection for Auth0-managed fields not specified in the K8s spec.
+        /// </summary>
+        /// <param name="fieldName">Name of the field being compared</param>
+        /// <param name="auth0Value">Value from Auth0 API (current state)</param>
+        /// <param name="desiredValue">Value from Kubernetes spec (desired state)</param>
+        /// <returns>Tuple of filtered values ready for comparison</returns>
+        protected override (object? filteredAuth0, object? filteredDesired) FilterNestedFieldForComparison(
+            string fieldName,
+            object? auth0Value,
+            object? desiredValue)
+        {
+            // Special handling for options field - only compare fields present in desired state
+            if (string.Equals(fieldName, "options", StringComparison.OrdinalIgnoreCase))
+            {
+                if (desiredValue is not Hashtable desiredOptions)
+                    return (auth0Value, desiredValue);
+
+                if (auth0Value is not Hashtable auth0Options)
+                    return (auth0Value, desiredValue);
+
+                // Create filtered Auth0 options containing only keys from desired spec
+                var filteredAuth0Options = new Hashtable();
+                foreach (DictionaryEntry entry in desiredOptions)
+                {
+                    if (auth0Options.ContainsKey(entry.Key))
+                    {
+                        filteredAuth0Options[entry.Key] = auth0Options[entry.Key];
+                    }
+                    // Keys in desired but not in Auth0 are omitted (will be detected as "added")
+                }
+
+                Logger.LogDebugJson($"{EntityTypeName} filtered options for comparison", new
+                {
+                    entityTypeName = EntityTypeName,
+                    desiredKeyCount = desiredOptions.Count,
+                    auth0OriginalKeyCount = auth0Options.Count,
+                    auth0FilteredKeyCount = filteredAuth0Options.Count,
+                    operation = "filter_options_for_comparison"
+                });
+
+                return (filteredAuth0Options, desiredOptions);
+            }
+
+            return base.FilterNestedFieldForComparison(fieldName, auth0Value, desiredValue);
+        }
+
+        /// <summary>
+        /// Merges Auth0's current options with desired options to preserve Auth0-managed fields.
+        /// Fields in desiredOptions override corresponding fields in Auth0's current options.
+        /// </summary>
+        /// <param name="lastConf">Last known Auth0 configuration (from Get() call)</param>
+        /// <param name="desiredOptions">Desired options from Kubernetes spec.conf</param>
+        /// <returns>Merged Hashtable with Auth0 fields preserved and desired fields applied</returns>
+        private static Hashtable MergeConnectionOptions(Hashtable? lastConf, Hashtable? desiredOptions)
+        {
+            var merged = new Hashtable();
+
+            // Step 1: Start with Auth0's current options (base layer)
+            if (lastConf?.ContainsKey("options") == true && lastConf["options"] is Hashtable currentOptions)
+            {
+                foreach (DictionaryEntry entry in currentOptions)
+                {
+                    merged[entry.Key] = entry.Value;
+                }
+            }
+
+            // Step 2: Override with desired options (Kubernetes spec wins)
+            if (desiredOptions is not null)
+            {
+                foreach (DictionaryEntry entry in desiredOptions)
+                {
+                    merged[entry.Key] = entry.Value;
+                }
+            }
+
+            return merged;
         }
 
         private bool WasConnectionMetadataValuesRemoved(Hashtable metadata)

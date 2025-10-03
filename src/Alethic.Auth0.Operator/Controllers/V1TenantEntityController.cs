@@ -1079,6 +1079,25 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
+        /// Filters nested field values before comparison. Override in derived classes to implement
+        /// entity-specific logic for comparing nested structures like options or metadata.
+        /// This allows partial comparison where only fields present in the desired configuration
+        /// are compared, ignoring additional fields that may exist in the Auth0 state.
+        /// </summary>
+        /// <param name="fieldName">Name of the top-level field being compared</param>
+        /// <param name="auth0Value">Value from Auth0 API (current state)</param>
+        /// <param name="desiredValue">Value from Kubernetes spec (desired state)</param>
+        /// <returns>Tuple of filtered values ready for comparison</returns>
+        protected virtual (object? filteredAuth0, object? filteredDesired) FilterNestedFieldForComparison(
+            string fieldName,
+            object? auth0Value,
+            object? desiredValue)
+        {
+            // Base implementation: no filtering, compare values as-is
+            return (auth0Value, desiredValue);
+        }
+
+        /// <summary>
         /// Filters fields for comparison based on the entity's drift detection configuration.
         /// Always attempts to read GetIncludedFields first, then applies GetExcludedFields.
         /// Supports nested field exclusions using dot notation (e.g., "options.userid_attribute").
@@ -1313,11 +1332,17 @@ namespace Alethic.Auth0.Operator.Controllers
                 {
                     driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Added, FieldName = key, OldValue = null, NewValue = entry.Value });
                 }
-                else if (!AreValuesEqual(entry.Value, last[entry.Key]))
+                else
                 {
-                    var oldValue = FormatValueForLogging(last[entry.Key]);
-                    var newValue = FormatValueForLogging(entry.Value);
-                    driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Modified, FieldName = key, OldValue = oldValue, NewValue = newValue });
+                    // Apply nested field filtering before comparison
+                    var (filteredAuth0, filteredDesired) = FilterNestedFieldForComparison(key, last[entry.Key], entry.Value);
+
+                    if (!AreValuesEqual(filteredDesired, filteredAuth0))
+                    {
+                        var oldValue = FormatValueForLogging(filteredAuth0);
+                        var newValue = FormatValueForLogging(filteredDesired);
+                        driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Modified, FieldName = key, OldValue = oldValue, NewValue = newValue });
+                    }
                 }
             }
 
