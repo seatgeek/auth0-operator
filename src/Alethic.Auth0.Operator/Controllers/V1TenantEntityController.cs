@@ -1440,6 +1440,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 return "(null)";
 
             // Handle different value types with more detail
+            // IMPORTANT: Check Hashtable before IEnumerable since Hashtable implements IEnumerable
             switch (value)
             {
                 case string stringValue:
@@ -1452,17 +1453,18 @@ namespace Alethic.Auth0.Operator.Controllers
                 case int or long or float or double or decimal:
                     return value.ToString() ?? "(null)";
 
+                case Hashtable hashtable:
+                    // Show up to 10 entries for Hashtables (useful for debugging options drift)
+                    var entries = hashtable.Cast<DictionaryEntry>().Take(10)
+                        .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
+                    var hashPreview = string.Join(", ", entries);
+                    return hashtable.Count > 10 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
+
                 case IEnumerable enumerable when value is not string:
                     var items = enumerable.Cast<object>().Take(5).Select(FormatValueForLogging);
                     var arrayPreview = string.Join(", ", items);
                     var count = enumerable.Cast<object>().Count();
                     return count > 5 ? $"[{arrayPreview}, ...] (total: {count} items)" : $"[{arrayPreview}]";
-
-                case Hashtable hashtable:
-                    var entries = hashtable.Cast<DictionaryEntry>().Take(3)
-                        .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
-                    var hashPreview = string.Join(", ", entries);
-                    return hashtable.Count > 3 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
 
                 default:
                     var objectStr = value.ToString() ?? "(null)";
