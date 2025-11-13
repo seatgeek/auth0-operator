@@ -585,7 +585,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             else
             {
-                var (needsUpdateResult, driftingFieldsResult) = HasConfigurationChanged(entity, entity.Status.LastConf, conf);
+                var (needsUpdateResult, driftingFieldsResult) = HasConfigurationChanged(entity, lastConf, conf);
                 needsUpdate = needsUpdateResult;
                 driftingFields = driftingFieldsResult;
                 LogSubsequentReconciliationDecision(entity, needsUpdate);
