@@ -653,7 +653,16 @@ namespace Alethic.Auth0.Operator.Controllers
 
             // Update lastConf to reflect the applied configuration to prevent false drift detection
             var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
-            return TransformToSystemTextJson<Hashtable>(appliedJson);
+            var result = TransformToSystemTextJson<Hashtable>(appliedJson);
+
+            // Preserve Auth0-generated credentials from the original response
+            // These are needed for secret creation and are not part of the spec configuration
+            if (lastConf?.ContainsKey("client_id") == true)
+                result["client_id"] = lastConf["client_id"];
+            if (lastConf?.ContainsKey("client_secret") == true)
+                result["client_secret"] = lastConf["client_secret"];
+
+            return result;
         }
 
         private async Task<(TEntity updatedEntity, bool needsSecretCreationRetry)> FinalizeReconciliation(TEntity entity, IManagementApiClient api, Hashtable? lastConf, CancellationToken cancellationToken)
