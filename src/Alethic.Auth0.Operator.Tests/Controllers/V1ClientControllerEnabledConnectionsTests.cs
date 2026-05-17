@@ -12,6 +12,7 @@ using Alethic.Auth0.Operator.Services;
 using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -55,6 +56,49 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.AreEqual(new Uri(new Uri(TenantBaseUri), $"connections/{ConnectionId}/clients"),
                 req.RequestUri);
             StringAssert.Contains(req.Body, $"\"client_id\":\"{ClientId}\"");
+        }
+
+        // ---- Success path emits a structured info log so production has an audit trail ----
+
+        [TestMethod]
+        public async Task EnableClientOnConnection_Success_EmitsStructuredSuccessLog()
+        {
+            var handler = new RecordingHandler((_, __) =>
+                new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("") });
+            var logger = new RecordingLogger<V1ClientController>();
+            var controller = BuildController(handler, logger);
+
+            await controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
+                CancellationToken.None);
+
+            var hit = logger.Messages.SingleOrDefault(m =>
+                m.Contains("\"operation\":\"enable_client_on_connection\"")
+                && m.Contains("succeeded")
+                && m.Contains($"\"connectionId\":\"{ConnectionId}\"")
+                && m.Contains($"\"clientId\":\"{ClientId}\""));
+            Assert.IsNotNull(hit,
+                "Expected a structured info log carrying the operation label, success phrasing, and the connection/client pair.\n"
+                + "Captured messages:\n  - " + string.Join("\n  - ", logger.Messages));
+        }
+
+        [TestMethod]
+        public async Task DisableClientOnConnection_Success_EmitsStructuredSuccessLog()
+        {
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NoContent));
+            var logger = new RecordingLogger<V1ClientController>();
+            var controller = BuildController(handler, logger);
+
+            await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
+                CancellationToken.None);
+
+            var hit = logger.Messages.SingleOrDefault(m =>
+                m.Contains("\"operation\":\"disable_client_on_connection\"")
+                && m.Contains("succeeded")
+                && m.Contains($"\"connectionId\":\"{ConnectionId}\"")
+                && m.Contains($"\"clientId\":\"{ClientId}\""));
+            Assert.IsNotNull(hit,
+                "Expected a structured info log carrying the operation label and success phrasing for the disable path.\n"
+                + "Captured messages:\n  - " + string.Join("\n  - ", logger.Messages));
         }
 
         // ---- Benign 409 ("already enabled") swallowed as no-op ----
@@ -177,7 +221,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler);
             var tenant = new FakeTenantApiAccess();
 
-            // No mutex any more — fire concurrently and assert both calls completed.
+            // Concurrent enable + disable of the same pair should both complete independently.
             await Task.WhenAll(
                 controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None),
                 controller.DisableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None));
@@ -285,7 +329,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
         // ---- helpers ----
 
-        private static V1ClientController BuildController(HttpMessageHandler handler)
+        private static V1ClientController BuildController(HttpMessageHandler handler,
+            ILogger<V1ClientController>? logger = null)
         {
             var factory = new SingleHandlerHttpClientFactory(handler);
             // DispatchProxy gives us a runtime stub for IKubernetesClient — the helpers under
@@ -295,9 +340,32 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 kube: kube,
                 requeue: (EntityRequeue<Alethic.Auth0.Operator.Models.V1Client>)((entity, ts) => { }),
                 cache: new MemoryCache(new MemoryCacheOptions()),
-                logger: NullLogger<V1ClientController>.Instance,
+                logger: logger ?? NullLogger<V1ClientController>.Instance,
                 options: Microsoft.Extensions.Options.Options.Create(new OperatorOptions()),
                 httpClientFactory: factory);
+        }
+
+        /// <summary>
+        /// Captures formatted log messages so tests can assert observability contracts
+        /// (e.g. the structured success log emitted on 2xx connection enable/disable).
+        /// </summary>
+        private sealed class RecordingLogger<T> : ILogger<T>
+        {
+            public List<string> Messages { get; } = new();
+
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                Messages.Add(formatter(state, exception));
+            }
+
+            private sealed class NullScope : IDisposable
+            {
+                public static readonly NullScope Instance = new();
+                public void Dispose() { }
+            }
         }
 
         public class ThrowingKubeProxy : System.Reflection.DispatchProxy

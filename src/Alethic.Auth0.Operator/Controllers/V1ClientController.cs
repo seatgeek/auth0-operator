@@ -27,6 +27,7 @@ using KubeOps.KubernetesClient;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -1188,16 +1189,18 @@ namespace Alethic.Auth0.Operator.Controllers
             // Use the direct Auth0 Management API endpoint: GET /api/v2/clients/{id}/connections
             var requestUri = new Uri(tenantApiAccess.BaseUri, $"clients/{clientId}/connections");
 
-            var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
+            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
                 () => new HttpRequestMessage(HttpMethod.Get, requestUri),
                 operation: "get_client_connections",
                 cancellationToken);
 
             if (!response.IsSuccessStatusCode)
-                await ThrowFromHttpFailureAsync(response, "get_client_connections", connectionId: "-",
-                    clientId, cancellationToken);
+            {
+                var failureBody = await ReadBodySafelyAsync(response, cancellationToken);
+                await ThrowFromHttpFailureAsync(response, failureBody, "get_client_connections",
+                    connectionId: "-", clientId, cancellationToken);
+            }
 
-            using (response)
             {
                 var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
                 var responseData =
@@ -1380,28 +1383,31 @@ namespace Alethic.Auth0.Operator.Controllers
             string clientId, Func<HttpRequestMessage> requestFactory, string operation, BenignOutcome benign,
             CancellationToken cancellationToken)
         {
-            var response = await SendWithTokenAndRetryAsync(tenantApiAccess, requestFactory, operation, cancellationToken);
+            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess, requestFactory, operation, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                response.Dispose();
+                Logger.LogInformationJson(
+                    $"{EntityTypeName} {operation} succeeded for client {clientId} on connection {connectionId}",
+                    new { entityTypeName = EntityTypeName, connectionId, clientId, operation, status = "success" });
                 return;
             }
 
+            var body = await ReadBodySafelyAsync(response, cancellationToken);
+
             if (response.StatusCode == benign.Status)
             {
-                var errorCode = await ReadErrorCodeAsync(response, cancellationToken);
+                var errorCode = ParseErrorCode(body);
                 if (string.Equals(errorCode, benign.ErrorCode, StringComparison.Ordinal))
                 {
                     Logger.LogInformationJson(
                         $"{EntityTypeName} client {clientId} {benign.Label} on connection {connectionId} (Auth0 {(int)benign.Status} errorCode={errorCode}) — no-op",
                         new { entityTypeName = EntityTypeName, connectionId, clientId, errorCode, operation, status = benign.Label });
-                    response.Dispose();
                     return;
                 }
             }
 
-            await ThrowFromHttpFailureAsync(response, operation, connectionId, clientId, cancellationToken);
+            await ThrowFromHttpFailureAsync(response, body, operation, connectionId, clientId, cancellationToken);
         }
 
         /// <summary>
@@ -1435,18 +1441,35 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Parses Auth0's <c>{ statusCode, error, message, errorCode }</c> error body and returns
-        /// the <c>errorCode</c>, or <c>null</c> when the body is missing/unparseable.
+        /// Reads the response body, swallowing IO/decode errors so callers can pass the body
+        /// through both the benign-error code-check path and the failure-throw path without
+        /// re-reading the stream (which Auth0 has already exhausted on the wire).
         /// </summary>
-        private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response,
+        private static async Task<string> ReadBodySafelyAsync(HttpResponseMessage response,
             CancellationToken cancellationToken)
         {
             try
             {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                if (string.IsNullOrWhiteSpace(body))
-                    return null;
-                return Newtonsoft.Json.JsonConvert.DeserializeObject<Auth0ErrorResponse>(body)?.ErrorCode;
+                return await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Parses Auth0's <c>{ statusCode, error, message, errorCode }</c> error body and returns
+        /// the <c>errorCode</c>, or <c>null</c> when the body is missing/unparseable. Pure helper:
+        /// no IO, no allocations beyond the JSON deserialization.
+        /// </summary>
+        private static string? ParseErrorCode(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+                return null;
+            try
+            {
+                return JsonConvert.DeserializeObject<Auth0ErrorResponse>(body)?.ErrorCode;
             }
             catch
             {
@@ -1457,25 +1480,30 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Throws an exception that preserves the status code and Auth0 body for the upstream retry+backoff wrapper.
         /// 429 maps to <see cref="RateLimitApiException"/> so the existing rate-limit handler reschedules per <c>X-RateLimit-Reset</c>.
+        /// Callers own the response lifetime (via <c>using</c>); this method does not dispose it.
         /// </summary>
-        private async Task ThrowFromHttpFailureAsync(HttpResponseMessage response, string operation,
+        private Task ThrowFromHttpFailureAsync(HttpResponseMessage response, string body, string operation,
             string connectionId, string clientId, CancellationToken cancellationToken)
         {
-            string body;
-            try { body = await response.Content.ReadAsStringAsync(cancellationToken); }
-            catch { body = string.Empty; }
-
             var statusCode = (int)response.StatusCode;
 
             if (statusCode == 429)
             {
                 var rateLimit = RateLimit.Parse(response.Headers);
-                var apiError = await ApiError.Parse(response);
-                response.Dispose();
+                ApiError apiError;
+                try
+                {
+                    apiError = (string.IsNullOrWhiteSpace(body)
+                        ? null
+                        : JsonConvert.DeserializeObject<ApiError>(body)) ?? new ApiError();
+                }
+                catch
+                {
+                    apiError = new ApiError();
+                }
                 throw new RateLimitApiException(rateLimit, apiError);
             }
 
-            response.Dispose();
             throw new HttpRequestException(
                 $"Auth0 {operation} for client {clientId} on connection {connectionId} returned HTTP {statusCode}: {body}");
         }
