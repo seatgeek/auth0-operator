@@ -50,6 +50,21 @@ namespace Alethic.Auth0.Operator.Services
         public Uri BaseUri => _credentials.BaseUri;
 
         /// <inheritdoc />
+        public async Task InvalidateAccessTokenAsync(CancellationToken cancellationToken = default)
+        {
+            await accessTokenSemaphore.WaitAsync(cancellationToken);
+            try
+            {
+                _credentials.AccessToken = null;
+                _credentials.TokenExpiration = null;
+            }
+            finally
+            {
+                accessTokenSemaphore.Release();
+            }
+        }
+
+        /// <inheritdoc />
         public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
         {
             await accessTokenSemaphore.WaitAsync(cancellationToken);

@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Alethic.Auth0.Operator.Controllers;
+using Alethic.Auth0.Operator.Core.Models;
 using Alethic.Auth0.Operator.Options;
 using Alethic.Auth0.Operator.Services;
 using KubeOps.Abstractions.Queue;
@@ -35,7 +36,6 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         private const string TenantBaseUri = "https://example.us.auth0.com/api/v2/";
         private const string ConnectionId = "con_test123";
         private const string ClientId = "abc_clientid";
-        private const string OtherClientId = "xyz_other";
 
         // ---- Golden path: enable issues POST and 2xx clears ----
 
@@ -163,6 +163,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.AreEqual(2, handler.Requests.Count, "Should retry once after 401");
             Assert.AreEqual("tok-1", handler.Requests[0].Authorization);
             Assert.AreEqual("tok-2", handler.Requests[1].Authorization);
+            Assert.AreEqual(1, tenant.InvalidateCalls,
+                "401 must evict the cached token so the retry gets a freshly-fetched one (H4)");
         }
 
         // ---- Concurrent add + remove of same (connection, client): both calls happen, atomic per call ----
@@ -199,54 +201,86 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                     CancellationToken.None));
         }
 
-        // ---- 429 is surfaced (same upstream retry wrapper reacts to it) ----
+        // ---- 429 is surfaced as Auth0.Core.Exceptions.RateLimitApiException so the upstream
+        //      RateLimitApiException catch in V1Controller / V1TenantEntityController can read
+        //      X-RateLimit-Reset and requeue per Auth0's documented backoff window. ----
 
         [TestMethod]
-        public async Task DisableClientOnConnection_429_Throws()
+        public async Task DisableClientOnConnection_429_ThrowsRateLimitApiException()
         {
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage((HttpStatusCode)429)
-                { Content = new StringContent("{\"statusCode\":429,\"error\":\"Too Many Requests\"}") });
+            var resetEpoch = DateTimeOffset.UtcNow.AddSeconds(42).ToUnixTimeSeconds();
+            var handler = new RecordingHandler((_, __) =>
+            {
+                var resp = new HttpResponseMessage((HttpStatusCode)429)
+                {
+                    Content = new StringContent("{\"statusCode\":429,\"error\":\"Too Many Requests\"}")
+                };
+                resp.Headers.TryAddWithoutValidation("X-RateLimit-Reset", resetEpoch.ToString());
+                return resp;
+            });
             var controller = BuildController(handler);
 
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+            var ex = await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.RateLimitApiException>(() =>
                 controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
                     CancellationToken.None));
+
+            Assert.IsNotNull(ex.RateLimit, "RateLimit must be populated so the upstream handler can schedule the requeue");
+            Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(resetEpoch), ex.RateLimit!.Reset);
         }
 
-        // ---- "Out of band" Auth0 add: an existing enabled client → next reconcile issues DELETE ----
-        //
-        // This test models the controller's external behavior: after Auth0 already has the client
-        // enabled, calling the disable helper issues a single DELETE. The decision to *issue* the
-        // DELETE comes from the reconcile loop's diff against GetClientConnectionsAsync; that piece
-        // is covered by the integration of these primitives at the ApplyConnectionChanges call site.
+        // ---- Orchestrator end-to-end: GET current → diff → POST adds, DELETE removes ----
         [TestMethod]
-        public async Task DisableClientOnConnection_OutOfBandAuth0Add_IssuesDelete()
+        public async Task ReconcileEnabledConnections_MixedAddAndRemove_IssuesPostAndDelete()
         {
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NoContent));
+            const string KeepId = "con_keep";
+            const string AddId = "con_add";
+            const string RemoveId = "con_remove";
+
+            var handler = new RecordingHandler((req, _) =>
+            {
+                if (req.Method == HttpMethod.Get)
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(BuildConnectionsBody(KeepId, RemoveId))
+                    };
+                if (req.Method == HttpMethod.Post)
+                    return new HttpResponseMessage(HttpStatusCode.Created);
+                if (req.Method == HttpMethod.Delete)
+                    return new HttpResponseMessage(HttpStatusCode.NoContent);
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            });
             var controller = BuildController(handler);
 
-            await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, OtherClientId,
-                CancellationToken.None);
+            await controller.ReconcileEnabledConnections(new FakeTenantApiAccess(), ClientId,
+                new[]
+                {
+                    new V1ConnectionReference { Id = KeepId },
+                    new V1ConnectionReference { Id = AddId }
+                },
+                defaultNamespace: "default", CancellationToken.None);
 
-            Assert.AreEqual(1, handler.Requests.Count);
-            Assert.AreEqual(HttpMethod.Delete, handler.Requests[0].Method);
-            Assert.IsTrue(handler.Requests[0].RequestUri!.AbsolutePath.EndsWith($"/clients/{OtherClientId}"));
+            var post = handler.Requests.SingleOrDefault(r => r.Method == HttpMethod.Post);
+            var delete = handler.Requests.SingleOrDefault(r => r.Method == HttpMethod.Delete);
+
+            Assert.IsNotNull(post, "Expected a POST for the added connection");
+            Assert.IsTrue(post!.RequestUri!.AbsolutePath.EndsWith($"/connections/{AddId}/clients"));
+            StringAssert.Contains(post.Body, $"\"client_id\":\"{ClientId}\"");
+
+            Assert.IsNotNull(delete, "Expected a DELETE for the removed connection");
+            Assert.IsTrue(delete!.RequestUri!.AbsolutePath.EndsWith($"/connections/{RemoveId}/clients/{ClientId}"));
+
+            // Untouched 'keep' connection must not be re-issued.
+            Assert.IsFalse(handler.Requests.Any(r =>
+                r.Method != HttpMethod.Get &&
+                r.RequestUri!.AbsolutePath.Contains($"/connections/{KeepId}/")));
         }
 
-        // ---- Policy gating: if no POST/DELETE is invoked, no HTTP call hits the wire ----
-        //
-        // The new helpers are pure wire-level primitives. The policy gating decision (whether to call
-        // them at all) lives in V1ClientController's reconcile flow, which only enters
-        // ApplyConnectionChanges when an update is permitted. This test pins the contract: no helper
-        // invocation == no HTTP request, so policy-gated callers can confidently skip the helpers.
-        [TestMethod]
-        public void PolicyGating_NoHelperInvocation_NoHttpCalls()
+        // Single helper for assembling the GET /clients/{id}/connections response body so the
+        // orchestration tests above stay focused on the diff/apply logic, not on Auth0's wire shape.
+        private static string BuildConnectionsBody(params string[] connectionIds)
         {
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.OK));
-            _ = BuildController(handler);
-
-            Assert.AreEqual(0, handler.Requests.Count,
-                "Constructing the controller must not issue any HTTP calls; policy-gated callers that skip the helpers cause no wire traffic.");
+            var ids = string.Join(",", connectionIds.Select(id => $"{{\"id\":\"{id}\"}}"));
+            return $"{{\"connections\":[{ids}]}}";
         }
 
         // ---- helpers ----
@@ -283,6 +317,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         private sealed class FakeTenantApiAccess : ITenantApiAccess
         {
             public string[] TokenSequence { get; set; } = new[] { "fake-token" };
+            public int InvalidateCalls { get; private set; }
             private int _index;
             public Uri BaseUri => new Uri(TenantBaseUri);
             public Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
@@ -290,6 +325,11 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 var tok = TokenSequence[Math.Min(_index, TokenSequence.Length - 1)];
                 _index++;
                 return Task.FromResult(tok);
+            }
+            public Task InvalidateAccessTokenAsync(CancellationToken cancellationToken = default)
+            {
+                InvalidateCalls++;
+                return Task.CompletedTask;
             }
         }
 
