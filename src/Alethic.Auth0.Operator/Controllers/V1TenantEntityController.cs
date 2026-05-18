@@ -464,6 +464,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         internal static TEntity OverlayOperatorOwnedMetadata(TEntity local, TEntity refetched)
         {
+            // H5: Every metadata key written by this operator lives under the
+            // `kubernetes.auth0.com/` prefix (current-client-id, current-tenant-ref,
+            // previous-client-id, previous-tenant-ref, tenant-uid, tenant-name,
+            // tenant-change-retry-count, partition, operator). Restricting the overlay
+            // to this prefix is sufficient — no other operator-owned key escapes.
             const string operatorPrefix = "kubernetes.auth0.com/";
 
             var rmd = refetched.EnsureMetadata();
