@@ -266,6 +266,30 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 "The unchanged 'keep' connection should not be PATCHed.");
         }
 
+        // Future-proofing — if Auth0 ever changes GET /api/v2/clients/{id}/connections from the
+        // wrapper {"connections":[...]} shape to a bare array, this test fails loudly instead of
+        // letting GetClientConnectionsAsync silently return an empty list and trigger a re-enable storm.
+        [TestMethod]
+        public async Task GetClientConnections_MalformedResponse_Rethrows()
+        {
+            var handler = new RecordingHandler((req, _) =>
+            {
+                if (req.Method == HttpMethod.Get)
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        // Bare-array body — NOT the wrapper shape ClientConnectionsResponse expects.
+                        Content = new StringContent("[{\"id\":\"con_x\"}]")
+                    };
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            });
+            var controller = BuildController(handler);
+
+            await Assert.ThrowsExceptionAsync<Newtonsoft.Json.JsonSerializationException>(() =>
+                controller.ReconcileEnabledConnections(new FakeTenantApiAccess(), ClientId,
+                    enabledConnectionRefs: Array.Empty<V1ConnectionReference>(),
+                    defaultNamespace: "default", CancellationToken.None));
+        }
+
         // Single helper for assembling the GET /clients/{id}/connections response body so the
         // orchestration tests above stay focused on the diff/apply logic, not on Auth0's wire shape.
         private static string BuildConnectionsBody(params string[] connectionIds)
