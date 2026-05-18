@@ -45,7 +45,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler);
             var tenant = new FakeTenantApiAccess();
 
-            await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None);
+            await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId,
+                defaultNamespace: "default", CancellationToken.None);
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
@@ -69,7 +70,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler, logger);
 
             await controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                CancellationToken.None);
+                defaultNamespace: "default", CancellationToken.None);
 
             var hit = logger.Messages.SingleOrDefault(m =>
                 m.Contains("\"operation\":\"enable_client_on_connection\"")
@@ -89,7 +90,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler, logger);
 
             await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                CancellationToken.None);
+                defaultNamespace: "default", CancellationToken.None);
 
             var hit = logger.Messages.SingleOrDefault(m =>
                 m.Contains("\"operation\":\"disable_client_on_connection\"")
@@ -110,7 +111,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler);
 
             await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                CancellationToken.None);
+                defaultNamespace: "default", CancellationToken.None);
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
@@ -132,7 +133,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
                 controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    CancellationToken.None));
+                    defaultNamespace: "default", CancellationToken.None));
         }
 
         [TestMethod]
@@ -144,7 +145,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
                 controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    CancellationToken.None));
+                    defaultNamespace: "default", CancellationToken.None));
         }
 
         // ---- 401 triggers token regeneration and a single retry ----
@@ -163,7 +164,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler);
             var tenant = new FakeTenantApiAccess { TokenSequence = new[] { "tok-1", "tok-2" } };
 
-            await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None);
+            await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId,
+                defaultNamespace: "default", CancellationToken.None);
 
             Assert.AreEqual(2, handler.Requests.Count, "Should retry once after 401");
             Assert.AreEqual("tok-1", handler.Requests[0].Authorization);
@@ -183,7 +185,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
                 controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    CancellationToken.None));
+                    defaultNamespace: "default", CancellationToken.None));
         }
 
         // ---- 429 is surfaced as Auth0.Core.Exceptions.RateLimitApiException so the upstream
@@ -207,7 +209,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             var ex = await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.RateLimitApiException>(() =>
                 controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    CancellationToken.None));
+                    defaultNamespace: "default", CancellationToken.None));
 
             Assert.IsNotNull(ex.RateLimit, "RateLimit must be populated so the upstream handler can schedule the requeue");
             Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(resetEpoch), ex.RateLimit!.Reset);

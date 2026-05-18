@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -1197,29 +1198,27 @@ namespace Alethic.Auth0.Operator.Controllers
             if (!response.IsSuccessStatusCode)
             {
                 var failureBody = await ReadBodySafelyAsync(response, cancellationToken);
-                await ThrowFromHttpFailureAsync(response, failureBody, "get_client_connections",
-                    connectionId: "-", clientId, cancellationToken);
+                ThrowFromHttpFailure(response, failureBody, "get_client_connections",
+                    connectionId: "-", clientId);
             }
 
-            {
-                var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseData =
-                    Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
-                var connections = responseData?.Connections;
+            var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData =
+                Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
+            var connections = responseData?.Connections;
 
-                Logger.LogInformationJson(
-                    $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
-                    new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId,
-                        connectionCount = connections?.Count ?? 0,
-                        operation = "get_client_connections_direct",
-                        baseUri = tenantApiAccess.BaseUri.ToString()
-                    });
+            Logger.LogInformationJson(
+                $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
+                new
+                {
+                    entityTypeName = EntityTypeName,
+                    clientId,
+                    connectionCount = connections?.Count ?? 0,
+                    operation = "get_client_connections_direct",
+                    baseUri = tenantApiAccess.BaseUri.ToString()
+                });
 
-                return connections ?? new List<Connection>();
-            }
+            return connections ?? new List<Connection>();
         }
 
 
@@ -1235,7 +1234,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 var (connectionsToAdd, connectionsToRemove) =
                     CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
 
-                await ApplyConnectionChanges(tenantApiAccess, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
+                await ApplyConnectionChanges(tenantApiAccess, clientId, connectionsToAdd, connectionsToRemove,
+                    defaultNamespace, cancellationToken);
                 LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count,
                     connectionsToRemove.Count);
             }
@@ -1298,13 +1298,15 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task ApplyConnectionChanges(ITenantApiAccess tenantApiAccess, string clientId,
             List<string> connectionsToAdd, List<string> connectionsToRemove,
-            CancellationToken cancellationToken)
+            string defaultNamespace, CancellationToken cancellationToken)
         {
             foreach (var connectionId in connectionsToAdd)
-                await EnableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, cancellationToken);
+                await EnableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
+                    cancellationToken);
 
             foreach (var connectionId in connectionsToRemove)
-                await DisableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, cancellationToken);
+                await DisableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
+                    cancellationToken);
         }
 
         private void LogReconciliationResult(string clientId, int currentConnectionCount, int addedCount,
@@ -1339,21 +1341,23 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:true}]</c> — enables a single client on a connection.</summary>
         internal Task EnableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, CancellationToken cancellationToken)
+            string clientId, string defaultNamespace, CancellationToken cancellationToken)
         {
             return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
                 status: true,
                 operation: "enable_client_on_connection",
+                defaultNamespace,
                 cancellationToken);
         }
 
         /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:false}]</c> — disables a single client on a connection.</summary>
         internal Task DisableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, CancellationToken cancellationToken)
+            string clientId, string defaultNamespace, CancellationToken cancellationToken)
         {
             return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
                 status: false,
                 operation: "disable_client_on_connection",
+                defaultNamespace,
                 cancellationToken);
         }
 
@@ -1361,11 +1365,11 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Issues a single <c>PATCH /api/v2/connections/{connectionId}/clients</c> with a one-row
         /// body <c>[{client_id, status}]</c> — Auth0's replacement for the deprecated
         /// <c>enabled_clients</c> field. Success is HTTP 204 (No Content); any other status surfaces
-        /// via <see cref="ThrowFromHttpFailureAsync"/>. No benign-4xx handling is required because
+        /// via <see cref="ThrowFromHttpFailure"/>. No benign-4xx handling is required because
         /// the endpoint is idempotent and returns 204 regardless of prior membership state.
         /// </summary>
         private async Task PatchConnectionClientsAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, bool status, string operation,
+            string clientId, bool status, string operation, string defaultNamespace,
             CancellationToken cancellationToken)
         {
             var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients");
@@ -1375,7 +1379,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
 
             LogAuth0ApiCall($"{operation} for client {clientId} on connection {connectionId}",
-                Auth0ApiCallType.Write, "A0Client", clientId, "unknown", operation);
+                Auth0ApiCallType.Write, "A0Client", clientId, defaultNamespace, operation);
 
             using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
                 () => new HttpRequestMessage(HttpMethod.Patch, requestUri)
@@ -1393,7 +1397,7 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             var body = await ReadBodySafelyAsync(response, cancellationToken);
-            await ThrowFromHttpFailureAsync(response, body, operation, connectionId, clientId, cancellationToken);
+            ThrowFromHttpFailure(response, body, operation, connectionId, clientId);
         }
 
         /// <summary>
@@ -1449,8 +1453,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// 429 maps to <see cref="RateLimitApiException"/> so the existing rate-limit handler reschedules per <c>X-RateLimit-Reset</c>.
         /// Callers own the response lifetime (via <c>using</c>); this method does not dispose it.
         /// </summary>
-        private Task ThrowFromHttpFailureAsync(HttpResponseMessage response, string body, string operation,
-            string connectionId, string clientId, CancellationToken cancellationToken)
+        [DoesNotReturn]
+        private static void ThrowFromHttpFailure(HttpResponseMessage response, string body, string operation,
+            string connectionId, string clientId)
         {
             var statusCode = (int)response.StatusCode;
 
