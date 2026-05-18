@@ -1337,53 +1337,52 @@ namespace Alethic.Auth0.Operator.Controllers
                 }, ex);
         }
 
-        /// <summary>POST /api/v2/connections/{connectionId}/clients — enables a single client on a connection.</summary>
+        /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:true}]</c> — enables a single client on a connection.</summary>
         internal Task EnableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
             string clientId, CancellationToken cancellationToken)
         {
-            var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients");
-            var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { client_id = clientId });
-
-            return IssueAtomicMembershipChangeAsync(tenantApiAccess, connectionId, clientId,
-                () => new HttpRequestMessage(HttpMethod.Post, requestUri)
-                {
-                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
-                },
+            return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
+                status: true,
                 operation: "enable_client_on_connection",
-                benign: BenignOutcome.AlreadyEnabled,
                 cancellationToken);
         }
 
-        /// <summary>DELETE /api/v2/connections/{connectionId}/clients/{clientId} — disables a single client on a connection.</summary>
+        /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:false}]</c> — disables a single client on a connection.</summary>
         internal Task DisableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
             string clientId, CancellationToken cancellationToken)
         {
-            var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients/{clientId}");
-
-            return IssueAtomicMembershipChangeAsync(tenantApiAccess, connectionId, clientId,
-                () => new HttpRequestMessage(HttpMethod.Delete, requestUri),
+            return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
+                status: false,
                 operation: "disable_client_on_connection",
-                benign: BenignOutcome.NotEnabled,
                 cancellationToken);
         }
 
         /// <summary>
-        /// A status code + errorCode pair that the per-pair membership endpoints may return
-        /// to indicate the desired state already holds. Treated as a no-op.
+        /// Issues a single <c>PATCH /api/v2/connections/{connectionId}/clients</c> with a one-row
+        /// body <c>[{client_id, status}]</c> — Auth0's replacement for the deprecated
+        /// <c>enabled_clients</c> field. Success is HTTP 204 (No Content); any other status surfaces
+        /// via <see cref="ThrowFromHttpFailureAsync"/>. No benign-4xx handling is required because
+        /// the endpoint is idempotent and returns 204 regardless of prior membership state.
         /// </summary>
-        private readonly record struct BenignOutcome(HttpStatusCode Status, string ErrorCode, string Label)
-        {
-            public static readonly BenignOutcome AlreadyEnabled =
-                new(HttpStatusCode.Conflict, "connection_client_already_enabled", "already_enabled");
-            public static readonly BenignOutcome NotEnabled =
-                new(HttpStatusCode.NotFound, "connection_client_not_found", "not_enabled");
-        }
-
-        private async Task IssueAtomicMembershipChangeAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, Func<HttpRequestMessage> requestFactory, string operation, BenignOutcome benign,
+        private async Task PatchConnectionClientsAsync(ITenantApiAccess tenantApiAccess, string connectionId,
+            string clientId, bool status, string operation,
             CancellationToken cancellationToken)
         {
-            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess, requestFactory, operation, cancellationToken);
+            var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients");
+            var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new[]
+            {
+                new { client_id = clientId, status }
+            });
+
+            LogAuth0ApiCall($"{operation} for client {clientId} on connection {connectionId}",
+                Auth0ApiCallType.Write, "A0Client", clientId, "unknown", operation);
+
+            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
+                () => new HttpRequestMessage(HttpMethod.Patch, requestUri)
+                {
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                },
+                operation, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
@@ -1394,19 +1393,6 @@ namespace Alethic.Auth0.Operator.Controllers
             }
 
             var body = await ReadBodySafelyAsync(response, cancellationToken);
-
-            if (response.StatusCode == benign.Status)
-            {
-                var errorCode = ParseErrorCode(body);
-                if (string.Equals(errorCode, benign.ErrorCode, StringComparison.Ordinal))
-                {
-                    Logger.LogInformationJson(
-                        $"{EntityTypeName} client {clientId} {benign.Label} on connection {connectionId} (Auth0 {(int)benign.Status} errorCode={errorCode}) — no-op",
-                        new { entityTypeName = EntityTypeName, connectionId, clientId, errorCode, operation, status = benign.Label });
-                    return;
-                }
-            }
-
             await ThrowFromHttpFailureAsync(response, body, operation, connectionId, clientId, cancellationToken);
         }
 
@@ -1455,25 +1441,6 @@ namespace Alethic.Auth0.Operator.Controllers
             catch
             {
                 return string.Empty;
-            }
-        }
-
-        /// <summary>
-        /// Parses Auth0's <c>{ statusCode, error, message, errorCode }</c> error body and returns
-        /// the <c>errorCode</c>, or <c>null</c> when the body is missing/unparseable. Pure helper:
-        /// no IO, no allocations beyond the JSON deserialization.
-        /// </summary>
-        private static string? ParseErrorCode(string body)
-        {
-            if (string.IsNullOrWhiteSpace(body))
-                return null;
-            try
-            {
-                return JsonConvert.DeserializeObject<Auth0ErrorResponse>(body)?.ErrorCode;
-            }
-            catch
-            {
-                return null;
             }
         }
 

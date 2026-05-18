@@ -21,12 +21,10 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 {
     /// <summary>
     /// Coverage for <see cref="V1ClientController"/>'s per-client connection enable/disable
-    /// helpers, which replaced the deprecated <c>enabled_clients</c> PATCH flow on
-    /// <c>PATCH /api/v2/connections/{id}</c>.
+    /// helpers, which use Auth0's replacement for the deprecated <c>enabled_clients</c> field:
     ///
-    /// New endpoints exercised here:
-    /// - <c>POST /api/v2/connections/{connectionId}/clients</c> with body <c>{"client_id":"..."}</c>
-    /// - <c>DELETE /api/v2/connections/{connectionId}/clients/{clientId}</c>
+    /// <c>PATCH /api/v2/connections/{connectionId}/clients</c> with body
+    /// <c>[{"client_id":"...","status":true|false}]</c> — success = HTTP 204.
     ///
     /// The controller's <c>IHttpClientFactory</c> dependency lets us inject a fake
     /// <see cref="HttpMessageHandler"/> and assert on the exact request stream.
@@ -38,13 +36,12 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         private const string ConnectionId = "con_test123";
         private const string ClientId = "abc_clientid";
 
-        // ---- Golden path: enable issues POST and 2xx clears ----
+        // ---- Golden path: enable issues PATCH with status:true and 204 clears ----
 
         [TestMethod]
-        public async Task EnableClientOnConnection_ClientNotYetEnabled_IssuesPostAndSucceeds()
+        public async Task EnableClientOnConnection_ClientNotYetEnabled_IssuesPatchAndSucceeds()
         {
-            var handler = new RecordingHandler((req, _) =>
-                new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("") });
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NoContent));
             var controller = BuildController(handler);
             var tenant = new FakeTenantApiAccess();
 
@@ -52,10 +49,14 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
-            Assert.AreEqual(HttpMethod.Post, req.Method);
+            Assert.AreEqual(HttpMethod.Patch, req.Method);
             Assert.AreEqual(new Uri(new Uri(TenantBaseUri), $"connections/{ConnectionId}/clients"),
                 req.RequestUri);
             StringAssert.Contains(req.Body, $"\"client_id\":\"{ClientId}\"");
+            StringAssert.Contains(req.Body, "\"status\":true");
+            // Body must be a JSON array (per Auth0 PATCH contract).
+            Assert.IsTrue(req.Body.TrimStart().StartsWith("["),
+                "Auth0 requires the PATCH body to be a JSON array of rows.");
         }
 
         // ---- Success path emits a structured info log so production has an audit trail ----
@@ -63,8 +64,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         [TestMethod]
         public async Task EnableClientOnConnection_Success_EmitsStructuredSuccessLog()
         {
-            var handler = new RecordingHandler((_, __) =>
-                new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("") });
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NoContent));
             var logger = new RecordingLogger<V1ClientController>();
             var controller = BuildController(handler, logger);
 
@@ -101,46 +101,12 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 + "Captured messages:\n  - " + string.Join("\n  - ", logger.Messages));
         }
 
-        // ---- Benign 409 ("already enabled") swallowed as no-op ----
+        // ---- Golden path: disable issues PATCH with status:false and 204 clears ----
 
         [TestMethod]
-        public async Task EnableClientOnConnection_AlreadyEnabled_BenignErrorCode_IsNoOp()
+        public async Task DisableClientOnConnection_ClientEnabled_IssuesPatchAndSucceeds()
         {
-            var body = "{\"statusCode\":409,\"error\":\"Conflict\",\"message\":\"Client already enabled\"," +
-                       "\"errorCode\":\"connection_client_already_enabled\"}";
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.Conflict)
-                { Content = new StringContent(body) });
-            var controller = BuildController(handler);
-
-            await controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                CancellationToken.None);
-
-            Assert.AreEqual(1, handler.Requests.Count);
-        }
-
-        // ---- Non-benign 409 (e.g. validation) surfaces as an exception ----
-
-        [TestMethod]
-        public async Task EnableClientOnConnection_409WithUnrelatedErrorCode_Throws()
-        {
-            var body = "{\"statusCode\":409,\"error\":\"Conflict\",\"message\":\"Validation failed\"," +
-                       "\"errorCode\":\"validation_error\"}";
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.Conflict)
-                { Content = new StringContent(body) });
-            var controller = BuildController(handler);
-
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
-                controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    CancellationToken.None));
-        }
-
-        // ---- Golden path: disable issues DELETE and 204 clears ----
-
-        [TestMethod]
-        public async Task DisableClientOnConnection_ClientEnabled_IssuesDeleteAndSucceeds()
-        {
-            var handler = new RecordingHandler((_, __) =>
-                new HttpResponseMessage(HttpStatusCode.NoContent));
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NoContent));
             var controller = BuildController(handler);
 
             await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
@@ -148,37 +114,32 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
-            Assert.AreEqual(HttpMethod.Delete, req.Method);
-            Assert.AreEqual(new Uri(new Uri(TenantBaseUri), $"connections/{ConnectionId}/clients/{ClientId}"),
+            Assert.AreEqual(HttpMethod.Patch, req.Method);
+            Assert.AreEqual(new Uri(new Uri(TenantBaseUri), $"connections/{ConnectionId}/clients"),
                 req.RequestUri);
+            StringAssert.Contains(req.Body, $"\"client_id\":\"{ClientId}\"");
+            StringAssert.Contains(req.Body, "\"status\":false");
         }
 
-        // ---- Benign 404 ("not currently enabled") swallowed as no-op ----
+        // ---- Non-2xx responses surface as exceptions (no benign handling) ----
 
         [TestMethod]
-        public async Task DisableClientOnConnection_NotEnabled_BenignErrorCode_IsNoOp()
+        public async Task EnableClientOnConnection_400_Throws()
         {
-            var body = "{\"statusCode\":404,\"error\":\"Not Found\",\"message\":\"Client not enabled\"," +
-                       "\"errorCode\":\"connection_client_not_found\"}";
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NotFound)
-                { Content = new StringContent(body) });
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.BadRequest)
+                { Content = new StringContent("{\"statusCode\":400,\"error\":\"Bad Request\"}") });
             var controller = BuildController(handler);
 
-            await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                CancellationToken.None);
-
-            Assert.AreEqual(1, handler.Requests.Count);
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
+                    CancellationToken.None));
         }
 
-        // ---- Non-benign 404 (wrong connection_id) surfaces ----
-
         [TestMethod]
-        public async Task DisableClientOnConnection_404WithUnrelatedErrorCode_Throws()
+        public async Task DisableClientOnConnection_403_Throws()
         {
-            var body = "{\"statusCode\":404,\"error\":\"Not Found\",\"message\":\"Connection not found\"," +
-                       "\"errorCode\":\"connection_not_found\"}";
-            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.NotFound)
-                { Content = new StringContent(body) });
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.Forbidden)
+                { Content = new StringContent("{\"statusCode\":403,\"error\":\"Forbidden\"}") });
             var controller = BuildController(handler);
 
             await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
@@ -197,7 +158,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 calls++;
                 return calls == 1
                     ? new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("") }
-                    : new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("") };
+                    : new HttpResponseMessage(HttpStatusCode.NoContent);
             });
             var controller = BuildController(handler);
             var tenant = new FakeTenantApiAccess { TokenSequence = new[] { "tok-1", "tok-2" } };
@@ -209,26 +170,6 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.AreEqual("tok-2", handler.Requests[1].Authorization);
             Assert.AreEqual(1, tenant.InvalidateCalls,
                 "401 must evict the cached token so the retry gets a freshly-fetched one (H4)");
-        }
-
-        // ---- Concurrent add + remove of same (connection, client): both calls happen, atomic per call ----
-
-        [TestMethod]
-        public async Task AddAndRemove_SamePair_BothCallsIssuedDeterministically()
-        {
-            var handler = new RecordingHandler((req, _) =>
-                new HttpResponseMessage(req.Method == HttpMethod.Post ? HttpStatusCode.Created : HttpStatusCode.NoContent));
-            var controller = BuildController(handler);
-            var tenant = new FakeTenantApiAccess();
-
-            // Concurrent enable + disable of the same pair should both complete independently.
-            await Task.WhenAll(
-                controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None),
-                controller.DisableClientOnConnectionAsync(tenant, ConnectionId, ClientId, CancellationToken.None));
-
-            Assert.AreEqual(2, handler.Requests.Count);
-            Assert.IsTrue(handler.Requests.Any(r => r.Method == HttpMethod.Post));
-            Assert.IsTrue(handler.Requests.Any(r => r.Method == HttpMethod.Delete));
         }
 
         // ---- 5xx is surfaced (the existing retry-with-backoff wrapper lives upstream) ----
@@ -272,9 +213,9 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(resetEpoch), ex.RateLimit!.Reset);
         }
 
-        // ---- Orchestrator end-to-end: GET current → diff → POST adds, DELETE removes ----
+        // ---- Orchestrator end-to-end: GET current → diff → PATCH adds, PATCH removes ----
         [TestMethod]
-        public async Task ReconcileEnabledConnections_MixedAddAndRemove_IssuesPostAndDelete()
+        public async Task ReconcileEnabledConnections_MixedAddAndRemove_IssuesPatchPerAffectedConnection()
         {
             const string KeepId = "con_keep";
             const string AddId = "con_add";
@@ -287,9 +228,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                     {
                         Content = new StringContent(BuildConnectionsBody(KeepId, RemoveId))
                     };
-                if (req.Method == HttpMethod.Post)
-                    return new HttpResponseMessage(HttpStatusCode.Created);
-                if (req.Method == HttpMethod.Delete)
+                if (req.Method == HttpMethod.Patch)
                     return new HttpResponseMessage(HttpStatusCode.NoContent);
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             });
@@ -303,20 +242,26 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 },
                 defaultNamespace: "default", CancellationToken.None);
 
-            var post = handler.Requests.SingleOrDefault(r => r.Method == HttpMethod.Post);
-            var delete = handler.Requests.SingleOrDefault(r => r.Method == HttpMethod.Delete);
+            var patches = handler.Requests.Where(r => r.Method == HttpMethod.Patch).ToList();
+            Assert.AreEqual(2, patches.Count, "Expected one PATCH per affected connection (add + remove).");
 
-            Assert.IsNotNull(post, "Expected a POST for the added connection");
-            Assert.IsTrue(post!.RequestUri!.AbsolutePath.EndsWith($"/connections/{AddId}/clients"));
-            StringAssert.Contains(post.Body, $"\"client_id\":\"{ClientId}\"");
+            var addPatch = patches.SingleOrDefault(p =>
+                p.RequestUri!.AbsolutePath.EndsWith($"/connections/{AddId}/clients"));
+            Assert.IsNotNull(addPatch, "Expected a PATCH for the added connection");
+            StringAssert.Contains(addPatch!.Body, $"\"client_id\":\"{ClientId}\"");
+            StringAssert.Contains(addPatch.Body, "\"status\":true");
 
-            Assert.IsNotNull(delete, "Expected a DELETE for the removed connection");
-            Assert.IsTrue(delete!.RequestUri!.AbsolutePath.EndsWith($"/connections/{RemoveId}/clients/{ClientId}"));
+            var removePatch = patches.SingleOrDefault(p =>
+                p.RequestUri!.AbsolutePath.EndsWith($"/connections/{RemoveId}/clients"));
+            Assert.IsNotNull(removePatch, "Expected a PATCH for the removed connection");
+            StringAssert.Contains(removePatch!.Body, $"\"client_id\":\"{ClientId}\"");
+            StringAssert.Contains(removePatch.Body, "\"status\":false");
 
             // Untouched 'keep' connection must not be re-issued.
             Assert.IsFalse(handler.Requests.Any(r =>
-                r.Method != HttpMethod.Get &&
-                r.RequestUri!.AbsolutePath.Contains($"/connections/{KeepId}/")));
+                r.Method == HttpMethod.Patch &&
+                r.RequestUri!.AbsolutePath.EndsWith($"/connections/{KeepId}/clients")),
+                "The unchanged 'keep' connection should not be PATCHed.");
         }
 
         // Single helper for assembling the GET /clients/{id}/connections response body so the
