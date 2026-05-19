@@ -1,6 +1,0 @@
-# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-policies/about-code-owners
-#
-# The employees team owns the entire repository. Any change to any path
-# requires review from a member of @seatgeek/employees.
-
-*       @seatgeek/employees
