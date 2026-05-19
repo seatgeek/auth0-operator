@@ -37,6 +37,35 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             StringAssert.Contains(result, "(total: 7 items)");
         }
 
+        // R3 regression coverage: the IsSensitiveKey "token" rule must match OAuth secret tokens
+        // (access_token / refresh_token / id_token) without over-matching legitimate non-secret
+        // fields whose names start with "token_" (token_endpoint, token_endpoint_auth_method) or
+        // contain "_token_" as a non-secret segment (access_token_lifetime_in_seconds).
+        [DataTestMethod]
+        [DataRow("access_token")]
+        [DataRow("refresh_token")]
+        [DataRow("id_token")]
+        [DataRow("client_assertion")]
+        [DataRow("client_assertion_signing_key")]
+        [DataRow("signing_key")]
+        [DataRow("certificate")]
+        [DataRow("pfx")]
+        public void IsSensitiveKey_RedactsSecretShapedKey(string key)
+        {
+            Assert.IsTrue(LogValueFormatter.IsSensitiveKey(key),
+                $"Expected IsSensitiveKey(\"{key}\") to be true — secret-shaped key must redact.");
+        }
+
+        [DataTestMethod]
+        [DataRow("token_endpoint")]
+        [DataRow("token_endpoint_auth_method")]
+        [DataRow("access_token_lifetime_in_seconds")]
+        public void IsSensitiveKey_DoesNotRedactNonSecretTokenNamedKey(string key)
+        {
+            Assert.IsFalse(LogValueFormatter.IsSensitiveKey(key),
+                $"Expected IsSensitiveKey(\"{key}\") to be false — non-secret config key must not redact.");
+        }
+
         /// <summary>
         /// Single-pass <see cref="IEnumerable"/> test helper. Throws on the second
         /// <see cref="GetEnumerator"/> call so any double-enumeration in production code fails fast.

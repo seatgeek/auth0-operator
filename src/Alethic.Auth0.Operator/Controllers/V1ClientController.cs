@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -1198,8 +1199,8 @@ namespace Alethic.Auth0.Operator.Controllers
             if (!response.IsSuccessStatusCode)
             {
                 var failureBody = await ReadBodySafelyAsync(response, cancellationToken);
-                await ThrowFromHttpFailureAsync(response, failureBody, "get_client_connections",
-                    connectionId: "-", clientId, cancellationToken);
+                ThrowFromHttpFailure(response, failureBody, "get_client_connections",
+                    connectionId: "-", clientId);
             }
 
             {
@@ -1421,7 +1422,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// Issues a single <c>PATCH /api/v2/connections/{connectionId}/clients</c> with a one-row
         /// body <c>[{client_id, status}]</c> — Auth0's replacement for the deprecated
         /// <c>enabled_clients</c> field. Success is HTTP 204 (No Content); any other status surfaces
-        /// via <see cref="ThrowFromHttpFailureAsync"/>. No benign-4xx handling is required because
+        /// via <see cref="ThrowFromHttpFailure"/>. No benign-4xx handling is required because
         /// the endpoint is idempotent and returns 204 regardless of prior membership state.
         /// </summary>
         private async Task PatchConnectionClientsAsync(ITenantApiAccess tenantApiAccess, string connectionId,
@@ -1500,7 +1501,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     reconciliationType = driftContext.ReconciliationType.ToString().ToLowerInvariant(),
                     driftReason = driftContext.DriftReason,
                 });
-            await ThrowFromHttpFailureAsync(response, body, operation, connectionId, clientId, cancellationToken);
+            ThrowFromHttpFailure(response, body, operation, connectionId, clientId);
         }
 
         /// <summary>
@@ -1519,12 +1520,15 @@ namespace Alethic.Auth0.Operator.Controllers
                 return req;
             }
 
-            var response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
-                cancellationToken);
+            var firstRequest = Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken));
+            var response = await httpClient.SendAsync(firstRequest, cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+                // Dispose both the first-attempt request (and its Content stream) and the response
+                // before issuing the retry — otherwise the unread request body leaks until GC.
                 response.Dispose();
+                firstRequest.Dispose();
                 await tenantApiAccess.InvalidateAccessTokenAsync(cancellationToken);
                 response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
                     cancellationToken);
@@ -1561,8 +1565,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// "Unknown error" branch (CR-1).
         /// Callers own the response lifetime (via <c>using</c>); this method does not dispose it.
         /// </summary>
-        private Task ThrowFromHttpFailureAsync(HttpResponseMessage response, string body, string operation,
-            string connectionId, string clientId, CancellationToken cancellationToken)
+        [DoesNotReturn]
+        private void ThrowFromHttpFailure(HttpResponseMessage response, string body, string operation,
+            string connectionId, string clientId)
         {
             var statusCode = (int)response.StatusCode;
             var apiError = ParseApiErrorOrEmpty(body);

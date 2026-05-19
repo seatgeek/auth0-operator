@@ -377,8 +377,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Delays (in milliseconds) used between attempts of the K8s 409-Conflict retry helper.
-        /// Four attempts total — caller's first attempt + up to three retries — with jittered
-        /// 100 / 400 / 1600 ms pauses between attempts. Plain "100/400/1600 ms ±25% jitter".
+        /// Three retries after the initial attempt (4 total). Delays before each retry:
+        /// retry 1: ~100ms, retry 2: ~400ms, retry 3: ~1600ms (each ±25% jitter).
         /// </summary>
         private static readonly int[] KubeConflictRetryDelaysMs = new[] { 100, 400, 1600 };
 
