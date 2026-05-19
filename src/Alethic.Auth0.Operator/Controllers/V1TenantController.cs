@@ -83,8 +83,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 "enabled_locales",
                 "idle_session_lifetime",
                 "session_lifetime",
-                "sandbox_version",
-                "sandbox_versions_available"
+                "sandbox_version"
             };
         }
 
