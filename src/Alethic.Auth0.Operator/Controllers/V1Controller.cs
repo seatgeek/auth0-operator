@@ -789,17 +789,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Returns true for exception types that almost certainly indicate a programmer bug
-        /// (null deref, bad cast, missing type, missing-key lookup, out-of-range index, malformed
-        /// Auth0 payload) rather than a transient runtime / network / API condition. These
-        /// propagate uncaught so the host's crash-loop / paging machinery handles them — a
-        /// silent requeue would mask them and grow an unbounded retry queue.
-        /// <para>
-        /// V3: <see cref="KeyNotFoundException"/>, <see cref="IndexOutOfRangeException"/>, and
-        /// <see cref="JsonSerializationException"/> (Newtonsoft, used by the Auth0 SDK) are
-        /// included — each represents a code-level invariant violation that requeue cannot
-        /// resolve. A malformed Auth0 payload, in particular, will fail the same way every
-        /// time, so requeueing it just hides the SDK/server-side break.
-        /// </para>
+        /// (null deref, bad cast, missing type) rather than a transient runtime / network / API
+        /// condition. These propagate uncaught so the host's crash-loop / paging machinery
+        /// handles them — a silent requeue would mask them and grow an unbounded retry queue.
         /// <para>
         /// <see cref="ArgumentException"/> (and its <see cref="ArgumentNullException"/> /
         /// <see cref="ArgumentOutOfRangeException"/> subclasses) is included: a controller passing
@@ -815,10 +807,7 @@ namespace Alethic.Auth0.Operator.Controllers
             e is NullReferenceException
                 or InvalidCastException
                 or TypeLoadException
-                or ArgumentException
-                or KeyNotFoundException
-                or IndexOutOfRangeException
-                or Newtonsoft.Json.JsonSerializationException;
+                or ArgumentException;
 
         /// <inheritdoc />
         public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);

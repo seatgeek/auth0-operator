@@ -194,36 +194,6 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         }
 
         // ============================================================================
-        // V3: programmer-bug exceptions propagate (no silent requeue).
-        // ============================================================================
-
-        [TestMethod]
-        public async Task ReconcileAsync_Propagates_JsonSerializationException_AsProgrammerBug()
-        {
-            // A malformed Auth0 payload manifests as Newtonsoft JsonSerializationException
-            // (deep inside the SDK). Requeueing it would loop forever on the same bad input
-            // and grow the work queue without bound. The IsProgrammerBug allowlist now
-            // includes JsonSerializationException so the exception propagates and the host's
-            // crash-loop / paging machinery surfaces the break instead.
-            var entity = MakeClient();
-            var requeueCalls = new List<(V1Client entity, TimeSpan delay)>();
-
-            var kube = new Mock<IKubernetesClient>(MockBehavior.Loose);
-            var controller = new TestController(
-                kube.Object,
-                requeue: (e, d) => requeueCalls.Add((e, d)),
-                reconcileImpl: (_, __) =>
-                    throw new Newtonsoft.Json.JsonSerializationException(
-                        "simulated malformed Auth0 payload"));
-
-            await Assert.ThrowsExceptionAsync<Newtonsoft.Json.JsonSerializationException>(() =>
-                controller.ReconcileAsync(entity, CancellationToken.None));
-
-            Assert.AreEqual(0, requeueCalls.Count,
-                "Programmer-bug exceptions (JsonSerializationException) must propagate, not requeue.");
-        }
-
-        // ============================================================================
         // M2: end-to-end status-write retry-exhaustion → requeue (the original incident).
         // ============================================================================
 
