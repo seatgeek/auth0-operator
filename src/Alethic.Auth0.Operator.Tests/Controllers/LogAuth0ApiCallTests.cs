@@ -22,22 +22,29 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Alethic.Auth0.Operator.Tests.Controllers
 {
     /// <summary>
-    /// Locks the contract of <see cref="V1Controller{TEntity,TSpec,TStatus,TConf}.LogAuth0ApiCall"/>:
+    /// Locks the contract of the Auth0 API logging funnel
+    /// (<see cref="V1Controller{TEntity,TSpec,TStatus,TConf}.LogAuth0Read"/> and
+    /// <see cref="V1Controller{TEntity,TSpec,TStatus,TConf}.LogAuth0Write"/>):
     ///
     /// R1 — exactly one log entry per call, at the right level (Warning for Write, Information for Read).
     /// R2 — Write calls carry <c>reconciliationType</c> / <c>driftReason</c> / <c>driftFields[]</c>
-    ///      derived from a required <see cref="DriftLogContext"/>; Read calls omit them; passing a
-    ///      null context for a Write is a programmer error that throws at runtime.
+    ///      derived from a required <see cref="DriftLogContext"/>; Read calls omit them. The
+    ///      "Write without context" failure mode is now a compile error (non-nullable parameter on
+    ///      <c>LogAuth0Write</c>) so the runtime-throw test that lived here was retired.
     /// </summary>
     [TestClass]
     public class LogAuth0ApiCallTests
     {
         // V1ClientController is the most fully-wired concrete controller in the test bench, so we
-        // reuse it to reach the protected LogAuth0ApiCall via reflection rather than building a
-        // throwaway controller hierarchy just for this test class.
-        private static readonly MethodInfo _logMethod = typeof(V1ClientController)
-            .GetMethod("LogAuth0ApiCall", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("LogAuth0ApiCall not found on V1ClientController");
+        // reuse it to reach the protected LogAuth0Read / LogAuth0Write methods via reflection
+        // rather than building a throwaway controller hierarchy just for this test class.
+        private static readonly MethodInfo _logReadMethod = typeof(V1ClientController)
+            .GetMethod("LogAuth0Read", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("LogAuth0Read not found on V1ClientController");
+
+        private static readonly MethodInfo _logWriteMethod = typeof(V1ClientController)
+            .GetMethod("LogAuth0Write", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("LogAuth0Write not found on V1ClientController");
 
         // --- R1: exactly-one-log per call, correct level ---
 
@@ -62,6 +69,39 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             Assert.AreEqual(1, logger.Entries.Count, "Write call must emit exactly one log entry (regression for duplicate-log bug)");
             Assert.AreEqual(LogLevel.Warning, logger.Entries[0].Level);
+        }
+
+        // --- R2: write-log enum fields serialize as camelCase strings, never numbers ---
+        // Locks the [JsonConverter(CamelCaseJsonStringEnumConverter)] contract on
+        // ReconciliationType / DriftChangeType. If someone changes _structuredLogJsonOptions to
+        // install a default JsonStringEnumConverter (or drops the boxing-as-object? step in
+        // EmitAuth0ApiLog), the enums would silently revert to numeric output and every Datadog
+        // dashboard keyed on "drift" / "first" / "finalizer" / "added" / "modified" / "removed"
+        // would go dark. This test fails noisily before that ships.
+
+        [TestMethod]
+        public void WriteCall_ReconciliationType_IsCamelCaseString_NotNumber()
+        {
+            var (controller, logger) = BuildController();
+            var ctx = DriftLogContext.Drift(new List<DriftField>
+            {
+                new("name", DriftChangeType.Modified, BeforeValue: "\"old\"", AfterValue: "\"new\""),
+            });
+
+            Invoke(controller, "msg", Auth0ApiCallType.Write, "A0Client", "n", "ns", "update_client", driftContext: ctx);
+
+            using var doc = JsonDocument.Parse(logger.Entries.Single().Message);
+            var root = doc.RootElement;
+
+            var reconciliationType = root.GetProperty("reconciliationType");
+            Assert.AreEqual(JsonValueKind.String, reconciliationType.ValueKind,
+                "reconciliationType must serialize as a camelCase string, not a number");
+            Assert.AreEqual("drift", reconciliationType.GetString());
+
+            var changeType = root.GetProperty("driftFields")[0].GetProperty("changeType");
+            Assert.AreEqual(JsonValueKind.String, changeType.ValueKind,
+                "driftFields[].changeType must serialize as a camelCase string, not a number");
+            Assert.AreEqual("modified", changeType.GetString());
         }
 
         // --- R2: write-log carries reconciliationType / driftReason / driftFields ---
@@ -158,24 +198,12 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.IsFalse(root.TryGetProperty("driftFields", out _), "Read calls must not emit driftFields");
         }
 
-        // --- R2 enforcement: programmer error to write without context ---
-
-        [TestMethod]
-        public void WriteCall_WithoutDriftContext_ThrowsArgumentNullException()
-        {
-            var (controller, _) = BuildController();
-
-            try
-            {
-                Invoke(controller, "msg", Auth0ApiCallType.Write, "A0Client", "n", "ns", "create_client", driftContext: null);
-                Assert.Fail("Expected ArgumentNullException for Write without DriftLogContext");
-            }
-            catch (TargetInvocationException tex)
-            {
-                Assert.IsInstanceOfType<ArgumentNullException>(tex.InnerException,
-                    "Inner exception should be ArgumentNullException, was " + tex.InnerException?.GetType().Name);
-            }
-        }
+        // --- R2 enforcement: "Write without context" is now a compile error ---
+        // The previous WriteCall_WithoutDriftContext_ThrowsArgumentNullException test enforced the
+        // contract at runtime against a single LogAuth0ApiCall(...) entry point. The split into
+        // LogAuth0Read / LogAuth0Write moves that enforcement into the type system: the Write
+        // method's driftContext parameter is non-nullable, so passing null is rejected by the C#
+        // compiler. There is no longer a runtime path to test.
 
         // --- R2 success-counterpart log on IssueAtomicMembershipChangeAsync ---
 
@@ -207,7 +235,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             var df = root.GetProperty("driftFields");
             Assert.AreEqual(1, df.GetArrayLength());
-            Assert.AreEqual("spec.conf.enabled_connections[con_x]", df[0].GetProperty("fieldPath").GetString());
+            Assert.AreEqual("spec.conf.enabled_connections", df[0].GetProperty("fieldPath").GetString());
+            Assert.AreEqual("con_x", df[0].GetProperty("afterValue").GetString());
             Assert.AreEqual("added", df[0].GetProperty("changeType").GetString());
         }
 
@@ -262,10 +291,24 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         private static void Invoke(V1ClientController controller, string message, Auth0ApiCallType type,
             string entityType, string entityName, string entityNamespace, string purpose, DriftLogContext? driftContext)
         {
-            _logMethod.Invoke(controller, new object?[]
+            if (type == Auth0ApiCallType.Write)
             {
-                message, type, entityType, entityName, entityNamespace, purpose, driftContext,
-            });
+                if (driftContext is null)
+                    throw new ArgumentNullException(nameof(driftContext),
+                        "LogAuth0Write is a non-nullable contract; tests must pass a DriftLogContext.");
+
+                _logWriteMethod.Invoke(controller, new object?[]
+                {
+                    message, entityType, entityName, entityNamespace, purpose, driftContext,
+                });
+            }
+            else
+            {
+                _logReadMethod.Invoke(controller, new object?[]
+                {
+                    message, entityType, entityName, entityNamespace, purpose,
+                });
+            }
         }
 
         private static (V1ClientController, RecordingLogger) BuildController()

@@ -69,7 +69,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     resourceServerId = id,
                     operation = "fetch"
                 });
-                LogAuth0ApiCall($"Getting Auth0 resource server with ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "retrieve_resource_server_by_id", driftContext: null);
+                LogAuth0Read($"Getting Auth0 resource server with ID: {id}", "A0ResourceServer", id, defaultNamespace, "retrieve_resource_server_by_id");
                 var result = await api.ResourceServers.GetAsync(id, cancellationToken: cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully retrieved resource server from Auth0 with ID {id}", new
                 {
@@ -169,7 +169,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Creating Auth0 resource server with identifier: {conf.Identifier}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "create_resource_server", DriftLogContext.FirstReconciliation());
+                LogAuth0Write($"Creating Auth0 resource server with identifier: {conf.Identifier}", "A0ResourceServer", conf.Name ?? "unknown", "unknown", "create_resource_server", DriftLogContext.FirstReconciliation());
                 var self = await api.ResourceServers.CreateAsync(TransformToNewtonsoftJson<ResourceServerConf, ResourceServerCreateRequest>(conf), cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully created resource server in Auth0 with ID {self.Id} and identifier {self.Identifier}", new
                 {
@@ -208,7 +208,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Updating Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", conf.Name ?? "unknown", "unknown", "update_resource_server", driftContext);
+                LogAuth0Write($"Updating Auth0 resource server with ID: {id}", "A0ResourceServer", conf.Name ?? "unknown", "unknown", "update_resource_server", driftContext);
                 await api.ResourceServers.UpdateAsync(id, TransformToNewtonsoftJson<ResourceServerConf, ResourceServerUpdateRequest>(conf), cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated resource server in Auth0 with ID {id}", new
                 {
@@ -255,7 +255,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Deleting Auth0 resource server with ID: {id}", Auth0ApiCallType.Write, "A0ResourceServer", id, "unknown", "delete_resource_server", DriftLogContext.FinalizerDelete());
+                LogAuth0Write($"Deleting Auth0 resource server with ID: {id}", "A0ResourceServer", id, "unknown", "delete_resource_server", DriftLogContext.FinalizerDelete());
                 await api.ResourceServers.DeleteAsync(id, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully deleted resource server from Auth0 with ID {id}", new
                 {

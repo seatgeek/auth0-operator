@@ -136,7 +136,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     entityName = entity.Name(),
                     fetchReason = reason
                 });
-                LogAuth0ApiCall($"Getting Auth0 tenant settings", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings", driftContext: null);
+                LogAuth0Read($"Getting Auth0 tenant settings", "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings");
                 settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
                 if (settings is null)
                 {
@@ -228,7 +228,7 @@ namespace Alethic.Auth0.Operator.Controllers
                         var tenantDriftContext = isFirstReconciliation
                             ? DriftLogContext.FirstReconciliation()
                             : DriftLogContext.Drift(driftFieldsForWrite);
-                        LogAuth0ApiCall($"Updating Auth0 tenant settings", Auth0ApiCallType.Write, "A0Tenant", entity.Name(), entity.Namespace(), "update_tenant_settings", tenantDriftContext);
+                        LogAuth0Write($"Updating Auth0 tenant settings", "A0Tenant", entity.Name(), entity.Namespace(), "update_tenant_settings", tenantDriftContext);
                         settings = await api.TenantSettings.UpdateAsync(req, cancellationToken);
                         Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} successfully updated tenant settings in Auth0", new
                         {
@@ -265,7 +265,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     entityName = entity.Name(),
                     operation = "retrieve_final_settings"
                 });
-                LogAuth0ApiCall($"Getting Auth0 tenant settings for status update", Auth0ApiCallType.Read, "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings_for_status", driftContext: null);
+                LogAuth0Read($"Getting Auth0 tenant settings for status update", "A0Tenant", entity.Name(), entity.Namespace(), "retrieve_tenant_settings_for_status");
                 settings = await api.TenantSettings.GetAsync(cancellationToken: cancellationToken);
                 entity.Status.LastConf = TransformToSystemTextJson<Hashtable>(settings);
                 try
@@ -362,15 +362,15 @@ namespace Alethic.Auth0.Operator.Controllers
                 var key = entry.Key.ToString()!;
                 if (!last.ContainsKey(entry.Key))
                 {
-                    driftFields.Add(new DriftField(key, DriftChangeType.Added, BeforeValue: null, AfterValue: LogValueFormatter.FormatValueForLogging(entry.Value)));
+                    driftFields.Add(new DriftField(key, DriftChangeType.Added, BeforeValue: null, AfterValue: RedactedOrFormat(key, entry.Value)));
                 }
                 else if (!AreValuesEqual(entry.Value, last[entry.Key]))
                 {
                     driftFields.Add(new DriftField(
                         key,
                         DriftChangeType.Modified,
-                        BeforeValue: LogValueFormatter.FormatValueForLogging(last[entry.Key]),
-                        AfterValue: LogValueFormatter.FormatValueForLogging(entry.Value)));
+                        BeforeValue: RedactedOrFormat(key, last[entry.Key]),
+                        AfterValue: RedactedOrFormat(key, entry.Value)));
                 }
             }
 
@@ -379,12 +379,22 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (!desired.ContainsKey(entry.Key))
                 {
                     var key = entry.Key.ToString()!;
-                    driftFields.Add(new DriftField(key, DriftChangeType.Removed, BeforeValue: LogValueFormatter.FormatValueForLogging(entry.Value), AfterValue: null));
+                    driftFields.Add(new DriftField(key, DriftChangeType.Removed, BeforeValue: RedactedOrFormat(key, entry.Value), AfterValue: null));
                 }
             }
 
             return driftFields;
         }
+
+        /// <summary>
+        /// Wraps <see cref="LogValueFormatter.FormatValueForLogging"/> with a top-level
+        /// key-aware redaction step so sensitive Auth0 tenant fields (signing keys, secrets,
+        /// etc.) never reach the structured drift-log payload.
+        /// </summary>
+        private static string RedactedOrFormat(string key, object? value)
+            => LogValueFormatter.IsSensitiveKey(key)
+                ? LogValueFormatter.RedactedPlaceholder
+                : LogValueFormatter.FormatValueForLogging(value);
 
         /// <summary>
         /// Filters fields for comparison based on the tenant-specific fields we track.

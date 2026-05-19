@@ -377,7 +377,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Delays (in milliseconds) used between attempts of the K8s 409-Conflict retry helper.
-        /// Three attempts total — caller's first attempt + up to two retries — with jittered
+        /// Four attempts total — caller's first attempt + up to three retries — with jittered
         /// 100 / 400 / 1600 ms pauses between attempts. Plain "100/400/1600 ms ±25% jitter".
         /// </summary>
         private static readonly int[] KubeConflictRetryDelaysMs = new[] { 100, 400, 1600 };
@@ -1523,7 +1523,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var key = entry.Key.ToString()!;
                 if (!last.ContainsKey(entry.Key))
                 {
-                    driftFields.Add(new DriftField(key, DriftChangeType.Added, BeforeValue: null, AfterValue: LogValueFormatter.FormatValueForLogging(entry.Value)));
+                    driftFields.Add(new DriftField(key, DriftChangeType.Added, BeforeValue: null, AfterValue: RedactedOrFormat(key, entry.Value)));
                 }
                 else
                 {
@@ -1532,8 +1532,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     if (!AreValuesEqual(filteredDesired, filteredAuth0))
                     {
-                        var oldValue = LogValueFormatter.FormatValueForLogging(filteredAuth0);
-                        var newValue = LogValueFormatter.FormatValueForLogging(filteredDesired);
+                        var oldValue = RedactedOrFormat(key, filteredAuth0);
+                        var newValue = RedactedOrFormat(key, filteredDesired);
                         driftFields.Add(new DriftField(key, DriftChangeType.Modified, BeforeValue: oldValue, AfterValue: newValue));
                     }
                 }
@@ -1545,12 +1545,23 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (!desired.ContainsKey(entry.Key))
                 {
                     var key = entry.Key.ToString()!;
-                    driftFields.Add(new DriftField(key, DriftChangeType.Removed, BeforeValue: LogValueFormatter.FormatValueForLogging(entry.Value), AfterValue: null));
+                    driftFields.Add(new DriftField(key, DriftChangeType.Removed, BeforeValue: RedactedOrFormat(key, entry.Value), AfterValue: null));
                 }
             }
 
             return driftFields;
         }
+
+        /// <summary>
+        /// Wraps <see cref="LogValueFormatter.FormatValueForLogging"/> with a top-level
+        /// key-aware redaction step. Catches whole-field secrets (e.g. a top-level
+        /// <c>client_secret</c> string) that the hashtable-recursion redaction in
+        /// <see cref="LogValueFormatter"/> only handles for nested entries.
+        /// </summary>
+        private static string RedactedOrFormat(string key, object? value)
+            => LogValueFormatter.IsSensitiveKey(key)
+                ? LogValueFormatter.RedactedPlaceholder
+                : LogValueFormatter.FormatValueForLogging(value);
 
         /// <summary>
         /// Logs detected configuration differences with detailed field-by-field changes.

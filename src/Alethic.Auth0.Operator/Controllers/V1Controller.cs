@@ -68,7 +68,7 @@ namespace Alethic.Auth0.Operator.Controllers
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
 
         /// <summary>
-        /// Serializer used by <see cref="LogAuth0ApiCall"/>. Matches the camelCase convention applied
+        /// Serializer used by <see cref="EmitAuth0ApiLog"/>. Matches the camelCase convention applied
         /// by <see cref="ILoggerExtensions.LogInformationJson"/> et al so investigators see a single
         /// consistent JSON shape across every structured-log path (including nested
         /// <see cref="DriftField"/> records).
@@ -106,24 +106,37 @@ namespace Alethic.Auth0.Operator.Controllers
         protected EntityRequeue<TEntity> Requeue => _requeue;
 
         /// <summary>
-        /// Logs Auth0 API call information in JSON format immediately before the API call is made.
-        /// Every <see cref="Auth0ApiCallType.Write"/> call MUST be accompanied by a non-null
-        /// <paramref name="driftContext"/> so the resulting log entry self-describes why the write
-        /// is being issued (first reconciliation, drift, or finalizer cleanup) and which fields drove
-        /// it. Read calls pass a null context and the drift fields are omitted from the JSON payload.
+        /// Logs an Auth0 <em>read</em> API call (GET/list). Emits one structured-JSON entry at
+        /// <see cref="LogLevel.Information"/> with <c>auth0ApiCallType:"read"</c> and no drift
+        /// fields. The Read/Write split exists so the contract — every Write self-describes its
+        /// drift context — is enforced by the type system instead of at runtime.
         /// </summary>
-        /// <param name="message">The content of the log message</param>
-        /// <param name="apiCallType">The type of API call</param>
-        /// <param name="entityType">The Auth0 entity type being operated on</param>
-        /// <param name="entityName">The name of the Kubernetes entity</param>
-        /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
-        /// <param name="purpose">The purpose of this Auth0 API invocation for better observability</param>
-        /// <param name="driftContext">Why this write is being issued. Required for Write calls.</param>
-        /// <exception cref="ArgumentNullException">
-        /// Thrown when <paramref name="apiCallType"/> is <see cref="Auth0ApiCallType.Write"/> and
-        /// <paramref name="driftContext"/> is null. Every write must self-describe its trigger.
-        /// </exception>
-        protected void LogAuth0ApiCall(
+        protected void LogAuth0Read(
+            string message,
+            string entityType,
+            string entityName,
+            string entityNamespace,
+            string purpose)
+            => EmitAuth0ApiLog(message, Auth0ApiCallType.Read, entityType, entityName, entityNamespace, purpose, driftContext: null);
+
+        /// <summary>
+        /// Logs an Auth0 <em>write</em> API call (create/update/delete). Emits one structured-JSON
+        /// entry at <see cref="LogLevel.Warning"/> carrying <c>reconciliationType</c>,
+        /// <c>driftReason</c>, and <c>driftFields[]</c> derived from the required
+        /// <paramref name="driftContext"/>. The non-nullable parameter makes "Write without context"
+        /// a compile error — the runtime <c>ArgumentNullException</c> guard that previously enforced
+        /// this is gone, so genuine <see cref="ArgumentException"/> bugs can still crash-loop visibly.
+        /// </summary>
+        protected void LogAuth0Write(
+            string message,
+            string entityType,
+            string entityName,
+            string entityNamespace,
+            string purpose,
+            DriftLogContext driftContext)
+            => EmitAuth0ApiLog(message, Auth0ApiCallType.Write, entityType, entityName, entityNamespace, purpose, driftContext);
+
+        private void EmitAuth0ApiLog(
             string message,
             Auth0ApiCallType apiCallType,
             string entityType,
@@ -132,10 +145,6 @@ namespace Alethic.Auth0.Operator.Controllers
             string purpose,
             DriftLogContext? driftContext)
         {
-            if (apiCallType == Auth0ApiCallType.Write && driftContext is null)
-                throw new ArgumentNullException(nameof(driftContext),
-                    "Auth0ApiCallType.Write requires a non-null DriftLogContext so the write log carries reconciliationType/driftFields/driftReason.");
-
             var logEntry = new Dictionary<string, object?>
             {
                 ["timestamp"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
@@ -357,7 +366,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
-                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference", driftContext: null);
+                LogAuth0Read($"Getting Auth0 resource server by reference ID: {id}", "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");
@@ -792,17 +801,21 @@ namespace Alethic.Auth0.Operator.Controllers
         /// time, so requeueing it just hides the SDK/server-side break.
         /// </para>
         /// <para>
-        /// M1: <see cref="ArgumentException"/> is deliberately NOT included. The mandatory-context
-        /// LogAuth0ApiCall contract throws <see cref="ArgumentNullException"/> when a Write call
-        /// forgets its <see cref="DriftLogContext"/>; we want that to requeue (so the operator
-        /// keeps trying other entities) instead of crash-looping the whole pod. Genuine null-deref
-        /// / cast bugs still bypass the catch via the other branches below.
+        /// <see cref="ArgumentException"/> (and its <see cref="ArgumentNullException"/> /
+        /// <see cref="ArgumentOutOfRangeException"/> subclasses) is included: a controller passing
+        /// a null/invalid argument to an internal helper is a wiring bug that requeue will never
+        /// resolve. The previous build briefly dropped this entry to cushion a runtime
+        /// <c>ArgumentNullException</c> from <c>LogAuth0ApiCall</c>'s mandatory-context guard;
+        /// that guard has since been removed by splitting the funnel into
+        /// <see cref="LogAuth0Read"/> / <see cref="LogAuth0Write"/>, so the original crash-loud
+        /// invariant is restored.
         /// </para>
         /// </summary>
         private static bool IsProgrammerBug(Exception e) =>
             e is NullReferenceException
                 or InvalidCastException
                 or TypeLoadException
+                or ArgumentException
                 or KeyNotFoundException
                 or IndexOutOfRangeException
                 or Newtonsoft.Json.JsonSerializationException;
