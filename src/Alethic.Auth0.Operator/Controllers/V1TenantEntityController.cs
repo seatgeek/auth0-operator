@@ -467,8 +467,11 @@ namespace Alethic.Auth0.Operator.Controllers
             // H5: Every metadata key written by this operator lives under the
             // `kubernetes.auth0.com/` prefix (current-client-id, current-tenant-ref,
             // previous-client-id, previous-tenant-ref, tenant-uid, tenant-name,
-            // tenant-change-retry-count, partition, operator). Restricting the overlay
+            // tenant-change-retry-count, partition). Restricting the overlay
             // to this prefix is sufficient — no other operator-owned key escapes.
+            // For reference (not an annotation key): the EventSource `reportingController`
+            // value is `kubernetes.auth0.com/operator`, which shares the prefix but is
+            // surfaced via Kubernetes events, not metadata.
             const string operatorPrefix = "kubernetes.auth0.com/";
 
             var rmd = refetched.EnsureMetadata();
@@ -497,7 +500,9 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
             }
 
-            // Overlay labels (symmetric)
+            // Overlay labels (symmetric).
+            // Defensive — no operator code currently writes labels; this branch is here so
+            // future label writes are auto-protected by the same allowlist without re-deriving it.
             var localLabels = local.Metadata?.Labels;
             if (localLabels is not null)
             {

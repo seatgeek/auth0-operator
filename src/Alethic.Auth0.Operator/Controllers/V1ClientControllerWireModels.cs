@@ -8,5 +8,4 @@ namespace Alethic.Auth0.Operator.Controllers
         [Newtonsoft.Json.JsonProperty("connections")]
         public List<Connection> Connections { get; set; } = new List<Connection>();
     }
-
 }
