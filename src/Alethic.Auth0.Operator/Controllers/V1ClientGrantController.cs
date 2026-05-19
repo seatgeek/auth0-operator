@@ -289,7 +289,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Creating Auth0 client grant", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "create_client_grant");
+                LogAuth0ApiCall($"Creating Auth0 client grant", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "create_client_grant", DriftLogContext.FirstReconciliation());
                 var self = await api.ClientGrants.CreateAsync(req, cancellationToken);
                 if (self is null)
                 {
@@ -327,7 +327,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientGrantConf conf, List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientGrantConf conf, IReadOnlyList<DriftField> driftFields, string defaultNamespace, string entityName, ITenantApiAccess tenantApiAccess, DriftLogContext driftContext, CancellationToken cancellationToken)
         {
             var req = new ClientGrantUpdateRequest();
             req.Scope = conf.Scope?.ToList() ?? new List<string>();
@@ -342,7 +342,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "update_client_grant");
+                LogAuth0ApiCall($"Updating Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", "unknown", "unknown", "update_client_grant", driftContext);
                 await api.ClientGrants.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated client grant in Auth0 with ID {id}", new
                 {
@@ -377,7 +377,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown", "delete_client_grant");
+                LogAuth0ApiCall($"Deleting Auth0 client grant with ID: {id}", Auth0ApiCallType.Write, "A0ClientGrant", id, "unknown", "delete_client_grant", DriftLogContext.FinalizerDelete());
                 await api.ClientGrants.DeleteAsync(id, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully deleted client grant from Auth0 with ID {id}", new
                 {
