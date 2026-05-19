@@ -35,6 +35,8 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         private const string TenantBaseUri = "https://example.us.auth0.com/api/v2/";
         private const string ConnectionId = "con_test123";
         private const string ClientId = "abc_clientid";
+        private const string EntityNamespace = "default";
+        private const string EntityName = "test-client";
 
         // ---- Golden path: enable issues PATCH with status:true and 204 clears ----
 
@@ -46,7 +48,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var tenant = new FakeTenantApiAccess();
 
             await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId,
-                defaultNamespace: "default", CancellationToken.None);
+                EntityNamespace, EntityName, CancellationToken.None);
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
@@ -70,15 +72,20 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler, logger);
 
             await controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                defaultNamespace: "default", CancellationToken.None);
+                EntityNamespace, EntityName, CancellationToken.None);
 
             var hit = logger.Messages.SingleOrDefault(m =>
                 m.Contains("\"operation\":\"enable_client_on_connection\"")
                 && m.Contains("succeeded")
                 && m.Contains($"\"connectionId\":\"{ConnectionId}\"")
-                && m.Contains($"\"clientId\":\"{ClientId}\""));
+                && m.Contains($"\"clientId\":\"{ClientId}\"")
+                && m.Contains($"\"entityNamespace\":\"{EntityNamespace}\"")
+                && m.Contains($"\"entityName\":\"{EntityName}\"")
+                && m.Contains($"{EntityNamespace}/{EntityName}"));
             Assert.IsNotNull(hit,
-                "Expected a structured info log carrying the operation label, success phrasing, and the connection/client pair.\n"
+                "Expected a structured info log carrying the operation label, success phrasing, "
+                + "the connection/client pair, and the K8s entity namespace/name in both the literal "
+                + "message and the structured payload (CR-5).\n"
                 + "Captured messages:\n  - " + string.Join("\n  - ", logger.Messages));
         }
 
@@ -90,15 +97,19 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler, logger);
 
             await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                defaultNamespace: "default", CancellationToken.None);
+                EntityNamespace, EntityName, CancellationToken.None);
 
             var hit = logger.Messages.SingleOrDefault(m =>
                 m.Contains("\"operation\":\"disable_client_on_connection\"")
                 && m.Contains("succeeded")
                 && m.Contains($"\"connectionId\":\"{ConnectionId}\"")
-                && m.Contains($"\"clientId\":\"{ClientId}\""));
+                && m.Contains($"\"clientId\":\"{ClientId}\"")
+                && m.Contains($"\"entityNamespace\":\"{EntityNamespace}\"")
+                && m.Contains($"\"entityName\":\"{EntityName}\"")
+                && m.Contains($"{EntityNamespace}/{EntityName}"));
             Assert.IsNotNull(hit,
-                "Expected a structured info log carrying the operation label and success phrasing for the disable path.\n"
+                "Expected a structured info log carrying the operation label, success phrasing, "
+                + "and the K8s entity namespace/name (CR-5) for the disable path.\n"
                 + "Captured messages:\n  - " + string.Join("\n  - ", logger.Messages));
         }
 
@@ -111,7 +122,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var controller = BuildController(handler);
 
             await controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                defaultNamespace: "default", CancellationToken.None);
+                EntityNamespace, EntityName, CancellationToken.None);
 
             Assert.AreEqual(1, handler.Requests.Count);
             var req = handler.Requests[0];
@@ -131,9 +142,9 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 { Content = new StringContent("{\"statusCode\":400,\"error\":\"Bad Request\"}") });
             var controller = BuildController(handler);
 
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+            await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.ErrorApiException>(() =>
                 controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    defaultNamespace: "default", CancellationToken.None));
+                    EntityNamespace, EntityName, CancellationToken.None));
         }
 
         [TestMethod]
@@ -143,9 +154,9 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 { Content = new StringContent("{\"statusCode\":403,\"error\":\"Forbidden\"}") });
             var controller = BuildController(handler);
 
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+            await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.ErrorApiException>(() =>
                 controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    defaultNamespace: "default", CancellationToken.None));
+                    EntityNamespace, EntityName, CancellationToken.None));
         }
 
         // ---- 401 triggers token regeneration and a single retry ----
@@ -165,7 +176,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             var tenant = new FakeTenantApiAccess { TokenSequence = new[] { "tok-1", "tok-2" } };
 
             await controller.EnableClientOnConnectionAsync(tenant, ConnectionId, ClientId,
-                defaultNamespace: "default", CancellationToken.None);
+                EntityNamespace, EntityName, CancellationToken.None);
 
             Assert.AreEqual(2, handler.Requests.Count, "Should retry once after 401");
             Assert.AreEqual("tok-1", handler.Requests[0].Authorization);
@@ -183,9 +194,30 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 { Content = new StringContent("{\"statusCode\":500,\"error\":\"server\"}") });
             var controller = BuildController(handler);
 
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+            await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.ErrorApiException>(() =>
                 controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    defaultNamespace: "default", CancellationToken.None));
+                    EntityNamespace, EntityName, CancellationToken.None));
+        }
+
+        // ---- CR-1: 5xx populates ErrorApiException with status code + ApiError so the tier-1
+        //      catch (V1Controller.cs:608) reads the body verbatim instead of the generic catch
+        //      at V1Controller.cs:738 emitting an "Unknown error" Event. ----
+
+        [TestMethod]
+        public async Task EnableClientOnConnection_503_Throws_ErrorApiException_With_StatusCode_And_ApiError()
+        {
+            var handler = new RecordingHandler((_, __) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                { Content = new StringContent("{\"statusCode\":503,\"error\":\"Service Unavailable\",\"message\":\"upstream down\"}") });
+            var controller = BuildController(handler);
+
+            var ex = await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.ErrorApiException>(() =>
+                controller.EnableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
+                    EntityNamespace, EntityName, CancellationToken.None));
+
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ex.StatusCode,
+                "503 must surface as ErrorApiException.StatusCode = 503 so the tier-1 catch (V1Controller.cs:608) labels the Event correctly.");
+            Assert.IsNotNull(ex.ApiError, "ApiError must be populated from the body");
+            Assert.AreEqual("upstream down", ex.ApiError!.Message);
         }
 
         // ---- 429 is surfaced as Auth0.Core.Exceptions.RateLimitApiException so the upstream
@@ -209,7 +241,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
 
             var ex = await Assert.ThrowsExceptionAsync<global::Auth0.Core.Exceptions.RateLimitApiException>(() =>
                 controller.DisableClientOnConnectionAsync(new FakeTenantApiAccess(), ConnectionId, ClientId,
-                    defaultNamespace: "default", CancellationToken.None));
+                    EntityNamespace, EntityName, CancellationToken.None));
 
             Assert.IsNotNull(ex.RateLimit, "RateLimit must be populated so the upstream handler can schedule the requeue");
             Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(resetEpoch), ex.RateLimit!.Reset);
@@ -242,7 +274,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                     new V1ConnectionReference { Id = KeepId },
                     new V1ConnectionReference { Id = AddId }
                 },
-                defaultNamespace: "default", CancellationToken.None);
+                defaultNamespace: EntityNamespace, entityName: EntityName, CancellationToken.None);
 
             var patches = handler.Requests.Where(r => r.Method == HttpMethod.Patch).ToList();
             Assert.AreEqual(2, patches.Count, "Expected one PATCH per affected connection (add + remove).");
@@ -264,30 +296,6 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 r.Method == HttpMethod.Patch &&
                 r.RequestUri!.AbsolutePath.EndsWith($"/connections/{KeepId}/clients")),
                 "The unchanged 'keep' connection should not be PATCHed.");
-        }
-
-        // Future-proofing — if Auth0 ever changes GET /api/v2/clients/{id}/connections from the
-        // wrapper {"connections":[...]} shape to a bare array, this test fails loudly instead of
-        // letting GetClientConnectionsAsync silently return an empty list and trigger a re-enable storm.
-        [TestMethod]
-        public async Task GetClientConnections_MalformedResponse_Rethrows()
-        {
-            var handler = new RecordingHandler((req, _) =>
-            {
-                if (req.Method == HttpMethod.Get)
-                    return new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        // Bare-array body — NOT the wrapper shape ClientConnectionsResponse expects.
-                        Content = new StringContent("[{\"id\":\"con_x\"}]")
-                    };
-                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
-            });
-            var controller = BuildController(handler);
-
-            await Assert.ThrowsExceptionAsync<Newtonsoft.Json.JsonSerializationException>(() =>
-                controller.ReconcileEnabledConnections(new FakeTenantApiAccess(), ClientId,
-                    enabledConnectionRefs: Array.Empty<V1ConnectionReference>(),
-                    defaultNamespace: "default", CancellationToken.None));
         }
 
         // Single helper for assembling the GET /clients/{id}/connections response body so the

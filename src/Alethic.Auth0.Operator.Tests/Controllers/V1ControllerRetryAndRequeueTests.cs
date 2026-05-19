@@ -321,7 +321,7 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             protected override Task<string> Create(global::Auth0.ManagementApi.IManagementApiClient api, ClientConf conf, string defaultNamespace, CancellationToken cancellationToken)
                 => Task.FromResult(string.Empty);
 
-            protected override Task Update(global::Auth0.ManagementApi.IManagementApiClient api, string id, System.Collections.Hashtable? last, ClientConf conf, List<string> driftingFields, string defaultNamespace, Alethic.Auth0.Operator.Services.ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+            protected override Task Update(global::Auth0.ManagementApi.IManagementApiClient api, string id, System.Collections.Hashtable? last, ClientConf conf, IReadOnlyList<Alethic.Auth0.Operator.Controllers.DriftField> driftFields, string defaultNamespace, string entityName, Alethic.Auth0.Operator.Services.ITenantApiAccess tenantApiAccess, Alethic.Auth0.Operator.Controllers.DriftLogContext driftContext, CancellationToken cancellationToken)
                 => Task.CompletedTask;
 
             protected override Task Delete(global::Auth0.ManagementApi.IManagementApiClient api, string id, CancellationToken cancellationToken)

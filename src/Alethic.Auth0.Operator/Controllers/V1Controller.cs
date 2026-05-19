@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
@@ -65,11 +66,21 @@ namespace Alethic.Auth0.Operator.Controllers
 
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
+
+        /// <summary>
+        /// Serializer used by <see cref="EmitAuth0ApiLog"/>. Matches the camelCase convention applied
+        /// by <see cref="ILoggerExtensions.LogInformationJson"/> et al so investigators see a single
+        /// consistent JSON shape across every structured-log path (including nested
+        /// <see cref="DriftField"/> records).
+        /// </summary>
+        static readonly JsonSerializerOptions _structuredLogJsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = false,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        };
         static readonly SemaphoreSlim _getTenantApiClient = new(1);
 
-        readonly IKubernetesClient _kube;
         readonly EntityRequeue<TEntity> _requeue;
-        readonly ILogger _logger;
 
         /// <summary>
         /// Initializes a new instance.
@@ -81,9 +92,7 @@ namespace Alethic.Auth0.Operator.Controllers
         public V1Controller(IKubernetesClient kube, EntityRequeue<TEntity> requeue, IMemoryCache cache, ILogger logger)
             : base(kube, logger)
         {
-            _kube = kube ?? throw new ArgumentNullException(nameof(kube));
             _requeue = requeue ?? throw new ArgumentNullException(nameof(requeue));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -92,48 +101,76 @@ namespace Alethic.Auth0.Operator.Controllers
         protected abstract string EntityTypeName { get; }
 
         /// <summary>
-        /// Gets the Kubernetes API client.
-        /// </summary>
-        protected IKubernetesClient Kube => _kube;
-
-        /// <summary>
         /// Gets the requeue function for the entity controller.
         /// </summary>
         protected EntityRequeue<TEntity> Requeue => _requeue;
 
         /// <summary>
-        /// Gets the logger.
+        /// Logs an Auth0 <em>read</em> API call (GET/list). Emits one structured-JSON entry at
+        /// <see cref="LogLevel.Information"/> with <c>auth0ApiCallType:"read"</c> and no drift
+        /// fields. The Read/Write split exists so the contract — every Write self-describes its
+        /// drift context — is enforced by the type system instead of at runtime.
         /// </summary>
-        protected ILogger Logger => _logger;
+        protected void LogAuth0Read(
+            string message,
+            string entityType,
+            string entityName,
+            string entityNamespace,
+            string purpose)
+            => EmitAuth0ApiLog(message, Auth0ApiCallType.Read, entityType, entityName, entityNamespace, purpose, driftContext: null);
 
         /// <summary>
-        /// Logs Auth0 API call information in JSON format immediately before the API call is made.
+        /// Logs an Auth0 <em>write</em> API call (create/update/delete). Emits one structured-JSON
+        /// entry at <see cref="LogLevel.Warning"/> carrying <c>reconciliationType</c>,
+        /// <c>driftReason</c>, and <c>driftFields[]</c> derived from the required
+        /// <paramref name="driftContext"/>. The non-nullable parameter makes "Write without context"
+        /// a compile error — the runtime <c>ArgumentNullException</c> guard that previously enforced
+        /// this is gone, so genuine <see cref="ArgumentException"/> bugs can still crash-loop visibly.
         /// </summary>
-        /// <param name="message">The content of the log message</param>
-        /// <param name="apiCallType">The type of API call</param>
-        /// <param name="entityType">The Auth0 entity type being operated on</param>
-        /// <param name="entityName">The name of the Kubernetes entity</param>
-        /// <param name="entityNamespace">The namespace of the Kubernetes entity</param>
-        /// <param name="purpose">The purpose of this Auth0 API invocation for better observability</param>
-        protected void LogAuth0ApiCall(string message, Auth0ApiCallType apiCallType, string entityType, string entityName, string entityNamespace, string purpose)
+        protected void LogAuth0Write(
+            string message,
+            string entityType,
+            string entityName,
+            string entityNamespace,
+            string purpose,
+            DriftLogContext driftContext)
+            => EmitAuth0ApiLog(message, Auth0ApiCallType.Write, entityType, entityName, entityNamespace, purpose, driftContext);
+
+        private void EmitAuth0ApiLog(
+            string message,
+            Auth0ApiCallType apiCallType,
+            string entityType,
+            string entityName,
+            string entityNamespace,
+            string purpose,
+            DriftLogContext? driftContext)
         {
-            var logEntry = new
+            var logEntry = new Dictionary<string, object?>
             {
-                timestamp = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                message = message,
-                auth0ApiCallType = apiCallType.ToString().ToLowerInvariant(),
-                entityTypeName = entityType,
-                entityName = entityName,
-                entityNamespace = entityNamespace,
-                auth0ApiCallPurpose = purpose
+                ["timestamp"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                ["message"] = message,
+                ["auth0ApiCallType"] = apiCallType.ToString().ToLowerInvariant(),
+                ["entityTypeName"] = entityType,
+                ["entityName"] = entityName,
+                ["entityNamespace"] = entityNamespace,
+                ["auth0ApiCallPurpose"] = purpose,
             };
-            
-            var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry);
-            if (apiCallType == Auth0ApiCallType.Write)
+
+            if (driftContext is not null)
             {
-                Logger.LogWarning(jsonLog);
+                // ReconciliationType + DriftChangeType both carry [JsonConverter(CamelCaseJsonStringEnumConverter)]
+                // so the serializer emits camelCase ("first"/"drift"/"finalizer", "added"/"modified"/"removed").
+                // Boxing the enum as object? lets the converter run instead of stringifying via .ToString().
+                logEntry["reconciliationType"] = driftContext.ReconciliationType;
+                logEntry["driftReason"] = driftContext.DriftReason;
+                logEntry["driftFields"] = driftContext.DriftFields;
             }
-            Logger.LogInformation(jsonLog);
+
+            var jsonLog = System.Text.Json.JsonSerializer.Serialize(logEntry, _structuredLogJsonOptions);
+            var level = apiCallType == Auth0ApiCallType.Write
+                ? LogLevel.Warning
+                : LogLevel.Information;
+            Logger.Log(level, jsonLog);
         }
 
         /// <summary>
@@ -329,7 +366,7 @@ namespace Alethic.Auth0.Operator.Controllers
             // id is specified by reference, lookup identifier
             if (reference.Id is { } id && string.IsNullOrWhiteSpace(id) == false)
             {
-                LogAuth0ApiCall($"Getting Auth0 resource server by reference ID: {id}", Auth0ApiCallType.Read, "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
+                LogAuth0Read($"Getting Auth0 resource server by reference ID: {id}", "A0ResourceServer", id, defaultNamespace, "resolve_resource_server_reference");
                 var self = await api.ResourceServers.GetAsync(id, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException($"Failed to resolve ResourceServer reference {id}.");
@@ -752,15 +789,25 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Returns true for exception types that almost certainly indicate a programmer bug
-        /// (null deref, bad argument, bad cast, missing type) rather than a transient
-        /// runtime / network / API condition. These propagate uncaught so the host's
-        /// crash-loop / paging machinery handles them — silent-requeue would mask them.
+        /// (null deref, bad cast, missing type) rather than a transient runtime / network / API
+        /// condition. These propagate uncaught so the host's crash-loop / paging machinery
+        /// handles them — a silent requeue would mask them and grow an unbounded retry queue.
+        /// <para>
+        /// <see cref="ArgumentException"/> (and its <see cref="ArgumentNullException"/> /
+        /// <see cref="ArgumentOutOfRangeException"/> subclasses) is included: a controller passing
+        /// a null/invalid argument to an internal helper is a wiring bug that requeue will never
+        /// resolve. The previous build briefly dropped this entry to cushion a runtime
+        /// <c>ArgumentNullException</c> from <c>LogAuth0ApiCall</c>'s mandatory-context guard;
+        /// that guard has since been removed by splitting the funnel into
+        /// <see cref="LogAuth0Read"/> / <see cref="LogAuth0Write"/>, so the original crash-loud
+        /// invariant is restored.
+        /// </para>
         /// </summary>
         private static bool IsProgrammerBug(Exception e) =>
             e is NullReferenceException
-                or ArgumentException // covers ArgumentNullException, ArgumentOutOfRangeException
                 or InvalidCastException
-                or TypeLoadException;
+                or TypeLoadException
+                or ArgumentException;
 
         /// <inheritdoc />
         public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);

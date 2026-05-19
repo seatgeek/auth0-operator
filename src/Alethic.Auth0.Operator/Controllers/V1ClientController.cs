@@ -61,7 +61,7 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             try
             {
-                LogAuth0ApiCall($"Getting Auth0 client with ID: {id}", Auth0ApiCallType.Read, "A0Client", id,
+                LogAuth0Read($"Getting Auth0 client with ID: {id}", "A0Client", id,
                     defaultNamespace, "retrieve_client_by_id");
                 return TransformToSystemTextJson<Hashtable>(await api.Clients.GetAsync(id,
                     cancellationToken: cancellationToken));
@@ -150,7 +150,7 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
-                LogAuth0ApiCall($"Getting Auth0 client by client ID: {clientId}", Auth0ApiCallType.Read, "A0Client",
+                LogAuth0Read($"Getting Auth0 client by client ID: {clientId}", "A0Client",
                     entity.Name(), entity.Namespace(), "retrieve_client_by_clientid");
                 var client = await api.Clients.GetAsync(clientId, "client_id,name",
                     cancellationToken: cancellationToken);
@@ -255,7 +255,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     clientName = conf.Name
                 });
 
-            LogAuth0ApiCall($"Getting all Auth0 clients for name-based lookup", Auth0ApiCallType.Read, "A0Client",
+            LogAuth0Read($"Getting all Auth0 clients for name-based lookup", "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_name_lookup");
             var list = await GetAllClientsWithPagination(api, entity, cancellationToken);
             Logger.LogDebugJson(
@@ -368,7 +368,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     searchMode = modeName
                 });
 
-            LogAuth0ApiCall($"Getting all Auth0 clients for callback URL lookup", Auth0ApiCallType.Read, "A0Client",
+            LogAuth0Read($"Getting all Auth0 clients for callback URL lookup", "A0Client",
                 entity.Name(), entity.Namespace(), "retrieve_all_clients_for_callback_lookup");
             var clients = await GetAllClientsWithPagination(api, entity, cancellationToken);
 
@@ -517,8 +517,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
-                LogAuth0ApiCall($"Creating Auth0 client with name: {conf.Name}", Auth0ApiCallType.Write, "A0Client",
-                    conf.Name ?? "unknown", "unknown", "create_client");
+                LogAuth0Write($"Creating Auth0 client with name: {conf.Name}", "A0Client",
+                    conf.Name ?? "unknown", "unknown", "create_client", DriftLogContext.FirstReconciliation());
                 var self = await api.Clients.CreateAsync(createRequest, cancellationToken);
                 var duration = DateTimeOffset.UtcNow - startTime;
                 Logger.LogInformationJson(
@@ -547,22 +547,23 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <inheritdoc />
         protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ClientConf conf,
-            List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+            IReadOnlyList<DriftField> driftFields, string defaultNamespace, string entityName, ITenantApiAccess tenantApiAccess, DriftLogContext driftContext, CancellationToken cancellationToken)
         {
             var startTime = DateTimeOffset.UtcNow;
+            var driftingFieldNames = driftFields.Select(d => d.FieldPath).ToArray();
             Logger.LogInformationJson($"{EntityTypeName} updating client in Auth0 with id: {id} and name: {conf.Name}",
                 new
                 {
                     entityTypeName = EntityTypeName,
                     clientId = id,
                     clientName = conf.Name,
-                    driftingFields = driftingFields.ToArray()
+                    driftingFields = driftingFieldNames
                 });
 
             // Determine what needs to be updated based on drifting fields
-            var needsClientUpdate = driftingFields.Any(field =>
+            var needsClientUpdate = driftingFieldNames.Any(field =>
                 !string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
-            var needsConnectionUpdate = driftingFields.Any(field =>
+            var needsConnectionUpdate = driftingFieldNames.Any(field =>
                 string.Equals(field, "enabled_connections", StringComparison.OrdinalIgnoreCase));
 
             Logger.LogInformationJson($"{EntityTypeName} selective update analysis for client {id}: needsClientUpdate={needsClientUpdate}, needsConnectionUpdate={needsConnectionUpdate}",
@@ -572,13 +573,13 @@ namespace Alethic.Auth0.Operator.Controllers
                     clientId = id,
                     needsClientUpdate,
                     needsConnectionUpdate,
-                    driftingFields = driftingFields.ToArray()
+                    driftingFields = driftingFieldNames
                 });
 
             // Update client properties if any non-enabled_connections fields have drifted
             if (needsClientUpdate)
             {
-                await UpdateClientProperties(api, id, last, conf, cancellationToken);
+                await UpdateClientProperties(api, id, last, conf, driftContext, cancellationToken);
             }
             else
             {
@@ -595,7 +596,7 @@ namespace Alethic.Auth0.Operator.Controllers
             if (needsConnectionUpdate)
             {
                 await ReconcileEnabledConnections(tenantApiAccess, id, conf.EnabledConnections, defaultNamespace,
-                    cancellationToken);
+                    entityName, cancellationToken);
             }
             else
             {
@@ -630,7 +631,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="last">Last known configuration from Auth0</param>
         /// <param name="conf">Desired client configuration</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        private async Task UpdateClientProperties(IManagementApiClient api, string id, Hashtable? last, ClientConf conf, CancellationToken cancellationToken)
+        private async Task UpdateClientProperties(IManagementApiClient api, string id, Hashtable? last, ClientConf conf, DriftLogContext driftContext, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} updating client properties for {id}",
                 new
@@ -670,8 +671,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
             try
             {
-                LogAuth0ApiCall($"Updating Auth0 client properties with ID: {id}", Auth0ApiCallType.Write,
-                    "A0Client", conf.Name ?? "unknown", "unknown", "update_client_properties");
+                LogAuth0Write($"Updating Auth0 client properties with ID: {id}",
+                    "A0Client", conf.Name ?? "unknown", "unknown", "update_client_properties", driftContext);
                 await api.Clients.UpdateAsync(id, req, cancellationToken);
 
                 Logger.LogInformationJson(
@@ -974,8 +975,8 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
             try
             {
-                LogAuth0ApiCall($"Deleting Auth0 client with ID: {id}", Auth0ApiCallType.Write, "A0Client", id,
-                    "unknown", "delete_client");
+                LogAuth0Write($"Deleting Auth0 client with ID: {id}", "A0Client", id,
+                    "unknown", "delete_client", DriftLogContext.FinalizerDelete());
                 await api.Clients.DeleteAsync(id, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully deleted client from Auth0 with ID: {id}", new
                 {
@@ -1184,7 +1185,7 @@ namespace Alethic.Auth0.Operator.Controllers
         private async Task<List<Connection>> GetClientConnectionsAsync(ITenantApiAccess tenantApiAccess,
             string clientId, string defaultNamespace, CancellationToken cancellationToken)
         {
-            LogAuth0ApiCall($"Getting enabled connections for client: {clientId}", Auth0ApiCallType.Read,
+            LogAuth0Read($"Getting enabled connections for client: {clientId}",
                 "A0Connection", clientId, defaultNamespace, "get_client_connections_direct");
 
             // Use the direct Auth0 Management API endpoint: GET /api/v2/clients/{id}/connections
@@ -1202,29 +1203,31 @@ namespace Alethic.Auth0.Operator.Controllers
                     connectionId: "-", clientId);
             }
 
-            var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var responseData =
-                Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
-            var connections = responseData?.Connections;
+            {
+                var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData =
+                    Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
+                var connections = responseData?.Connections;
 
-            Logger.LogInformationJson(
-                $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
-                new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId,
-                    connectionCount = connections?.Count ?? 0,
-                    operation = "get_client_connections_direct",
-                    baseUri = tenantApiAccess.BaseUri.ToString()
-                });
+                Logger.LogInformationJson(
+                    $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
+                    new
+                    {
+                        entityTypeName = EntityTypeName,
+                        clientId,
+                        connectionCount = connections?.Count ?? 0,
+                        operation = "get_client_connections_direct",
+                        baseUri = tenantApiAccess.BaseUri.ToString()
+                    });
 
-            return connections ?? new List<Connection>();
+                return connections ?? new List<Connection>();
+            }
         }
 
 
         internal async Task ReconcileEnabledConnections(ITenantApiAccess tenantApiAccess, string clientId,
             V1ConnectionReference[]? enabledConnectionRefs, string defaultNamespace,
-            CancellationToken cancellationToken)
+            string entityName, CancellationToken cancellationToken)
         {
             try
             {
@@ -1235,7 +1238,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
 
                 await ApplyConnectionChanges(tenantApiAccess, clientId, connectionsToAdd, connectionsToRemove,
-                    defaultNamespace, cancellationToken);
+                    defaultNamespace, entityName, cancellationToken);
                 LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count,
                     connectionsToRemove.Count);
             }
@@ -1298,15 +1301,16 @@ namespace Alethic.Auth0.Operator.Controllers
 
         private async Task ApplyConnectionChanges(ITenantApiAccess tenantApiAccess, string clientId,
             List<string> connectionsToAdd, List<string> connectionsToRemove,
-            string defaultNamespace, CancellationToken cancellationToken)
+            string entityNamespace, string entityName,
+            CancellationToken cancellationToken)
         {
             foreach (var connectionId in connectionsToAdd)
-                await EnableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
-                    cancellationToken);
+                await EnableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId,
+                    entityNamespace, entityName, cancellationToken);
 
             foreach (var connectionId in connectionsToRemove)
-                await DisableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
-                    cancellationToken);
+                await DisableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId,
+                    entityNamespace, entityName, cancellationToken);
         }
 
         private void LogReconciliationResult(string clientId, int currentConnectionCount, int addedCount,
@@ -1340,25 +1344,78 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:true}]</c> — enables a single client on a connection.</summary>
+        /// <remarks>
+        /// CR-4 contract: callers must verify <see cref="V1EntityPolicyType.Update"/> is in
+        /// <c>entity.Spec.Policy</c> before invoking. The canonical gate lives at
+        /// <see cref="V1TenantEntityController{TEntity,TConf}.ApplyUpdatesIfNeeded"/>. Bypassing
+        /// this is a programmer bug.
+        /// </remarks>
         internal Task EnableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, string defaultNamespace, CancellationToken cancellationToken)
+            string clientId, string entityNamespace, string entityName,
+            CancellationToken cancellationToken)
         {
+            var driftContext = BuildMembershipDriftContext(
+                clientId, connectionId,
+                changeType: DriftChangeType.Added,
+                reasonVerb: "enable");
+
             return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
                 status: true,
                 operation: "enable_client_on_connection",
-                defaultNamespace,
+                entityNamespace: entityNamespace,
+                entityName: entityName,
+                driftContext: driftContext,
                 cancellationToken);
         }
 
         /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:false}]</c> — disables a single client on a connection.</summary>
+        /// <remarks>
+        /// CR-4 contract: callers must verify <see cref="V1EntityPolicyType.Update"/> is in
+        /// <c>entity.Spec.Policy</c> before invoking. The canonical gate lives at
+        /// <see cref="V1TenantEntityController{TEntity,TConf}.ApplyUpdatesIfNeeded"/>. Bypassing
+        /// this is a programmer bug.
+        /// </remarks>
         internal Task DisableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, string defaultNamespace, CancellationToken cancellationToken)
+            string clientId, string entityNamespace, string entityName,
+            CancellationToken cancellationToken)
         {
+            var driftContext = BuildMembershipDriftContext(
+                clientId, connectionId,
+                changeType: DriftChangeType.Removed,
+                reasonVerb: "disable");
+
             return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
                 status: false,
                 operation: "disable_client_on_connection",
-                defaultNamespace,
+                entityNamespace: entityNamespace,
+                entityName: entityName,
+                driftContext: driftContext,
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// Builds the synthetic <see cref="DriftLogContext"/> describing a single
+        /// client/connection membership transition. The "drift" here is itself the membership
+        /// change — modeled as one <see cref="DriftField"/> on
+        /// <c>spec.conf.enabled_connections</c>. The connection ID lives in
+        /// <see cref="DriftField.BeforeValue"/> / <see cref="DriftField.AfterValue"/>, not in
+        /// the field path — otherwise Datadog log-search facets keyed on
+        /// <c>@driftFields[*].fieldPath</c> would have unbounded cardinality (one bucket per
+        /// connection ID ever processed) instead of a stable handful of conceptual operations.
+        /// </summary>
+        private static DriftLogContext BuildMembershipDriftContext(string clientId, string connectionId,
+            DriftChangeType changeType, string reasonVerb)
+        {
+            var field = new DriftField(
+                FieldPath: "spec.conf.enabled_connections",
+                ChangeType: changeType,
+                BeforeValue: changeType == DriftChangeType.Added ? null : connectionId,
+                AfterValue: changeType == DriftChangeType.Added ? connectionId : null);
+
+            return new DriftLogContext(
+                ReconciliationType.Drift,
+                new[] { field },
+                $"client {clientId} connection-membership change: {reasonVerb} {connectionId}");
         }
 
         /// <summary>
@@ -1369,7 +1426,9 @@ namespace Alethic.Auth0.Operator.Controllers
         /// the endpoint is idempotent and returns 204 regardless of prior membership state.
         /// </summary>
         private async Task PatchConnectionClientsAsync(ITenantApiAccess tenantApiAccess, string connectionId,
-            string clientId, bool status, string operation, string defaultNamespace,
+            string clientId, bool status, string operation,
+            string entityNamespace, string entityName,
+            DriftLogContext driftContext,
             CancellationToken cancellationToken)
         {
             var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients");
@@ -1378,8 +1437,18 @@ namespace Alethic.Auth0.Operator.Controllers
                 new { client_id = clientId, status }
             });
 
-            LogAuth0ApiCall($"{operation} for client {clientId} on connection {connectionId}",
-                Auth0ApiCallType.Write, "A0Client", clientId, defaultNamespace, operation);
+            // Funnel every membership-change write through LogAuth0Write so it shows up in the
+            // Datadog "Auth0 writes" tally (@auth0ApiCallType:write) alongside every other write,
+            // and carries the same DriftLogContext payload shape. The post-success info-log below
+            // stays purely as a success/no-op outcome marker — the drift context lives on the
+            // pre-write log to keep a single source of truth.
+            LogAuth0Write(
+                message: $"{operation} for client {clientId} on connection {connectionId}",
+                entityType: EntityTypeName,
+                entityName: entityName,
+                entityNamespace: entityNamespace,
+                purpose: operation,
+                driftContext: driftContext);
 
             using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
                 () => new HttpRequestMessage(HttpMethod.Patch, requestUri)
@@ -1391,12 +1460,47 @@ namespace Alethic.Auth0.Operator.Controllers
             if (response.IsSuccessStatusCode)
             {
                 Logger.LogInformationJson(
-                    $"{EntityTypeName} {operation} succeeded for client {clientId} on connection {connectionId}",
-                    new { entityTypeName = EntityTypeName, connectionId, clientId, operation, status = "success" });
+                    $"{EntityTypeName} {entityNamespace}/{entityName} {operation} succeeded for client {clientId} on connection {connectionId}",
+                    new
+                    {
+                        entityTypeName = EntityTypeName,
+                        entityNamespace,
+                        entityName,
+                        connectionId,
+                        clientId,
+                        operation,
+                        status = "success",
+                    });
                 return;
             }
 
             var body = await ReadBodySafelyAsync(response, cancellationToken);
+
+            // H3: symmetric failure log. Mirrors the pre-write LogAuth0Write above so the
+            // Datadog "Auth0 writes" widget keyed on @auth0ApiCallType:write has both a
+            // before-call (Warning) and an after-failure (Error) line for every failed PATCH.
+            //
+            // reconciliationType is serialized via ToString().ToLowerInvariant() — not as the raw
+            // enum — so it matches what _structuredLogJsonOptions emits in LogAuth0Write (where the
+            // boxed-enum path runs through the camelCase [JsonConverter] attribute). Without this,
+            // LogErrorJson's serializer would emit "reconciliationType":1 here while the success
+            // path emits "reconciliationType":"drift", silently breaking any Datadog dashboard keyed
+            // on the string value.
+            Logger.LogErrorJson(
+                $"{EntityTypeName} {entityNamespace}/{entityName} {operation} for client {clientId} on connection {connectionId} FAILED with HTTP {(int)response.StatusCode}",
+                new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace,
+                    entityName,
+                    connectionId,
+                    clientId,
+                    operation,
+                    status = "failed",
+                    httpStatusCode = (int)response.StatusCode,
+                    reconciliationType = driftContext.ReconciliationType.ToString().ToLowerInvariant(),
+                    driftReason = driftContext.DriftReason,
+                });
             ThrowFromHttpFailure(response, body, operation, connectionId, clientId);
         }
 
@@ -1416,12 +1520,15 @@ namespace Alethic.Auth0.Operator.Controllers
                 return req;
             }
 
-            var response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
-                cancellationToken);
+            var firstRequest = Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken));
+            var response = await httpClient.SendAsync(firstRequest, cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+                // Dispose both the first-attempt request (and its Content stream) and the response
+                // before issuing the retry — otherwise the unread request body leaks until GC.
                 response.Dispose();
+                firstRequest.Dispose();
                 await tenantApiAccess.InvalidateAccessTokenAsync(cancellationToken);
                 response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
                     cancellationToken);
@@ -1451,33 +1558,46 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Throws an exception that preserves the status code and Auth0 body for the upstream retry+backoff wrapper.
         /// 429 maps to <see cref="RateLimitApiException"/> so the existing rate-limit handler reschedules per <c>X-RateLimit-Reset</c>.
+        /// All other non-success statuses map to <see cref="ErrorApiException"/> (mirroring
+        /// <c>Auth0.Core.Exceptions.ApiException.CreateSpecificExceptionAsync</c>) so the tier-1
+        /// catch in <see cref="V1Controller{TEntity,TConf}"/> reads <c>StatusCode</c>+<c>ApiError</c>
+        /// directly and labels the Event accordingly instead of falling into the generic
+        /// "Unknown error" branch (CR-1).
         /// Callers own the response lifetime (via <c>using</c>); this method does not dispose it.
         /// </summary>
         [DoesNotReturn]
-        private static void ThrowFromHttpFailure(HttpResponseMessage response, string body, string operation,
+        private void ThrowFromHttpFailure(HttpResponseMessage response, string body, string operation,
             string connectionId, string clientId)
         {
             var statusCode = (int)response.StatusCode;
+            var apiError = ParseApiErrorOrEmpty(body);
 
             if (statusCode == 429)
             {
                 var rateLimit = RateLimit.Parse(response.Headers);
-                ApiError apiError;
-                try
-                {
-                    apiError = (string.IsNullOrWhiteSpace(body)
-                        ? null
-                        : JsonConvert.DeserializeObject<ApiError>(body)) ?? new ApiError();
-                }
-                catch
-                {
-                    apiError = new ApiError();
-                }
                 throw new RateLimitApiException(rateLimit, apiError);
             }
 
-            throw new HttpRequestException(
-                $"Auth0 {operation} for client {clientId} on connection {connectionId} returned HTTP {statusCode}: {body}");
+            throw new ErrorApiException(response.StatusCode, apiError);
+        }
+
+        /// <summary>
+        /// Deserializes a JSON Auth0 error body into an <see cref="ApiError"/>, swallowing
+        /// malformed bodies so we still propagate a typed exception with the correct
+        /// <see cref="HttpStatusCode"/> upstream.
+        /// </summary>
+        private static ApiError ParseApiErrorOrEmpty(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+                return new ApiError();
+            try
+            {
+                return JsonConvert.DeserializeObject<ApiError>(body) ?? new ApiError();
+            }
+            catch
+            {
+                return new ApiError();
+            }
         }
 
         /// <summary>

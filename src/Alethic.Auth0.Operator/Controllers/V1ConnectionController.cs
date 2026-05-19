@@ -165,7 +165,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     connectionId = id,
                     operation = "fetch"
                 });
-                LogAuth0ApiCall($"Getting Auth0 connection with ID: {id}", Auth0ApiCallType.Read, "A0Connection", id, defaultNamespace, "retrieve_connection_by_id");
+                LogAuth0Read($"Getting Auth0 connection with ID: {id}", "A0Connection", id, defaultNamespace, "retrieve_connection_by_id");
                 var self = await api.Connections.GetAsync(id, cancellationToken: cancellationToken);
                 if (self == null)
                 {
@@ -261,7 +261,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     });
                     try
                     {
-                        LogAuth0ApiCall($"Getting Auth0 connection by ID: {connectionId}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "retrieve_connection_by_id_from_spec");
+                        LogAuth0Read($"Getting Auth0 connection by ID: {connectionId}", "A0Connection", entity.Name(), entity.Namespace(), "retrieve_connection_by_id_from_spec");
                         var connection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
                         Logger.LogInformationJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} found existing connection with ID {connectionId} and name {connection.Name}", new
                         {
@@ -338,7 +338,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     connectionName = conf.Name,
                     operation = "search_by_name"
                 });
-                LogAuth0ApiCall($"Listing Auth0 connections to find by name: {conf.Name}", Auth0ApiCallType.Read, "A0Connection", entity.Name(), entity.Namespace(), "list_connections_by_name");
+                LogAuth0Read($"Listing Auth0 connections to find by name: {conf.Name}", "A0Connection", entity.Name(), entity.Namespace(), "list_connections_by_name");
                 var list = await GetAllConnectionsWithPagination(api, entity, cancellationToken);
                 var self = list.FirstOrDefault(i => string.Equals(i.Name, conf.Name, StringComparison.OrdinalIgnoreCase));
                 if (self is not null)
@@ -394,7 +394,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 req.Strategy = conf.Strategy ?? throw new InvalidOperationException("Strategy is required for connection creation.");
                 req.Options = string.Equals(conf.Strategy, "auth0", StringComparison.OrdinalIgnoreCase) ? (TransformToNewtonsoftJson<ConnectionOptions, global::Auth0.ManagementApi.Models.Connections.ConnectionOptions>(JsonSerializer.Deserialize<ConnectionOptions>(JsonSerializer.Serialize(conf.Options ?? new Hashtable()))) ?? new global::Auth0.ManagementApi.Models.Connections.ConnectionOptions()) : conf.Options ?? new Hashtable();
 
-                LogAuth0ApiCall($"Creating Auth0 connection with name: {conf.Name}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "create_connection");
+                LogAuth0Write($"Creating Auth0 connection with name: {conf.Name}", "A0Connection", conf.Name ?? "unknown", "unknown", "create_connection", DriftLogContext.FirstReconciliation());
                 var self = await api.Connections.CreateAsync(req, cancellationToken);
                 if (self is null)
                     throw new InvalidOperationException();
@@ -439,7 +439,7 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <inheritdoc />
-        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken)
+        protected override async Task Update(IManagementApiClient api, string id, Hashtable? last, ConnectionConf conf, IReadOnlyList<DriftField> driftFields, string defaultNamespace, string entityName, ITenantApiAccess tenantApiAccess, DriftLogContext driftContext, CancellationToken cancellationToken)
         {
             Logger.LogInformationJson($"{EntityTypeName} updating connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new
             {
@@ -503,11 +503,11 @@ namespace Alethic.Auth0.Operator.Controllers
                         status = "warning",
                         metadata = req.Metadata
                     });
-                    LogAuth0ApiCall($"Resetting Auth0 connection metadata with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "reset_connection_metadata");
+                    LogAuth0Write($"Resetting Auth0 connection metadata with ID: {id}", "A0Connection", conf.Name ?? "unknown", "unknown", "reset_connection_metadata", driftContext);
                     await api.Connections.UpdateAsync(id, new ConnectionUpdateRequest { Metadata = new Hashtable() }, cancellationToken);
                 }
 
-                LogAuth0ApiCall($"Updating Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection");
+                LogAuth0Write($"Updating Auth0 connection with ID: {id}", "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection", driftContext);
                 await api.Connections.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new
                 {
@@ -576,7 +576,7 @@ namespace Alethic.Auth0.Operator.Controllers
             });
             try
             {
-                LogAuth0ApiCall($"Deleting Auth0 connection with ID: {id}", Auth0ApiCallType.Write, "A0Connection", id, "unknown", "delete_connection");
+                LogAuth0Write($"Deleting Auth0 connection with ID: {id}", "A0Connection", id, "unknown", "delete_connection", DriftLogContext.FinalizerDelete());
                 await api.Connections.DeleteAsync(id, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully deleted connection from Auth0 with ID: {id}", new
                 {

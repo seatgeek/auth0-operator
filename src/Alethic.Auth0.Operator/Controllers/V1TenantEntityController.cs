@@ -101,7 +101,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="tenantApiAccess">Tenant API access for credentials and tokens</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>A task representing the asynchronous update operation</returns>
-        protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, List<string> driftingFields, string defaultNamespace, ITenantApiAccess tenantApiAccess, CancellationToken cancellationToken);
+        protected abstract Task Update(IManagementApiClient api, string id, Hashtable? last, TConf conf, IReadOnlyList<DriftField> driftFields, string defaultNamespace, string entityName, ITenantApiAccess tenantApiAccess, DriftLogContext driftContext, CancellationToken cancellationToken);
 
 
         /// <summary>
@@ -377,8 +377,8 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Delays (in milliseconds) used between attempts of the K8s 409-Conflict retry helper.
-        /// Four attempts total — caller's first attempt + up to three retries (KubeConflictRetryDelaysMs
-        /// has 3 entries: 100 / 400 / 1600 ms with ±25% jitter between attempts).
+        /// Three retries after the initial attempt (4 total). Delays before each retry:
+        /// retry 1: ~100ms, retry 2: ~400ms, retry 3: ~1600ms (each ±25% jitter).
         /// </summary>
         private static readonly int[] KubeConflictRetryDelaysMs = new[] { 100, 400, 1600 };
 
@@ -732,11 +732,14 @@ namespace Alethic.Auth0.Operator.Controllers
                 return lastConf;
             }
 
-            var (needsUpdate, driftingFields) = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
+            var (needsUpdate, driftFields, isFirstReconciliation) = DetermineIfUpdateIsNeeded(entity, lastConf, conf);
 
             if (needsUpdate)
             {
-                var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftingFields, cancellationToken);
+                var driftContext = isFirstReconciliation
+                    ? DriftLogContext.FirstReconciliation()
+                    : DriftLogContext.Drift(driftFields);
+                var processedConf = await PerformUpdate(entity, tenantApiAccess, api, lastConf, conf, driftFields, driftContext, cancellationToken);
 
                 return processedConf;
             }
@@ -754,28 +757,17 @@ namespace Alethic.Auth0.Operator.Controllers
             });
         }
 
-        private (bool needsUpdate, List<string> driftingFields) DetermineIfUpdateIsNeeded(TEntity entity, Hashtable? lastConf, TConf conf)
+        private (bool needsUpdate, List<DriftField> driftFields, bool isFirstReconciliation) DetermineIfUpdateIsNeeded(TEntity entity, Hashtable? lastConf, TConf conf)
         {
             var isFirstReconciliation = entity.Status.LastConf is null;
 
-            bool needsUpdate;
-            List<string> driftingFields;
+            var (needsUpdate, driftFields) = HasConfigurationChanged(entity, lastConf, conf);
             if (isFirstReconciliation)
-            {
-                var (needsUpdateResult, driftingFieldsResult) = HasConfigurationChanged(entity, lastConf, conf);
-                needsUpdate = needsUpdateResult;
-                driftingFields = driftingFieldsResult;
                 LogFirstReconciliationDecision(entity, needsUpdate);
-            }
             else
-            {
-                var (needsUpdateResult, driftingFieldsResult) = HasConfigurationChanged(entity, lastConf, conf);
-                needsUpdate = needsUpdateResult;
-                driftingFields = driftingFieldsResult;
                 LogSubsequentReconciliationDecision(entity, needsUpdate);
-            }
 
-            return (needsUpdate, driftingFields);
+            return (needsUpdate, driftFields, isFirstReconciliation);
         }
 
         private void LogFirstReconciliationDecision(TEntity entity, bool needsUpdate)
@@ -831,9 +823,9 @@ namespace Alethic.Auth0.Operator.Controllers
             }
         }
 
-        private async Task<Hashtable> PerformUpdate(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, TConf conf, List<string> driftingFields, CancellationToken cancellationToken)
+        private async Task<Hashtable> PerformUpdate(TEntity entity, ITenantApiAccess tenantApiAccess, IManagementApiClient api, Hashtable? lastConf, TConf conf, List<DriftField> driftFields, DriftLogContext driftContext, CancellationToken cancellationToken)
         {
-            await Update(api, entity.Status.Id ?? throw new InvalidOperationException($"Entity {entity.Namespace()}/{entity.Name()} has no ID in status."), lastConf, conf, driftingFields, entity.Namespace(), tenantApiAccess, cancellationToken);
+            await Update(api, entity.Status.Id ?? throw new InvalidOperationException($"Entity {entity.Namespace()}/{entity.Name()} has no ID in status."), lastConf, conf, driftFields, entity.Namespace(), entity.Name(), tenantApiAccess, driftContext, cancellationToken);
 
             // Update lastConf to reflect the applied configuration to prevent false drift detection
             var appliedJson = TransformToNewtonsoftJson<TConf, object>(conf);
@@ -1204,7 +1196,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="lastConf">The last known configuration from Auth0</param>
         /// <param name="desiredConf">The desired configuration from the Kubernetes spec</param>
         /// <returns>True if changes are detected, false if configurations match</returns>
-        private (bool configurationChanged, List<string> driftingFields) HasConfigurationChanged(TEntity entity, Hashtable? lastConf, TConf desiredConf)
+        private (bool configurationChanged, List<DriftField> driftFields) HasConfigurationChanged(TEntity entity, Hashtable? lastConf, TConf desiredConf)
         {
             try
             {
@@ -1226,9 +1218,13 @@ namespace Alethic.Auth0.Operator.Controllers
                         assumingChanges = true
                     });
 
-                    // return all fields from desiredConf
-                    var desiredConfFields = desiredHashtable.Keys.Cast<string>().ToList();
-                    return (true, desiredConfFields);
+                    // Synthesize an Added-only drift list from the desired keys so consumers
+                    // (V1ClientController's selective-update routing) can still inspect which
+                    // top-level fields are involved.
+                    var firstReconcileFields = desiredHashtable.Keys.Cast<string>()
+                        .Select(k => new DriftField(k, DriftChangeType.Added, BeforeValue: null, AfterValue: null))
+                        .ToList();
+                    return (true, firstReconcileFields);
                 }
 
                 // Filter fields based on the entity's drift detection configuration
@@ -1242,14 +1238,14 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Compare the filtered configurations
                 var result = !AreHashtablesEqual(nestedFilteredLast, filteredDesired);
 
-                var driftFieldDetails = new List<DriftFieldDetails>();
+                var driftFields = new List<DriftField>();
                 if (result)
                 {
-                    driftFieldDetails = GetDriftFieldDetails(entity, filteredLast, filteredDesired);
-                    LogConfigurationDifferences(entity, driftFieldDetails);
+                    driftFields = GetDriftFieldDetails(entity, filteredLast, filteredDesired);
+                    LogConfigurationDifferences(entity, driftFields);
                 }
 
-                return (result, driftFieldDetails.Select(d => d.FieldName!).ToList());
+                return (result, driftFields);
             }
             catch (Exception ex)
             {
@@ -1260,7 +1256,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     errorMessage = ex.Message,
                     assumingChanges = true
                 });
-                return (true, new List<string>()); // Safe fallback: assume changes exist
+                return (true, new List<DriftField>()); // Safe fallback: assume changes exist
             }
         }
 
@@ -1522,29 +1518,9 @@ namespace Alethic.Auth0.Operator.Controllers
             return left.Equals(right);
         }
 
-        private enum DriftFieldType
+        private List<DriftField> GetDriftFieldDetails(TEntity entity, Hashtable last, Hashtable desired)
         {
-            Added,
-            Modified,
-            Removed
-        }
-
-        private class DriftFieldDetails
-        {
-            public DriftFieldType FieldType { get; set; }
-            public string? FieldName { get; set; }
-            public object? OldValue { get; set; }
-            public object? NewValue { get; set; }
-
-            public override string ToString()
-            {
-                return $"{FieldName} = {OldValue} → {NewValue}";
-            }
-        }
-
-        private List<DriftFieldDetails> GetDriftFieldDetails(TEntity entity, Hashtable last, Hashtable desired)
-        {
-            var driftFieldDetails = new List<DriftFieldDetails>();
+            var driftFields = new List<DriftField>();
 
             // Check for added or modified fields
             foreach (DictionaryEntry entry in desired)
@@ -1552,7 +1528,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var key = entry.Key.ToString()!;
                 if (!last.ContainsKey(entry.Key))
                 {
-                    driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Added, FieldName = key, OldValue = null, NewValue = entry.Value });
+                    driftFields.Add(new DriftField(key, DriftChangeType.Added, BeforeValue: null, AfterValue: RedactedOrFormat(key, entry.Value)));
                 }
                 else
                 {
@@ -1561,9 +1537,9 @@ namespace Alethic.Auth0.Operator.Controllers
 
                     if (!AreValuesEqual(filteredDesired, filteredAuth0))
                     {
-                        var oldValue = FormatValueForLogging(filteredAuth0);
-                        var newValue = FormatValueForLogging(filteredDesired);
-                        driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Modified, FieldName = key, OldValue = oldValue, NewValue = newValue });
+                        var oldValue = RedactedOrFormat(key, filteredAuth0);
+                        var newValue = RedactedOrFormat(key, filteredDesired);
+                        driftFields.Add(new DriftField(key, DriftChangeType.Modified, BeforeValue: oldValue, AfterValue: newValue));
                     }
                 }
             }
@@ -1574,23 +1550,34 @@ namespace Alethic.Auth0.Operator.Controllers
                 if (!desired.ContainsKey(entry.Key))
                 {
                     var key = entry.Key.ToString()!;
-                    driftFieldDetails.Add(new DriftFieldDetails { FieldType = DriftFieldType.Removed, FieldName = key, OldValue = entry.Value, NewValue = null });
+                    driftFields.Add(new DriftField(key, DriftChangeType.Removed, BeforeValue: RedactedOrFormat(key, entry.Value), AfterValue: null));
                 }
             }
 
-            return driftFieldDetails;
+            return driftFields;
         }
+
+        /// <summary>
+        /// Wraps <see cref="LogValueFormatter.FormatValueForLogging"/> with a top-level
+        /// key-aware redaction step. Catches whole-field secrets (e.g. a top-level
+        /// <c>client_secret</c> string) that the hashtable-recursion redaction in
+        /// <see cref="LogValueFormatter"/> only handles for nested entries.
+        /// </summary>
+        private static string RedactedOrFormat(string key, object? value)
+            => LogValueFormatter.IsSensitiveKey(key)
+                ? LogValueFormatter.RedactedPlaceholder
+                : LogValueFormatter.FormatValueForLogging(value);
 
         /// <summary>
         /// Logs detected configuration differences with detailed field-by-field changes.
         /// </summary>
         /// <param name="entity">The entity</param>
-        /// <param name="driftFieldDetails">The drift field details</param>
-        private void LogConfigurationDifferences(TEntity entity, List<DriftFieldDetails> driftFieldDetails)
+        /// <param name="driftFields">The drift field details</param>
+        private void LogConfigurationDifferences(TEntity entity, List<DriftField> driftFields)
         {
-            var addedFields = driftFieldDetails.Where(d => d.FieldType == DriftFieldType.Added).ToList();
-            var modifiedFields = driftFieldDetails.Where(d => d.FieldType == DriftFieldType.Modified).ToList();
-            var removedFields = driftFieldDetails.Where(d => d.FieldType == DriftFieldType.Removed).ToList();
+            var addedFields = driftFields.Where(d => d.ChangeType == DriftChangeType.Added).ToList();
+            var modifiedFields = driftFields.Where(d => d.ChangeType == DriftChangeType.Modified).ToList();
+            var removedFields = driftFields.Where(d => d.ChangeType == DriftChangeType.Removed).ToList();
 
             // Log changes by category with detailed before/after values
             if (addedFields.Count > 0)
@@ -1648,50 +1635,6 @@ namespace Alethic.Auth0.Operator.Controllers
                     removedCount = removedFields.Count,
                     driftDetected = true
                 });
-            }
-        }
-
-        /// <summary>
-        /// Formats a value for logging, providing detailed representation with truncation for long values.
-        /// </summary>
-        /// <param name="value">Value to format</param>
-        /// <returns>Formatted string representation with type information</returns>
-        private static string FormatValueForLogging(object? value)
-        {
-            if (value is null)
-                return "(null)";
-
-            // Handle different value types with more detail
-            // IMPORTANT: Check Hashtable before IEnumerable since Hashtable implements IEnumerable
-            switch (value)
-            {
-                case string stringValue:
-                    var quotedStr = $"\"{stringValue}\"";
-                    return quotedStr.Length > 100 ? $"\"{stringValue[..95]}...\"" : quotedStr;
-
-                case bool boolean:
-                    return boolean.ToString().ToLowerInvariant();
-
-                case int or long or float or double or decimal:
-                    return value.ToString() ?? "(null)";
-
-                case Hashtable hashtable:
-                    // Show up to 10 entries for Hashtables (useful for debugging options drift)
-                    var entries = hashtable.Cast<DictionaryEntry>().Take(10)
-                        .Select(entry => $"{entry.Key}: {FormatValueForLogging(entry.Value)}");
-                    var hashPreview = string.Join(", ", entries);
-                    return hashtable.Count > 10 ? $"{{{hashPreview}, ...}} (total: {hashtable.Count} fields)" : $"{{{hashPreview}}}";
-
-                case IEnumerable enumerable when value is not string:
-                    var items = enumerable.Cast<object>().Take(5).Select(FormatValueForLogging);
-                    var arrayPreview = string.Join(", ", items);
-                    var count = enumerable.Cast<object>().Count();
-                    return count > 5 ? $"[{arrayPreview}, ...] (total: {count} items)" : $"[{arrayPreview}]";
-
-                default:
-                    var objectStr = value.ToString() ?? "(null)";
-                    var typeName = value.GetType().Name;
-                    return objectStr.Length > 80 ? $"({typeName}) {objectStr[..75]}..." : $"({typeName}) {objectStr}";
             }
         }
 
