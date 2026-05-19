@@ -22,5 +22,13 @@ namespace Alethic.Auth0.Operator.Services
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>A valid access token</returns>
         Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Evicts the cached access token, forcing the next <see cref="GetAccessTokenAsync"/> call
+        /// to obtain a fresh token from Auth0. Call this after a server-side rejection (e.g. 401)
+        /// to recover from a token Auth0 considers invalid even though its local expiration has not yet elapsed.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token</param>
+        Task InvalidateAccessTokenAsync(CancellationToken cancellationToken = default);
     }
 }

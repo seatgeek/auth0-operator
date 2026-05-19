@@ -55,6 +55,14 @@ namespace Alethic.Auth0.Operator.Controllers
         private const int MaxRetryDelaySeconds = 300;
         protected const int MaxTenantChangeRetryAttempts = 2;
 
+        /// <summary>
+        /// Base delay (seconds) used by <see cref="GenerateExceptionRetryDelay"/> for the
+        /// always-requeue-on-exception path in <see cref="ReconcileAsync"/>. The delay is
+        /// "<see cref="ExceptionRetryBaseSeconds"/> ±25% jitter" — i.e. 22.5s–37.5s with the
+        /// current 30s base.
+        /// </summary>
+        private const int ExceptionRetryBaseSeconds = 30;
+
         static readonly Newtonsoft.Json.JsonSerializer _newtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault();
         static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new SimplePrimitiveHashtableConverter() } };
         static readonly SemaphoreSlim _getTenantApiClient = new(1);
@@ -590,30 +598,51 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 await ReconcileSuccessAsync(entity, cancellationToken);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Reconcile was cancelled (e.g. operator shutdown, controller restart, or an
+                // outer caller cancelled the token). Do NOT swallow into Requeue — the host
+                // owns the cancellation contract.
+                throw;
+            }
             catch (ErrorApiException e)
             {
                 try
                 {
                     var duration = DateTimeOffset.UtcNow - startTime;
-                    Logger.LogErrorJson($"Auth0 API error during reconciliation for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Status={e.StatusCode}, ErrorCode={e.ApiError?.ErrorCode}, Message={e.ApiError?.Message}, Duration={duration.TotalMilliseconds}ms", new { 
+                    Logger.LogErrorJson($"Auth0 API error during reconciliation for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Status={e.StatusCode}, ErrorCode={e.ApiError?.ErrorCode}, Message={e.ApiError?.Message}, Duration={duration.TotalMilliseconds}ms", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name(), 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
                         statusCode = e.StatusCode.ToString(),
                         errorCode = e.ApiError?.ErrorCode,
                         apiErrorMessage = e.ApiError?.Message,
-                        durationMs = duration.TotalMilliseconds 
+                        durationMs = duration.TotalMilliseconds
                     }, e);
                     await ReconcileWarningAsync(entity, "ApiError", e.ApiError?.Message ?? e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new { 
+                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name() 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name()
                     }, e2);
                 }
+
+                // Always-requeue: the prior implementation logged-and-fell-through here,
+                // which left the reconcile loop silent for the resource until a watch
+                // event or operator restart fired. Schedule an explicit retry.
+                var apiRetryDelay = GenerateExceptionRetryDelay();
+                Logger.LogWarningJson($"Auth0 API error — rescheduling reconciliation after {apiRetryDelay}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    rescheduleAfter = apiRetryDelay.ToString(),
+                    operation = "requeue_after_api_error"
+                });
+                Requeue(entity, apiRetryDelay);
             }
             catch (RateLimitApiException e)
             {
@@ -678,33 +707,60 @@ namespace Alethic.Auth0.Operator.Controllers
                 });
                 Requeue(entity, TimeSpan.FromMinutes(1));
             }
-            catch (Exception e)
+            catch (Exception e) when (!IsProgrammerBug(e) && !cancellationToken.IsCancellationRequested)
             {
                 try
                 {
                     var duration = DateTimeOffset.UtcNow - startTime;
-                    Logger.LogErrorJson($"Unexpected error reconciling {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.GetType().Name} - {e.Message}, Duration={duration.TotalMilliseconds}ms", new { 
+                    Logger.LogErrorJson($"Unexpected error reconciling {EntityTypeName} {entity.Namespace()}/{entity.Name()}: {e.GetType().Name} - {e.Message}, Duration={duration.TotalMilliseconds}ms", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name(), 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
                         exceptionType = e.GetType().Name,
                         errorMessage = e.Message,
-                        durationMs = duration.TotalMilliseconds 
+                        durationMs = duration.TotalMilliseconds
                     }, e);
                     await ReconcileWarningAsync(entity, "Unknown", e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new { 
+                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name() 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name()
                     }, e2);
                 }
 
-                throw;
+                // Always-requeue: prior implementation re-threw which produced a noisy
+                // crash-loop-style failure with no scheduled retry for this resource.
+                // Call Requeue with a jittered backoff so the operator self-heals after
+                // transient K8s / dependency errors. Programmer-bug exception types are
+                // filtered out above and continue to propagate so they crash-loop and
+                // page on-call as expected.
+                var retryDelay = GenerateExceptionRetryDelay();
+                Logger.LogWarningJson($"Unexpected error — rescheduling reconciliation after {retryDelay}", new
+                {
+                    entityTypeName = EntityTypeName,
+                    entityNamespace = entity.Namespace(),
+                    entityName = entity.Name(),
+                    rescheduleAfter = retryDelay.ToString(),
+                    operation = "requeue_after_unexpected_exception"
+                });
+                Requeue(entity, retryDelay);
             }
         }
+
+        /// <summary>
+        /// Returns true for exception types that almost certainly indicate a programmer bug
+        /// (null deref, bad argument, bad cast, missing type) rather than a transient
+        /// runtime / network / API condition. These propagate uncaught so the host's
+        /// crash-loop / paging machinery handles them — silent-requeue would mask them.
+        /// </summary>
+        private static bool IsProgrammerBug(Exception e) =>
+            e is NullReferenceException
+                or ArgumentException // covers ArgumentNullException, ArgumentOutOfRangeException
+                or InvalidCastException
+                or TypeLoadException;
 
         /// <inheritdoc />
         public abstract Task DeletedAsync(TEntity entity, CancellationToken cancellationToken);
@@ -745,6 +801,19 @@ namespace Alethic.Auth0.Operator.Controllers
         {
             var random = new Random();
             return random.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
+        }
+
+        /// <summary>
+        /// Generates the requeue delay used by the always-requeue-on-exception path in
+        /// <see cref="ReconcileAsync"/>. Plain "<see cref="ExceptionRetryBaseSeconds"/>s
+        /// ±25% jitter" — i.e. 22.5–37.5s with the current 30s base. No upper cap is
+        /// applied: the jitter window is bounded by construction.
+        /// </summary>
+        protected TimeSpan GenerateExceptionRetryDelay()
+        {
+            // ±25% jitter: NextDouble() ∈ [0,1) → factor ∈ [0.75, 1.25)
+            var jitterFactor = 0.75 + (Random.Shared.NextDouble() * 0.5);
+            return TimeSpan.FromSeconds(ExceptionRetryBaseSeconds * jitterFactor);
         }
     }
 

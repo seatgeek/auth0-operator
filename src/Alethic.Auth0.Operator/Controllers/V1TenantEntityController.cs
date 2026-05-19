@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,6 +15,7 @@ using Auth0.Core.Exceptions;
 using Auth0.ManagementApi;
 
 using k8s;
+using k8s.Autorest;
 using k8s.Models;
 
 using KubeOps.Abstractions.Queue;
@@ -373,32 +375,68 @@ namespace Alethic.Auth0.Operator.Controllers
             return await UpdateKubernetesStatus(entity, "finding entity", cancellationToken);
         }
 
+        /// <summary>
+        /// Delays (in milliseconds) used between attempts of the K8s 409-Conflict retry helper.
+        /// Four attempts total — caller's first attempt + up to three retries (KubeConflictRetryDelaysMs
+        /// has 3 entries: 100 / 400 / 1600 ms with ±25% jitter between attempts).
+        /// </summary>
+        private static readonly int[] KubeConflictRetryDelaysMs = new[] { 100, 400, 1600 };
+
+        /// <summary>
+        /// Computes the jittered delay (in ms) for retry attempt <paramref name="attempt"/>
+        /// (1-based: attempt=1 → ~100ms, attempt=2 → ~400ms, …). Clamps to the last entry
+        /// of <see cref="KubeConflictRetryDelaysMs"/> when the attempt index exceeds the table.
+        /// </summary>
+        internal static int ComputeKubeConflictRetryDelayMs(int attempt)
+        {
+            if (attempt < 1)
+                attempt = 1;
+            var idx = Math.Min(attempt - 1, KubeConflictRetryDelaysMs.Length - 1);
+            var baseMs = KubeConflictRetryDelaysMs[idx];
+            // ±25% jitter
+            var jitter = (Random.Shared.NextDouble() - 0.5) * 0.5; // [-0.25, 0.25)
+            return (int)Math.Round(baseMs * (1.0 + jitter));
+        }
+
         protected async Task<TEntity> UpdateKubernetesStatus(TEntity entity, string operation, CancellationToken cancellationToken)
         {
-            try
-            {
-                return await Kube.UpdateStatusAsync(entity, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes status after {operation}: {ex.Message}", new
+            // Status subresource is safe to retry by "carry resourceVersion forward" — the
+            // /status PUT only reads metadata.resourceVersion + status.* from the body, so
+            // copying the local entity's desired Status onto the refetched object is the
+            // canonical merge. See decisions.md 2026-05-18 entry.
+            return await UpdateKubernetesWithConflictRetryAsync(
+                entity,
+                operation,
+                writeKind: "status",
+                writeAsync: static (kube, e, ct) => kube.UpdateStatusAsync(e, ct),
+                overlayLocalOntoRefetched: static (local, refetched) =>
                 {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    operation,
-                    errorMessage = ex.Message
-                }, ex);
-                throw;
-            }
+                    // The interface exposes Status as get-only, so we cannot copy it onto
+                    // the refetched object. Instead, advance only the resourceVersion on
+                    // the in-memory (local) entity and re-issue the status PUT with the
+                    // caller's desired Status object. The /status subresource discards any
+                    // metadata fields outside resourceVersion, so this is safe.
+                    var localMd = local.EnsureMetadata();
+                    localMd.ResourceVersion = refetched.Metadata?.ResourceVersion;
+                    return local;
+                },
+                cancellationToken);
         }
 
         /// <summary>
         /// Updates the entire Kubernetes resource including metadata (annotations, labels) and status.
         /// Use this method when you need to persist annotation changes.
-        /// 
+        ///
         /// Note: PatchAsync would be more efficient but is currently in preview in KubeOps SDK.
         /// UpdateAsync is the stable, production-ready approach for metadata updates.
+        ///
+        /// On HTTP 409 Conflict: refetch the entity from the API server, then re-apply ONLY
+        /// the operator-owned mutations (annotations / labels under the
+        /// <c>kubernetes.auth0.com/</c> prefix) from the in-memory entity onto the refetched
+        /// object before retrying. Annotations / labels owned by other writers (KubeOps
+        /// finalizer machinery, user kubectl patches, other controllers) are preserved as-is
+        /// from the server. This is the "allowlist overlay" mitigation for the metadata-PUT
+        /// clobber risk — see decisions.md 2026-05-18 entry, finding H2.
         /// </summary>
         /// <param name="entity">The entity to update</param>
         /// <param name="operation">Description of the operation for logging</param>
@@ -406,23 +444,169 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>The updated entity</returns>
         protected async Task<TEntity> UpdateKubernetesMetadata(TEntity entity, string operation, CancellationToken cancellationToken)
         {
-            try
+            return await UpdateKubernetesWithConflictRetryAsync(
+                entity,
+                operation,
+                writeKind: "metadata",
+                writeAsync: static (kube, e, ct) => kube.UpdateAsync(e, ct),
+                overlayLocalOntoRefetched: OverlayOperatorOwnedMetadata,
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// Allowlist overlay used by the metadata-write retry path. On a 409 refetch we keep
+        /// the server's current metadata as the baseline (preserving finalizers,
+        /// managedFields, third-party annotations/labels), then copy ONLY the
+        /// <c>kubernetes.auth0.com/</c>-prefixed annotation and label keys from the local
+        /// entity onto the refetched object. That guarantees we never silently clobber a
+        /// concurrent writer's keys while still preserving the operator's intended mutation
+        /// from this reconcile pass.
+        /// </summary>
+        internal static TEntity OverlayOperatorOwnedMetadata(TEntity local, TEntity refetched)
+        {
+            // H5: Every metadata key written by this operator lives under the
+            // `kubernetes.auth0.com/` prefix (current-client-id, current-tenant-ref,
+            // previous-client-id, previous-tenant-ref, tenant-uid, tenant-name,
+            // tenant-change-retry-count, partition). Restricting the overlay
+            // to this prefix is sufficient — no other operator-owned key escapes.
+            // For reference (not an annotation key): the EventSource `reportingController`
+            // value is `kubernetes.auth0.com/operator`, which shares the prefix but is
+            // surfaced via Kubernetes events, not metadata.
+            const string operatorPrefix = "kubernetes.auth0.com/";
+
+            var rmd = refetched.EnsureMetadata();
+
+            // Overlay annotations
+            var localAnnotations = local.Metadata?.Annotations;
+            if (localAnnotations is not null)
             {
-                // Use UpdateAsync for metadata changes - stable and production-ready
-                // PatchAsync would be more efficient but is currently in preview
-                return await Kube.UpdateAsync(entity, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes metadata after {operation}: {ex.Message}", new
+                var rAn = rmd.EnsureAnnotations();
+                // Step 1: drop any operator-owned keys that the local entity *removed* (i.e.
+                // exist on the refetched object but not on the local one). This handles
+                // intentional deletions such as ClearTenantChangeRetryCounter.
+                var keysOnRefetched = rAn.Keys
+                    .Where(k => k.StartsWith(operatorPrefix, StringComparison.Ordinal))
+                    .ToList();
+                foreach (var key in keysOnRefetched)
                 {
-                    entityTypeName = EntityTypeName,
-                    entityNamespace = entity.Namespace(),
-                    entityName = entity.Name(),
-                    operation,
-                    errorMessage = ex.Message
-                }, ex);
-                throw;
+                    if (!localAnnotations.ContainsKey(key))
+                        rAn.Remove(key);
+                }
+                // Step 2: copy operator-owned keys from local to refetched.
+                foreach (var kv in localAnnotations)
+                {
+                    if (kv.Key.StartsWith(operatorPrefix, StringComparison.Ordinal))
+                        rAn[kv.Key] = kv.Value;
+                }
+            }
+
+            // Overlay labels (symmetric).
+            // Defensive — no operator code currently writes labels; this branch is here so
+            // future label writes are auto-protected by the same allowlist without re-deriving it.
+            var localLabels = local.Metadata?.Labels;
+            if (localLabels is not null)
+            {
+                var rLb = rmd.EnsureLabels();
+                var keysOnRefetched = rLb.Keys
+                    .Where(k => k.StartsWith(operatorPrefix, StringComparison.Ordinal))
+                    .ToList();
+                foreach (var key in keysOnRefetched)
+                {
+                    if (!localLabels.ContainsKey(key))
+                        rLb.Remove(key);
+                }
+                foreach (var kv in localLabels)
+                {
+                    if (kv.Key.StartsWith(operatorPrefix, StringComparison.Ordinal))
+                        rLb[kv.Key] = kv.Value;
+                }
+            }
+
+            return refetched;
+        }
+
+        /// <summary>
+        /// Bounded-retry helper shared by <see cref="UpdateKubernetesStatus"/> and
+        /// <see cref="UpdateKubernetesMetadata"/>. Issues up to <c>1 +
+        /// KubeConflictRetryDelaysMs.Length</c> total attempts (4 max with the current
+        /// 3-element delay table; the 4th attempt fires after the 1600ms delay if needed).
+        ///
+        /// On <see cref="HttpOperationException"/> with
+        /// <see cref="HttpStatusCode.Conflict"/>: refetch the entity from the API server,
+        /// project the caller's intended mutation onto the refetched object via the
+        /// <paramref name="overlayLocalOntoRefetched"/> callback, and retry.
+        ///
+        /// Any non-409 exception, retry exhaustion, or cancellation propagates unchanged.
+        /// </summary>
+        private async Task<TEntity> UpdateKubernetesWithConflictRetryAsync(
+            TEntity entity,
+            string operation,
+            string writeKind,
+            Func<IKubernetesClient, TEntity, CancellationToken, Task<TEntity>> writeAsync,
+            Func<TEntity, TEntity, TEntity> overlayLocalOntoRefetched,
+            CancellationToken cancellationToken)
+        {
+            var attempt = 0;
+            var maxAttempts = 1 + KubeConflictRetryDelaysMs.Length;
+            var current = entity;
+
+            while (true)
+            {
+                attempt++;
+                try
+                {
+                    return await writeAsync(Kube, current, cancellationToken);
+                }
+                catch (HttpOperationException ex) when (ex.Response?.StatusCode == HttpStatusCode.Conflict && attempt < maxAttempts)
+                {
+                    var delayMs = ComputeKubeConflictRetryDelayMs(attempt);
+
+                    Logger.LogWarningJson(
+                        $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} {writeKind} write conflict (409) on attempt {attempt}/{maxAttempts} after {operation}; refetching and retrying in {delayMs}ms",
+                        new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation,
+                            writeKind,
+                            attempt,
+                            maxAttempts,
+                            retryDelayMs = delayMs,
+                            errorType = "kube_conflict"
+                        });
+
+                    // Delay (cancellable) before refetch + retry. OperationCanceledException
+                    // is allowed to propagate — outer ReconcileAsync catch path handles it.
+                    await Task.Delay(delayMs, cancellationToken);
+
+                    var refetched = await Kube.GetAsync<TEntity>(entity.Name(), entity.Namespace(), cancellationToken);
+                    if (refetched is null)
+                    {
+                        // Entity is gone from the API server — nothing to update. Re-throw
+                        // the original 409 so the outer catch can decide what to do.
+                        throw;
+                    }
+
+                    current = overlayLocalOntoRefetched(current, refetched);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogErrorJson(
+                        $"{EntityTypeName} {entity.Namespace()}/{entity.Name()} failed to update Kubernetes {writeKind} after {operation}: {ex.Message}",
+                        new
+                        {
+                            entityTypeName = EntityTypeName,
+                            entityNamespace = entity.Namespace(),
+                            entityName = entity.Name(),
+                            operation,
+                            writeKind,
+                            attempt,
+                            errorMessage = ex.Message
+                        },
+                        ex);
+                    throw;
+                }
             }
         }
 

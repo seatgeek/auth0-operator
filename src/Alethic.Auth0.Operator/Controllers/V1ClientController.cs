@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -28,6 +28,7 @@ using KubeOps.KubernetesClient;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 
 namespace Alethic.Auth0.Operator.Controllers
 {
@@ -40,24 +41,15 @@ namespace Alethic.Auth0.Operator.Controllers
         V1TenantEntityController<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>,
         IEntityController<V1Client>
     {
-        readonly IMemoryCache _clientCache;
-        readonly IMemoryCache _connectionCache;
-        static readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionUpdateMutexes = new();
+        readonly IMemoryCache _cache;
+        readonly IHttpClientFactory _httpClientFactory;
 
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="kube"></param>
-        /// <param name="requeue"></param>
-        /// <param name="cache"></param>
-        /// <param name="logger"></param>
-        /// <param name="options"></param>
         public V1ClientController(IKubernetesClient kube, EntityRequeue<V1Client> requeue, IMemoryCache cache,
-            ILogger<V1ClientController> logger, IOptions<OperatorOptions> options) :
+            ILogger<V1ClientController> logger, IOptions<OperatorOptions> options, IHttpClientFactory httpClientFactory) :
             base(kube, requeue, cache, logger, options)
         {
-            _clientCache = cache;
-            _connectionCache = cache;
+            _cache = cache;
+            _httpClientFactory = httpClientFactory;
         }
 
         /// <inheritdoc />
@@ -451,7 +443,7 @@ namespace Alethic.Auth0.Operator.Controllers
             var tenantDomain = await GetTenantDomainForCacheSalt(entity, cancellationToken);
 
             return await Auth0PaginationHelper.GetAllWithPaginationAsync(
-                _clientCache,
+                _cache,
                 Logger,
                 request,
                 api.Clients.GetAllAsync,
@@ -1182,23 +1174,6 @@ namespace Alethic.Auth0.Operator.Controllers
         }
 
         /// <summary>
-        /// Invalidates connection cache when a connection is modified.
-        /// </summary>
-        /// <param name="connectionId">Connection ID to invalidate</param>
-        void InvalidateConnectionCache(string connectionId)
-        {
-            var cacheKey = $"connection:{connectionId}";
-            _connectionCache.Remove(cacheKey);
-
-            Logger.LogInformationJson($"{EntityTypeName} invalidated connection cache: {connectionId}", new
-            {
-                entityTypeName = EntityTypeName,
-                connectionId,
-                operation = "cache_invalidate"
-            });
-        }
-
-        /// <summary>
         /// Gets enabled connections for a specific client using the direct Auth0 Management API endpoint
         /// Uses GET /api/v2/clients/{id}/connections which is more efficient than fetching all connections
         /// </summary>
@@ -1207,77 +1182,47 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>List of connections enabled for the client</returns>
         private async Task<List<Connection>> GetClientConnectionsAsync(ITenantApiAccess tenantApiAccess,
-            string clientId, CancellationToken cancellationToken)
+            string clientId, string defaultNamespace, CancellationToken cancellationToken)
         {
             LogAuth0ApiCall($"Getting enabled connections for client: {clientId}", Auth0ApiCallType.Read,
-                "A0Connection", "client_direct", "unknown", "get_client_connections_direct");
-
-            var accessToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
+                "A0Connection", clientId, defaultNamespace, "get_client_connections_direct");
 
             // Use the direct Auth0 Management API endpoint: GET /api/v2/clients/{id}/connections
             var requestUri = new Uri(tenantApiAccess.BaseUri, $"clients/{clientId}/connections");
 
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
+                () => new HttpRequestMessage(HttpMethod.Get, requestUri),
+                operation: "get_client_connections",
+                cancellationToken);
 
-            try
+            if (!response.IsSuccessStatusCode)
             {
-                var response = await httpClient.GetAsync(requestUri, cancellationToken);
+                var failureBody = await ReadBodySafelyAsync(response, cancellationToken);
+                ThrowFromHttpFailure(response, failureBody, "get_client_connections",
+                    connectionId: "-", clientId);
+            }
 
-                if (response.StatusCode == HttpStatusCode.Unauthorized)
+            var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData =
+                Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
+            var connections = responseData?.Connections;
+
+            Logger.LogInformationJson(
+                $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
+                new
                 {
-                    // Token might be expired, try to regenerate
-                    Logger.LogInformationJson(
-                        $"{EntityTypeName} received 401 Unauthorized, regenerating token for client {clientId}", new
-                        {
-                            entityTypeName = EntityTypeName,
-                            clientId,
-                            operation = "token_regeneration"
-                        });
+                    entityTypeName = EntityTypeName,
+                    clientId,
+                    connectionCount = connections?.Count ?? 0,
+                    operation = "get_client_connections_direct",
+                    baseUri = tenantApiAccess.BaseUri.ToString()
+                });
 
-                    var newToken = await tenantApiAccess.GetAccessTokenAsync(cancellationToken);
-                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", newToken);
-
-                    response = await httpClient.GetAsync(requestUri, cancellationToken);
-                }
-
-                response.EnsureSuccessStatusCode();
-
-                var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseData =
-                    Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConnectionsResponse>(jsonContent);
-                var connections = responseData?.Connections;
-
-                Logger.LogInformationJson(
-                    $"{EntityTypeName} retrieved {connections?.Count ?? 0} connections directly for client {clientId}",
-                    new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId,
-                        connectionCount = connections?.Count ?? 0,
-                        operation = "get_client_connections_direct",
-                        baseUri = tenantApiAccess.BaseUri.ToString()
-                    });
-
-                return connections ?? new List<Connection>();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogErrorJson($"{EntityTypeName} failed to get connections for client {clientId}: {ex.Message}",
-                    new
-                    {
-                        entityTypeName = EntityTypeName,
-                        clientId,
-                        operation = "get_client_connections_direct",
-                        errorMessage = ex.Message
-                    }, ex);
-                throw;
-            }
+            return connections ?? new List<Connection>();
         }
 
 
-        async Task ReconcileEnabledConnections(ITenantApiAccess tenantApiAccess, string clientId,
+        internal async Task ReconcileEnabledConnections(ITenantApiAccess tenantApiAccess, string clientId,
             V1ConnectionReference[]? enabledConnectionRefs, string defaultNamespace,
             CancellationToken cancellationToken)
         {
@@ -1288,9 +1233,9 @@ namespace Alethic.Auth0.Operator.Controllers
                         defaultNamespace, cancellationToken);
                 var (connectionsToAdd, connectionsToRemove) =
                     CalculateConnectionDifferences(currentConnectionIds, desiredConnectionIds);
-                var managementApiClient = await GetApiClientIfNeeded(tenantApiAccess, connectionsToAdd, connectionsToRemove);
 
-                await ApplyConnectionChanges(managementApiClient, clientId, connectionsToAdd, connectionsToRemove, cancellationToken);
+                await ApplyConnectionChanges(tenantApiAccess, clientId, connectionsToAdd, connectionsToRemove,
+                    defaultNamespace, cancellationToken);
                 LogReconciliationResult(clientId, currentConnectionIds.Count, connectionsToAdd.Count,
                     connectionsToRemove.Count);
             }
@@ -1313,7 +1258,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 operation = "get_current_connections"
             });
 
-            var currentConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, cancellationToken);
+            var currentConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, defaultNamespace, cancellationToken);
             var currentConnectionIds =
                 currentConnections.Select(c => c.Id).Where(id => !string.IsNullOrEmpty(id)).ToHashSet();
 
@@ -1351,64 +1296,17 @@ namespace Alethic.Auth0.Operator.Controllers
             return (connectionsToAdd, connectionsToRemove);
         }
 
-        private async Task<IManagementApiClient?> GetApiClientIfNeeded(
-            ITenantApiAccess tenantApiAccess, List<string> connectionsToAdd, List<string> connectionsToRemove)
+        private async Task ApplyConnectionChanges(ITenantApiAccess tenantApiAccess, string clientId,
+            List<string> connectionsToAdd, List<string> connectionsToRemove,
+            string defaultNamespace, CancellationToken cancellationToken)
         {
-            if (connectionsToAdd.Count == 0 && connectionsToRemove.Count == 0)
-                return null;
-
-            var accessToken = await tenantApiAccess.GetAccessTokenAsync(CancellationToken.None);
-            return new ManagementApiClient(accessToken, tenantApiAccess.BaseUri);
-        }
-
-        private async Task ApplyConnectionChanges(IManagementApiClient? managementApiClient, string clientId,
-            List<string> connectionsToAdd, List<string> connectionsToRemove, CancellationToken cancellationToken)
-        {
-            if (connectionsToAdd.Count > 0)
-            {
-                await AddConnectionsToClient(managementApiClient!, clientId, connectionsToAdd, cancellationToken);
-            }
-
-            if (connectionsToRemove.Count > 0)
-            {
-                await RemoveConnectionsFromClient(managementApiClient!, clientId, connectionsToRemove, cancellationToken);
-            }
-        }
-
-        private async Task AddConnectionsToClient(IManagementApiClient api, string clientId,
-            List<string> connectionsToAdd, CancellationToken cancellationToken)
-        {
-            Logger.LogInformationJson(
-                $"{EntityTypeName} adding {connectionsToAdd.Count} connections for client {clientId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId,
-                    connectionsToAdd = connectionsToAdd.ToArray(),
-                    operation = "add_connections"
-                });
-
             foreach (var connectionId in connectionsToAdd)
-            {
-                await AddClientToConnection(api, connectionId, clientId, cancellationToken);
-            }
-        }
-
-        private async Task RemoveConnectionsFromClient(IManagementApiClient api, string clientId,
-            List<string> connectionsToRemove, CancellationToken cancellationToken)
-        {
-            Logger.LogInformationJson(
-                $"{EntityTypeName} removing {connectionsToRemove.Count} connections for client {clientId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    clientId,
-                    connectionsToRemove = connectionsToRemove.ToArray(),
-                    operation = "remove_connections"
-                });
+                await EnableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
+                    cancellationToken);
 
             foreach (var connectionId in connectionsToRemove)
-            {
-                await RemoveClientFromConnection(api, connectionId, clientId, cancellationToken);
-            }
+                await DisableClientOnConnectionAsync(tenantApiAccess, connectionId, clientId, defaultNamespace,
+                    cancellationToken);
         }
 
         private void LogReconciliationResult(string clientId, int currentConnectionCount, int addedCount,
@@ -1441,247 +1339,145 @@ namespace Alethic.Auth0.Operator.Controllers
                 }, ex);
         }
 
+        /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:true}]</c> — enables a single client on a connection.</summary>
+        internal Task EnableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
+            string clientId, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
+                status: true,
+                operation: "enable_client_on_connection",
+                defaultNamespace,
+                cancellationToken);
+        }
+
+        /// <summary>PATCH /api/v2/connections/{connectionId}/clients with <c>[{client_id, status:false}]</c> — disables a single client on a connection.</summary>
+        internal Task DisableClientOnConnectionAsync(ITenantApiAccess tenantApiAccess, string connectionId,
+            string clientId, string defaultNamespace, CancellationToken cancellationToken)
+        {
+            return PatchConnectionClientsAsync(tenantApiAccess, connectionId, clientId,
+                status: false,
+                operation: "disable_client_on_connection",
+                defaultNamespace,
+                cancellationToken);
+        }
+
         /// <summary>
-        /// Adds a client ID to a connection's enabled_clients field with mutex protection.
+        /// Issues a single <c>PATCH /api/v2/connections/{connectionId}/clients</c> with a one-row
+        /// body <c>[{client_id, status}]</c> — Auth0's replacement for the deprecated
+        /// <c>enabled_clients</c> field. Success is HTTP 204 (No Content); any other status surfaces
+        /// via <see cref="ThrowFromHttpFailure"/>. No benign-4xx handling is required because
+        /// the endpoint is idempotent and returns 204 regardless of prior membership state.
         /// </summary>
-        /// <param name="api">Auth0 Management API client</param>
-        /// <param name="connectionId">Connection ID to update</param>
-        /// <param name="clientId">Client ID to add to enabled_clients</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        async Task AddClientToConnection(IManagementApiClient api, string connectionId, string clientId,
+        private async Task PatchConnectionClientsAsync(ITenantApiAccess tenantApiAccess, string connectionId,
+            string clientId, bool status, string operation, string defaultNamespace,
             CancellationToken cancellationToken)
         {
-            var mutex = _connectionUpdateMutexes.GetOrAdd(connectionId, _ => new SemaphoreSlim(1, 1));
-
-            await mutex.WaitAsync(cancellationToken);
-            try
+            var requestUri = new Uri(tenantApiAccess.BaseUri, $"connections/{connectionId}/clients");
+            var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new[]
             {
-                var currentConnection = await GetConnectionForUpdate(connectionId, clientId, "enabled_clients update",
-                    cancellationToken, api);
-                if (currentConnection is null) return;
+                new { client_id = clientId, status }
+            });
 
-                var enabledClientIds = GetCurrentEnabledClients(connectionId, currentConnection);
-                if (IsClientAlreadyEnabled(connectionId, clientId, enabledClientIds)) return;
+            LogAuth0ApiCall($"{operation} for client {clientId} on connection {connectionId}",
+                Auth0ApiCallType.Write, "A0Client", clientId, defaultNamespace, operation);
 
-                await UpdateConnectionWithAddedClient(api, connectionId, clientId, enabledClientIds, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                LogConnectionUpdateError(connectionId, clientId, "update_enabled_clients", ex);
-                throw;
-            }
-            finally
-            {
-                mutex.Release();
-            }
-        }
-
-        private async Task<Connection?> GetConnectionForUpdate(string connectionId, string clientId, string operation,
-            CancellationToken cancellationToken, IManagementApiClient api)
-        {
-            Logger.LogInformationJson(
-                $"{EntityTypeName} reading current connection state before {operation}: {connectionId}", new
+            using var response = await SendWithTokenAndRetryAsync(tenantApiAccess,
+                () => new HttpRequestMessage(HttpMethod.Patch, requestUri)
                 {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "preliminary_read"
-                });
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                },
+                operation, cancellationToken);
 
-            LogAuth0ApiCall($"Getting Auth0 connection for {operation}: {connectionId}", Auth0ApiCallType.Read,
-                "A0Connection", connectionId, "unknown", "preliminary_connection_read");
-            var currentConnection = await api.Connections.GetAsync(connectionId, cancellationToken: cancellationToken);
-
-            if (currentConnection is null)
-            {
-                Logger.LogWarningJson($"{EntityTypeName} connection not found for {operation}: {connectionId}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "preliminary_read",
-                    status = "not_found"
-                });
-            }
-
-            return currentConnection;
-        }
-
-        private List<string> GetCurrentEnabledClients(string connectionId, Connection currentConnection)
-        {
-            LogAuth0ApiCall($"Getting Auth0 connection enabled clients: {connectionId}", Auth0ApiCallType.Read,
-                "A0Connection", connectionId, "unknown", "get_connection_enabled_clients");
-#pragma warning disable CS0618 // Type or member is obsolete
-            return currentConnection.EnabledClients?.ToList() ?? new List<string>();
-#pragma warning restore CS0618 // Type or member is obsolete
-        }
-
-        private bool IsClientAlreadyEnabled(string connectionId, string clientId, List<string> enabledClientIds)
-        {
-            if (enabledClientIds.Contains(clientId))
+            if (response.IsSuccessStatusCode)
             {
                 Logger.LogInformationJson(
-                    $"{EntityTypeName} client {clientId} already enabled for connection {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId,
-                        clientId,
-                        operation = "enabled_clients_check",
-                        status = "already_enabled"
-                    });
-                return true;
+                    $"{EntityTypeName} {operation} succeeded for client {clientId} on connection {connectionId}",
+                    new { entityTypeName = EntityTypeName, connectionId, clientId, operation, status = "success" });
+                return;
             }
 
-            return false;
-        }
-
-        private async Task UpdateConnectionWithAddedClient(IManagementApiClient api, string connectionId,
-            string clientId, List<string> enabledClientIds, CancellationToken cancellationToken)
-        {
-            enabledClientIds.Add(clientId);
-
-            var updateRequest = new ConnectionUpdateRequest
-            {
-#pragma warning disable CS0618 // Type or member is obsolete
-                EnabledClients = enabledClientIds.ToArray()
-#pragma warning restore CS0618 // Type or member is obsolete
-            };
-
-            Logger.LogWarningJson(
-                $"{EntityTypeName} updating connection {connectionId} to include client {clientId} in enabled_clients",
-                new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "update_enabled_clients"
-                });
-
-            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients: connection ID = {connectionId}", Auth0ApiCallType.Write,
-                "A0Connection", connectionId, "unknown", "update_connection_enabled_clients");
-            await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
-
-            InvalidateConnectionCache(connectionId);
-
-            Logger.LogWarningJson(
-                $"{EntityTypeName} successfully updated connection {connectionId} enabled_clients to include client {clientId}",
-                new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "update_enabled_clients",
-                    status = "success"
-                });
+            var body = await ReadBodySafelyAsync(response, cancellationToken);
+            ThrowFromHttpFailure(response, body, operation, connectionId, clientId);
         }
 
         /// <summary>
-        /// Removes a client ID from a connection's enabled_clients field with mutex protection.
+        /// Sends an authenticated HTTP request, evicting and refreshing the bearer token once on a 401 response.
         /// </summary>
-        /// <param name="api">Auth0 Management API client</param>
-        /// <param name="connectionId">Connection ID to update</param>
-        /// <param name="clientId">Client ID to remove from enabled_clients</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        async Task RemoveClientFromConnection(IManagementApiClient api, string connectionId, string clientId,
-            CancellationToken cancellationToken)
+        private async Task<HttpResponseMessage> SendWithTokenAndRetryAsync(ITenantApiAccess tenantApiAccess,
+            Func<HttpRequestMessage> requestFactory, string operation, CancellationToken cancellationToken)
         {
-            var mutex = _connectionUpdateMutexes.GetOrAdd(connectionId, _ => new SemaphoreSlim(1, 1));
+            var httpClient = _httpClientFactory.CreateClient();
 
-            await mutex.WaitAsync(cancellationToken);
-            try
+            HttpRequestMessage Build(string token)
             {
-                var currentConnection = await GetConnectionForUpdate(connectionId, clientId, "enabled_clients removal",
-                    cancellationToken, api);
-                if (currentConnection is null) return;
+                var req = requestFactory();
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                return req;
+            }
 
-                var enabledClientIds = GetCurrentEnabledClients(connectionId, currentConnection);
-                if (!IsClientCurrentlyEnabled(connectionId, clientId, enabledClientIds)) return;
+            var response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
+                cancellationToken);
 
-                await UpdateConnectionWithRemovedClient(api, connectionId, clientId, enabledClientIds,
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                response.Dispose();
+                await tenantApiAccess.InvalidateAccessTokenAsync(cancellationToken);
+                response = await httpClient.SendAsync(Build(await tenantApiAccess.GetAccessTokenAsync(cancellationToken)),
                     cancellationToken);
             }
-            catch (Exception ex)
+
+            return response;
+        }
+
+        /// <summary>
+        /// Reads the response body, swallowing IO/decode errors so callers can pass the body
+        /// through both the benign-error code-check path and the failure-throw path without
+        /// re-reading the stream (which Auth0 has already exhausted on the wire).
+        /// </summary>
+        private static async Task<string> ReadBodySafelyAsync(HttpResponseMessage response,
+            CancellationToken cancellationToken)
+        {
+            try
             {
-                LogConnectionUpdateError(connectionId, clientId, "remove_enabled_clients", ex);
-                throw;
+                return await response.Content.ReadAsStringAsync(cancellationToken);
             }
-            finally
+            catch
             {
-                mutex.Release();
+                return string.Empty;
             }
         }
 
-        private bool IsClientCurrentlyEnabled(string connectionId, string clientId, List<string> enabledClientIds)
+        /// <summary>
+        /// Throws an exception that preserves the status code and Auth0 body for the upstream retry+backoff wrapper.
+        /// 429 maps to <see cref="RateLimitApiException"/> so the existing rate-limit handler reschedules per <c>X-RateLimit-Reset</c>.
+        /// Callers own the response lifetime (via <c>using</c>); this method does not dispose it.
+        /// </summary>
+        [DoesNotReturn]
+        private static void ThrowFromHttpFailure(HttpResponseMessage response, string body, string operation,
+            string connectionId, string clientId)
         {
-            if (!enabledClientIds.Contains(clientId))
+            var statusCode = (int)response.StatusCode;
+
+            if (statusCode == 429)
             {
-                Logger.LogInformationJson(
-                    $"{EntityTypeName} client {clientId} not currently enabled for connection {connectionId}", new
-                    {
-                        entityTypeName = EntityTypeName,
-                        connectionId,
-                        clientId,
-                        operation = "enabled_clients_check",
-                        status = "not_enabled"
-                    });
-                return false;
+                var rateLimit = RateLimit.Parse(response.Headers);
+                ApiError apiError;
+                try
+                {
+                    apiError = (string.IsNullOrWhiteSpace(body)
+                        ? null
+                        : JsonConvert.DeserializeObject<ApiError>(body)) ?? new ApiError();
+                }
+                catch
+                {
+                    apiError = new ApiError();
+                }
+                throw new RateLimitApiException(rateLimit, apiError);
             }
 
-            return true;
-        }
-
-        private async Task UpdateConnectionWithRemovedClient(IManagementApiClient api, string connectionId,
-            string clientId, List<string> enabledClientIds, CancellationToken cancellationToken)
-        {
-            enabledClientIds.Remove(clientId);
-
-            var updateRequest = new ConnectionUpdateRequest
-            {
-#pragma warning disable CS0618 // Type or member is obsolete
-                EnabledClients = enabledClientIds.ToArray()
-#pragma warning restore CS0618 // Type or member is obsolete
-            };
-
-            Logger.LogInformationJson(
-                $"{EntityTypeName} updating connection {connectionId} to remove client {clientId} from enabled_clients",
-                new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "remove_enabled_clients"
-                });
-
-            LogAuth0ApiCall($"Updating Auth0 connection enabled_clients removal: {connectionId}",
-                Auth0ApiCallType.Write, "A0Connection", connectionId, "unknown", "update_connection_remove_clients");
-            await api.Connections.UpdateAsync(connectionId, updateRequest, cancellationToken);
-
-            InvalidateConnectionCache(connectionId);
-
-            Logger.LogInformationJson(
-                $"{EntityTypeName} successfully removed client {clientId} from connection {connectionId} enabled_clients",
-                new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation = "remove_enabled_clients",
-                    status = "success"
-                });
-        }
-
-        private void LogConnectionUpdateError(string connectionId, string clientId, string operation, Exception ex)
-        {
-            Logger.LogErrorJson(
-                $"{EntityTypeName} failed to update connection {connectionId} for client {clientId}: {ex.Message}", new
-                {
-                    entityTypeName = EntityTypeName,
-                    connectionId,
-                    clientId,
-                    operation,
-                    errorMessage = ex.Message,
-                    status = "failed"
-                }, ex);
+            throw new HttpRequestException(
+                $"Auth0 {operation} for client {clientId} on connection {connectionId} returned HTTP {statusCode}: {body}");
         }
 
         /// <summary>
@@ -1766,7 +1562,8 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>The enriched client state with enabled_connections field</returns>
         public async Task<Hashtable> EnrichWithEnabledConnections(Hashtable clientState,
-            ITenantApiAccess tenantApiAccess, string clientId, CancellationToken cancellationToken)
+            ITenantApiAccess tenantApiAccess, string clientId, string defaultNamespace,
+            CancellationToken cancellationToken)
         {
             try
             {
@@ -1780,7 +1577,7 @@ namespace Alethic.Auth0.Operator.Controllers
                     });
 
                 // Get the current enabled connections from Auth0 using direct HTTP call
-                var enabledConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, cancellationToken);
+                var enabledConnections = await GetClientConnectionsAsync(tenantApiAccess, clientId, defaultNamespace, cancellationToken);
 
                 // Create a list of connection IDs to match the expected format in the client configuration
                 // Need to populate `clientState["enabled_connections"]` with an array of hashtables, each containing key="id" and value= the connection ID
@@ -1856,7 +1653,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 }
 
                 // Enrich with enabled connections using the existing method
-                return await EnrichWithEnabledConnections(auth0State, tenantApiAccess, entity.Status.Id, cancellationToken);
+                return await EnrichWithEnabledConnections(auth0State, tenantApiAccess, entity.Status.Id, entity.Namespace(), cancellationToken);
             }
             catch (Exception ex)
             {
@@ -1995,14 +1792,5 @@ namespace Alethic.Auth0.Operator.Controllers
                 // Don't throw - secret deletion failure shouldn't block tenant change handling
             }
         }
-    }
-
-    /// <summary>
-    /// Wrapper class for Auth0 client connections API response
-    /// </summary>
-    internal class ClientConnectionsResponse
-    {
-        [Newtonsoft.Json.JsonProperty("connections")]
-        public List<Connection> Connections { get; set; } = new List<Connection>();
     }
 }
