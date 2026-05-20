@@ -107,6 +107,44 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                 $"Expected sandbox_version in drift list; got [{string.Join(", ", driftFields.Select(f => f.FieldPath))}].");
         }
 
+        // ============================================================================
+        // 3. Two TenantConfs differing only in the ORDER of enabled_locales are equivalent
+        //    from HasConfigurationChanged's point of view. Regression guard for H2 / MR !3
+        //    rufus review: V1TenantController.AreValuesEqual previously used an order-
+        //    sensitive index loop for arrays while V1TenantEntityController used order-
+        //    insensitive set comparison. Auth0 reorders enabled_locales server-side, so the
+        //    tenant controller's old behaviour produced spurious drift on every reconcile.
+        //    Both controllers now share DriftComparison.AreArraysEqualOrderInsensitive.
+        // ============================================================================
+
+        [TestMethod]
+        public void HasConfigurationChanged_EnabledLocalesReordered_ReturnsFalse()
+        {
+            var controller = BuildController();
+
+            // Same locale set, different order — Auth0 reorders server-side after PATCH.
+            var lastConf = new Hashtable
+            {
+                ["friendly_name"] = "Acme",
+                ["enabled_locales"] = new object[] { "en", "fr", "es" },
+            };
+
+            var desiredConf = new TenantConf
+            {
+                FriendlyName = "Acme",
+                EnabledLocales = new List<string> { "es", "en", "fr" },
+            };
+
+            var (changed, driftFields) = InvokeHasConfigurationChanged(controller, lastConf, desiredConf);
+
+            Assert.IsFalse(changed,
+                $"HasConfigurationChanged must return false when enabled_locales differs only in " +
+                $"element order (Auth0 reorders list-shaped fields server-side). Drift fields: " +
+                $"[{string.Join(", ", driftFields.Select(f => f.FieldPath))}]");
+            Assert.AreEqual(0, driftFields.Count,
+                $"Drift list must be empty; got [{string.Join(", ", driftFields.Select(f => f.FieldPath))}].");
+        }
+
         // ---- Test scaffolding ----
 
         private static V1TenantController BuildController()

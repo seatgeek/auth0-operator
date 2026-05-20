@@ -50,6 +50,11 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         [DataRow("signing_key")]
         [DataRow("certificate")]
         [DataRow("pfx")]
+        // H1 / MR !3 rufus review — pfx must match as a complete _/.- bounded segment, covering
+        // leading, middle, trailing, and whole-key positions.
+        [DataRow("cert.pfx")]
+        [DataRow("pfx_data")]
+        [DataRow("oauth.pfx_blob")]
         public void IsSensitiveKey_RedactsSecretShapedKey(string key)
         {
             Assert.IsTrue(LogValueFormatter.IsSensitiveKey(key),
@@ -60,6 +65,10 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         [DataRow("token_endpoint")]
         [DataRow("token_endpoint_auth_method")]
         [DataRow("access_token_lifetime_in_seconds")]
+        // H1 / MR !3 rufus review — keys whose name merely contains the three letters "pfx" as
+        // a non-boundary substring must NOT redact (they're not pkcs12 blobs).
+        [DataRow("prefix_url")]
+        [DataRow("spfx_config")]
         public void IsSensitiveKey_DoesNotRedactNonSecretTokenNamedKey(string key)
         {
             Assert.IsFalse(LogValueFormatter.IsSensitiveKey(key),

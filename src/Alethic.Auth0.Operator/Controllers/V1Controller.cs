@@ -876,8 +876,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Random delay in seconds</returns>
         protected int GenerateRandomRetryDelay()
         {
-            var random = new Random();
-            return random.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
+            return Random.Shared.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
         }
 
         /// <summary>
