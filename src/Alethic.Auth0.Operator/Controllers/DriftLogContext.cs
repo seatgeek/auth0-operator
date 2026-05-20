@@ -85,6 +85,28 @@ namespace Alethic.Auth0.Operator.Controllers
             "private_key",
         };
 
+        /// <summary>
+        /// Exact rendered values that legitimately contain a <see cref="SecretShapedSubstrings"/>
+        /// marker but are typed Auth0 OAuth enum members, not secrets. The leading/trailing quotes
+        /// are intentional — <see cref="LogValueFormatter.FormatValueForLogging"/> wraps string
+        /// values in double quotes, so matching on the quoted form prevents this allowlist from
+        /// accidentally letting a free-form user-controlled string field (e.g. a connection
+        /// description containing the literal "client_secret_post") slip past the redaction guard.
+        /// <para>
+        /// Source: <see cref="Alethic.Auth0.Operator.Core.Models.Client.TokenEndpointAuthMethod"/>
+        /// declares <c>client_secret_post</c> and <c>client_secret_basic</c>. <c>client_secret_jwt</c>
+        /// is a valid Auth0-returned value (OIDC core spec) that our enum doesn't currently model
+        /// but Auth0 may emit on read — allowlist it pre-emptively so a future enum addition or a
+        /// raw before-value from Auth0 doesn't false-trip the guard.
+        /// </para>
+        /// </summary>
+        private static readonly HashSet<string> SecretShapedAllowedExactValues = new(StringComparer.Ordinal)
+        {
+            "\"client_secret_post\"",
+            "\"client_secret_basic\"",
+            "\"client_secret_jwt\"",
+        };
+
         public string FieldPath { get; }
 
         public DriftChangeType ChangeType { get; }
@@ -111,6 +133,13 @@ namespace Alethic.Auth0.Operator.Controllers
         private static void EnsureNoSecretShape(string paramName, string? value)
         {
             if (string.IsNullOrEmpty(value))
+                return;
+
+            // Allowlist exact rendered forms of typed OAuth enum members whose string value
+            // legitimately contains a SecretShapedSubstrings marker. Matching the *quoted* form
+            // (as produced by LogValueFormatter.FormatValueForLogging) ensures we don't allowlist
+            // a user-controlled string field that merely contains the same substring.
+            if (SecretShapedAllowedExactValues.Contains(value))
                 return;
 
             foreach (var marker in SecretShapedSubstrings)

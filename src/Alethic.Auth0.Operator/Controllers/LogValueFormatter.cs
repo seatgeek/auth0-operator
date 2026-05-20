@@ -29,14 +29,18 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <summary>
         /// Returns true if <paramref name="key"/> names an Auth0 / connection-options field whose
         /// value is sensitive (a secret, credential, signing key, etc.) and must never be written
-        /// to the structured drift-log payload. Matching is case-insensitive substring matching —
-        /// covers <c>client_secret</c>, <c>bind_credentials</c>, <c>password</c>, <c>api_secret</c>,
-        /// <c>signing_cert</c>, <c>signing_key</c>, <c>kerberos</c>, <c>private_key</c>,
-        /// <c>api_key</c>, <c>client_assertion</c>, <c>certificate</c>, <c>pfx</c>, plus the three
-        /// OAuth token fields (<c>access_token</c>, <c>refresh_token</c>, <c>id_token</c>) when
-        /// they appear as the trailing <c>_</c>- or <c>.</c>-bounded segment of the key. The
-        /// token rule is intentionally narrow — a plain <c>"token"</c> substring would over-match
-        /// legitimate non-secret fields like <c>token_endpoint</c>,
+        /// to the structured drift-log payload. Matching is case-insensitive substring matching
+        /// for most keywords; <c>pfx</c> and the OAuth token names match only as
+        /// <c>_</c>/<c>.</c>-bounded segments. Covers <c>client_secret</c>,
+        /// <c>bind_credentials</c>, <c>password</c>, <c>api_secret</c>, <c>signing_cert</c>,
+        /// <c>signing_key</c>, <c>kerberos</c>, <c>private_key</c>, <c>api_key</c>,
+        /// <c>client_assertion</c>, <c>certificate</c>, <c>pfx</c> (as a complete segment — see
+        /// <see cref="ContainsSegment"/>), plus the three OAuth token fields
+        /// (<c>access_token</c>, <c>refresh_token</c>, <c>id_token</c>) when they appear as the
+        /// trailing <c>_</c>- or <c>.</c>-bounded segment of the key. The segment-bounded rules
+        /// are intentionally narrow — a plain <c>Contains</c> on <c>"pfx"</c> would over-match
+        /// keys like <c>prefix_url</c> and <c>spfx_config</c>, and a plain <c>Contains</c> on
+        /// <c>"token"</c> would over-match <c>token_endpoint</c>,
         /// <c>token_endpoint_auth_method</c>, and <c>access_token_lifetime_in_seconds</c>.
         /// False-positives (e.g. a user-facing description that happens to contain the word
         /// <c>password</c>) are acceptable; false-negatives are not.
@@ -60,7 +64,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 || lower.Contains("api_key", StringComparison.Ordinal)
                 || lower.Contains("client_assertion", StringComparison.Ordinal)
                 || lower.Contains("certificate", StringComparison.Ordinal)
-                || lower.Contains("pfx", StringComparison.Ordinal)
+                || ContainsSegment(lower, "pfx")
                 || IsOAuthTokenKey(lower);
         }
 
@@ -77,6 +81,29 @@ namespace Alethic.Auth0.Operator.Controllers
             return EndsWithSegment(lower, "access_token")
                 || EndsWithSegment(lower, "refresh_token")
                 || EndsWithSegment(lower, "id_token");
+        }
+
+        /// <summary>
+        /// Returns true when <paramref name="segment"/> appears in <paramref name="key"/> as a
+        /// complete <c>_</c>- or <c>.</c>-bounded segment (or equals the whole key). Matches
+        /// <c>pfx</c>, <c>cert.pfx</c>, <c>pfx_data</c>, <c>oauth.pfx_blob</c>; does NOT match
+        /// <c>prefix_url</c> or <c>spfx_config</c>. Used by <see cref="IsSensitiveKey"/> to
+        /// redact <c>pfx</c>-bearing fields without over-matching keys that merely contain the
+        /// three letters as a non-boundary substring.
+        /// </summary>
+        private static bool ContainsSegment(string key, string segment)
+        {
+            int idx = 0;
+            while ((idx = key.IndexOf(segment, idx, StringComparison.Ordinal)) >= 0)
+            {
+                var leftOk = idx == 0 || key[idx - 1] == '_' || key[idx - 1] == '.';
+                var endIdx = idx + segment.Length;
+                var rightOk = endIdx == key.Length || key[endIdx] == '_' || key[endIdx] == '.';
+                if (leftOk && rightOk)
+                    return true;
+                idx = endIdx;
+            }
+            return false;
         }
 
         /// <summary>

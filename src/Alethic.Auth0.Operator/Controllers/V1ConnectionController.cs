@@ -503,11 +503,11 @@ namespace Alethic.Auth0.Operator.Controllers
                         status = "warning",
                         metadata = req.Metadata
                     });
-                    LogAuth0Write($"Resetting Auth0 connection metadata with ID: {id}", "A0Connection", conf.Name ?? "unknown", "unknown", "reset_connection_metadata", driftContext);
+                    LogAuth0Write($"Resetting Auth0 connection metadata with ID: {id}", "A0Connection", conf.Name ?? "unknown", defaultNamespace, "reset_connection_metadata", driftContext);
                     await api.Connections.UpdateAsync(id, new ConnectionUpdateRequest { Metadata = new Hashtable() }, cancellationToken);
                 }
 
-                LogAuth0Write($"Updating Auth0 connection with ID: {id}", "A0Connection", conf.Name ?? "unknown", "unknown", "update_connection", driftContext);
+                LogAuth0Write($"Updating Auth0 connection with ID: {id}", "A0Connection", conf.Name ?? "unknown", defaultNamespace, "update_connection", driftContext);
                 await api.Connections.UpdateAsync(id, req, cancellationToken);
                 Logger.LogInformationJson($"{EntityTypeName} successfully updated connection in Auth0 with ID: {id}, name: {conf.Name} and strategy: {conf.Strategy}", new
                 {

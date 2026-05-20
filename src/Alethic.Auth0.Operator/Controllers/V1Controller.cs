@@ -647,11 +647,18 @@ namespace Alethic.Auth0.Operator.Controllers
                 try
                 {
                     var duration = DateTimeOffset.UtcNow - startTime;
+                    var auth0StatusCode = (int)e.StatusCode;
+                    var auth0RetryableHint = IsAuth0RetryableStatus(auth0StatusCode);
                     Logger.LogErrorJson($"Auth0 API error during reconciliation for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Status={e.StatusCode}, ErrorCode={e.ApiError?.ErrorCode}, Message={e.ApiError?.Message}, Duration={duration.TotalMilliseconds}ms", new {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
                         statusCode = e.StatusCode.ToString(),
+                        // F4 (LA-RF-81): structured fields for Datadog facets — numeric status
+                        // and a retryable hint (429/5xx) so investigators can filter without
+                        // string-matching the status enum.
+                        auth0StatusCode = auth0StatusCode,
+                        auth0RetryableHint = auth0RetryableHint,
                         errorCode = e.ApiError?.ErrorCode,
                         apiErrorMessage = e.ApiError?.Message,
                         durationMs = duration.TotalMilliseconds
@@ -683,38 +690,61 @@ namespace Alethic.Auth0.Operator.Controllers
             }
             catch (RateLimitApiException e)
             {
+                // calculate next attempt time, floored to one minute
+                var baseDelay = e.RateLimit?.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
+                if (baseDelay < TimeSpan.FromMinutes(1))
+                    baseDelay = TimeSpan.FromMinutes(1);
+
+                // F4 (LA-RF-81): floored value (seconds, no jitter) captured here so the
+                // structured warn log surfaces what Auth0's authoritative reset hint dictated
+                // before we layered jitter on top. Jitter is computed once below and used for
+                // both the warn log and the actual Requeue call, to avoid multi-pod
+                // thundering-herd on the same tenant.
+                var requeueFloorSeconds = (int)Math.Floor(baseDelay.TotalSeconds);
+                var rateLimitResetUtc = e.RateLimit?.Reset?.ToUniversalTime().ToString("o");
+
+                // F4 (LA-RF-81): apply one-sided [1.0, 1.2) jitter after the floor; clamp
+                // back to the floor if (defensively) it would fall below. Floor stays
+                // authoritative as the minimum. Computed once so the structured log and
+                // the Requeue call carry the same value.
+                var jitteredDelay = ApplyRateLimitJitter(baseDelay, RateLimitRequeueFloor);
+                var requeueAfterSeconds = (int)jitteredDelay.TotalSeconds;
+
                 try
                 {
                     var duration = DateTimeOffset.UtcNow - startTime;
-                    Logger.LogWarningJson($"Auth0 rate limit exceeded for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Limit={e.RateLimit?.Limit}, Remaining={e.RateLimit?.Remaining}, Reset={e.RateLimit?.Reset}, Duration={duration.TotalMilliseconds}ms", new { 
+                    Logger.LogWarningJson($"Auth0 rate limit exceeded for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Limit={e.RateLimit?.Limit}, Remaining={e.RateLimit?.Remaining}, Reset={e.RateLimit?.Reset}, Duration={duration.TotalMilliseconds}ms, RequeueAfter={jitteredDelay}", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name(), 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name(),
                         rateLimitLimit = e.RateLimit?.Limit,
                         rateLimitRemaining = e.RateLimit?.Remaining,
                         rateLimitReset = e.RateLimit?.Reset,
-                        durationMs = duration.TotalMilliseconds 
+                        // F4 (LA-RF-81): facet-friendly fields.
+                        //   `auth0RateLimitResetUtc`   — SDK-parsed reset hint as ISO-8601 UTC.
+                        //   `auth0RequeueFloorSeconds` — floored pre-jitter delay (the floor
+                        //                                Auth0's reset hint dictates).
+                        //   `auth0RequeueAfterSeconds` — actual post-jitter delay used by
+                        //                                Requeue(...). What the operator
+                        //                                will *actually* wait.
+                        auth0RateLimitResetUtc = rateLimitResetUtc,
+                        auth0RequeueFloorSeconds = requeueFloorSeconds,
+                        auth0RequeueAfterSeconds = requeueAfterSeconds,
+                        rescheduleAfter = jitteredDelay.ToString(),
+                        durationMs = duration.TotalMilliseconds
                     });
                     await ReconcileWarningAsync(entity, "RateLimit", e.ApiError?.Message ?? e.Message, cancellationToken);
                 }
                 catch (Exception e2)
                 {
-                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new { 
+                    Logger.LogCriticalJson($"Unexpected exception creating event for {EntityTypeName} {entity.Namespace()}/{entity.Name()}", new {
                         entityTypeName = EntityTypeName,
-                        entityNamespace = entity.Namespace(), 
-                        entityName = entity.Name() 
+                        entityNamespace = entity.Namespace(),
+                        entityName = entity.Name()
                     }, e2);
                 }
 
-                // calculate next attempt time, floored to one minute
-                var n = e.RateLimit?.Reset is DateTimeOffset r ? r - DateTimeOffset.Now : TimeSpan.FromMinutes(1);
-                if (n < TimeSpan.FromMinutes(1))
-                    n = TimeSpan.FromMinutes(1);
-
-                Logger.LogWarningJson($"Rate limit exceeded, rescheduling reconciliation after {n}", new { 
-                    rescheduleAfter = n.ToString() 
-                });
-                Requeue(entity, n);
+                Requeue(entity, jitteredDelay);
             }
             catch (RetryException e)
             {
@@ -846,8 +876,7 @@ namespace Alethic.Auth0.Operator.Controllers
         /// <returns>Random delay in seconds</returns>
         protected int GenerateRandomRetryDelay()
         {
-            var random = new Random();
-            return random.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
+            return Random.Shared.Next(MinRetryDelaySeconds, MaxRetryDelaySeconds + 1);
         }
 
         /// <summary>
@@ -862,6 +891,44 @@ namespace Alethic.Auth0.Operator.Controllers
             var jitterFactor = 0.75 + (Random.Shared.NextDouble() * 0.5);
             return TimeSpan.FromSeconds(ExceptionRetryBaseSeconds * jitterFactor);
         }
+
+        /// <summary>
+        /// Floor for the rate-limit requeue delay. The SDK's `X-RateLimit-Reset` hint is
+        /// authoritative when present, but we never requeue sooner than this — defensive
+        /// against missing/zero reset values and against the multi-pod thundering-herd risk
+        /// where every pod racing the exact reset instant would re-hammer the API.
+        /// </summary>
+        internal static readonly TimeSpan RateLimitRequeueFloor = TimeSpan.FromMinutes(1);
+
+        /// <summary>
+        /// F4 (LA-RF-81): testability seam for jitter sampling. Tests override this on a
+        /// <c>TestController</c> subclass to drive jitter deterministically (see
+        /// <c>V1ControllerRateLimitObservabilityTests.TestController</c>). Production
+        /// uses <see cref="Random.Shared"/>. Returns a value in <c>[0.0, 1.0)</c>.
+        /// </summary>
+        protected virtual double SampleRateLimitJitter() => Random.Shared.NextDouble();
+
+        /// <summary>
+        /// Applies one-sided <c>[1.0, 1.2)</c> jitter to <paramref name="baseDelay"/> and clamps
+        /// the result back up to <paramref name="floor"/> if (for any reason) it would fall
+        /// below. Jitter only spreads upward so we never requeue sooner than the SDK's reset
+        /// hint. Floor stays authoritative as the absolute minimum requeue delay.
+        /// </summary>
+        protected TimeSpan ApplyRateLimitJitter(TimeSpan baseDelay, TimeSpan floor)
+        {
+            // factor ∈ [1.0, 1.2): SampleRateLimitJitter() ∈ [0,1) → 1.0 + (∈[0,1) * 0.2)
+            var jitterFactor = 1.0 + (SampleRateLimitJitter() * 0.2);
+            var jittered = TimeSpan.FromTicks((long)(baseDelay.Ticks * jitterFactor));
+            return jittered < floor ? floor : jittered;
+        }
+
+        /// <summary>
+        /// Auth0 status codes that are considered "retryable hint" for log facets — 429
+        /// (rate-limit) and any 5xx (transient upstream). The hint is purely advisory for
+        /// observability; the operator does not change retry behavior based on it.
+        /// </summary>
+        internal static bool IsAuth0RetryableStatus(int statusCode)
+            => statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
     }
 
 }

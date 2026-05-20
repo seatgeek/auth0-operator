@@ -1458,31 +1458,16 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Compares two collections as sets (order-insensitive) based on their element content.
+        /// Thin wrapper preserving the legacy in-class call sites; delegates to the shared
+        /// <see cref="DriftComparison.AreArraysEqualOrderInsensitive"/> helper so the tenant
+        /// controller and entity controller share one implementation.
         /// </summary>
         /// <param name="leftArray">First collection</param>
         /// <param name="rightArray">Second collection</param>
         /// <returns>True if collections contain the same elements regardless of order</returns>
         internal static bool AreArraysEqualOrderInsensitive(object[] leftArray, object[] rightArray)
         {
-            if (leftArray.Length != rightArray.Length)
-                return false;
-
-            foreach (var leftItem in leftArray)
-            {
-                bool foundMatch = false;
-                foreach (var rightItem in rightArray)
-                {
-                    if (AreValuesEqual(leftItem, rightItem))
-                    {
-                        foundMatch = true;
-                        break;
-                    }
-                }
-                if (!foundMatch)
-                    return false;
-            }
-
-            return true;
+            return DriftComparison.AreArraysEqualOrderInsensitive(leftArray, rightArray, AreValuesEqual);
         }
 
         /// <summary>

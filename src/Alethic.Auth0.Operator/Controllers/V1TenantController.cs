@@ -83,8 +83,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 "enabled_locales",
                 "idle_session_lifetime",
                 "session_lifetime",
-                "sandbox_version",
-                "sandbox_versions_available"
+                "sandbox_version"
             };
         }
 
@@ -477,6 +476,11 @@ namespace Alethic.Auth0.Operator.Controllers
 
         /// <summary>
         /// Compares two values for equality, handling nested hashtables and arrays.
+        /// Array comparison is order-insensitive (set semantics) — Auth0 reorders list-shaped
+        /// fields server-side (notably <c>enabled_locales</c>), so preserving order would
+        /// produce spurious drift on every reconcile. Aligned with
+        /// <see cref="V1TenantEntityController{TEntity, TConf, TApi}.AreValuesEqual"/> via the
+        /// shared <see cref="DriftComparison.AreArraysEqualOrderInsensitive"/> helper.
         /// </summary>
         /// <param name="left">First value to compare</param>
         /// <param name="right">Second value to compare</param>
@@ -500,16 +504,7 @@ namespace Alethic.Auth0.Operator.Controllers
                 var leftArray = leftEnum.Cast<object>().ToArray();
                 var rightArray = rightEnum.Cast<object>().ToArray();
 
-                if (leftArray.Length != rightArray.Length)
-                    return false;
-
-                for (int i = 0; i < leftArray.Length; i++)
-                {
-                    if (!AreValuesEqual(leftArray[i], rightArray[i]))
-                        return false;
-                }
-
-                return true;
+                return DriftComparison.AreArraysEqualOrderInsensitive(leftArray, rightArray, AreValuesEqual);
             }
 
             // Use standard equality comparison
