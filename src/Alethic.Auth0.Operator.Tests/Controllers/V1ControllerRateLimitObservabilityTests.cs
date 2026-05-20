@@ -11,6 +11,7 @@ using Alethic.Auth0.Operator.Controllers;
 using Alethic.Auth0.Operator.Core.Models.Client;
 using Alethic.Auth0.Operator.Models;
 using Alethic.Auth0.Operator.Options;
+using Alethic.Auth0.Operator.Tests.TestSupport;
 
 using Auth0.Core;
 using Auth0.Core.Exceptions;
@@ -82,56 +83,52 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         public async Task RateLimitApiException_RequeueDelay_AppliesJitterWithinTwentyPercentOfResetHint()
         {
             // Reset is 100s in the future → base delay ~100s (well above the 60s floor).
-            // With the jitter sampler driven to its endpoints, the requeue delay must
-            // land inside [80s, 120s] (i.e. 100s ± 20%).
-            var originalSampler = V1Controller<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>.RateLimitJitterSampler;
-            try
+            // Jitter is now one-sided [1.0, 1.2) — never below the floored reset hint —
+            // so with the jitter sampler driven to its endpoints, the requeue delay must
+            // land inside [100s, 120s].
+            // The baseDelay is computed inside ReconcileAsync from (Reset - Now), so a
+            // small clock drift between exception construction and catch-handling shaves
+            // up to ~2s off the floored 100s base. Assertions tolerate that drift while
+            // still enforcing the [1.0, 1.2) jitter shape.
+            foreach (var (sample, expectMin, expectMax) in new[]
             {
-                foreach (var (sample, expectMin, expectMax) in new[]
-                {
-                    (0.0,   80.0,  80.0),    // factor = 0.8 → 100 * 0.8 = 80s exact
-                    (0.5,   99.99, 100.01),  // factor = 1.0 → 100s exact
-                    (0.999, 119.0, 120.0),   // factor ≈ 1.2 → ~120s
-                })
-                {
-                    V1Controller<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>.RateLimitJitterSampler = () => sample;
-
-                    var entity = MakeClient();
-                    var requeueCalls = new List<(V1Client entity, TimeSpan delay)>();
-                    var kube = new Mock<IKubernetesClient>(MockBehavior.Loose);
-                    var controller = new TestController(
-                        kube.Object,
-                        requeue: (e, d) => requeueCalls.Add((e, d)),
-                        reconcileImpl: (_, __) => throw MakeRateLimitExceptionAt(DateTimeOffset.Now.AddSeconds(100)));
-
-                    await controller.ReconcileAsync(entity, CancellationToken.None);
-
-                    Assert.AreEqual(1, requeueCalls.Count, $"sample={sample}: expected exactly one Requeue.");
-                    var d = requeueCalls[0].delay.TotalSeconds;
-                    Assert.IsTrue(d >= expectMin - 1 && d <= expectMax + 1,
-                        $"sample={sample}: expected delay in [{expectMin}s, {expectMax}s]; got {d:F2}s.");
-                }
-
-                // Floor-clamp: a Reset that is in the past (or very near) must clamp
-                // to the 60s floor even when jitter would push lower. With sample=0.0
-                // the jitter factor is 0.8 → 60s * 0.8 = 48s pre-clamp → clamp to 60s.
-                V1Controller<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>.RateLimitJitterSampler = () => 0.0;
-                var entity2 = MakeClient();
-                var requeueCalls2 = new List<(V1Client entity, TimeSpan delay)>();
-                var kube2 = new Mock<IKubernetesClient>(MockBehavior.Loose);
-                var controller2 = new TestController(
-                    kube2.Object,
-                    requeue: (e, d) => requeueCalls2.Add((e, d)),
-                    reconcileImpl: (_, __) => throw MakeRateLimitExceptionAt(DateTimeOffset.Now.AddSeconds(-30)));
-                await controller2.ReconcileAsync(entity2, CancellationToken.None);
-                Assert.AreEqual(1, requeueCalls2.Count);
-                Assert.AreEqual(TimeSpan.FromMinutes(1), requeueCalls2[0].delay,
-                    "Past/near-zero Reset must clamp to the 60s floor regardless of jitter.");
-            }
-            finally
+                (0.0,   98.0,  100.0),   // factor = 1.0 → ~100s (minus clock drift)
+                (0.5,   107.0, 110.0),   // factor = 1.1 → ~110s
+                (0.999, 117.0, 120.0),   // factor ≈ 1.2 → ~120s
+            })
             {
-                V1Controller<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>.RateLimitJitterSampler = originalSampler;
+                var entity = MakeClient();
+                var requeueCalls = new List<(V1Client entity, TimeSpan delay)>();
+                var kube = new Mock<IKubernetesClient>(MockBehavior.Loose);
+                var controller = new TestController(
+                    kube.Object,
+                    requeue: (e, d) => requeueCalls.Add((e, d)),
+                    reconcileImpl: (_, __) => throw MakeRateLimitExceptionAt(DateTimeOffset.Now.AddSeconds(100)),
+                    jitterSample: sample);
+
+                await controller.ReconcileAsync(entity, CancellationToken.None);
+
+                Assert.AreEqual(1, requeueCalls.Count, $"sample={sample}: expected exactly one Requeue.");
+                var d = requeueCalls[0].delay.TotalSeconds;
+                Assert.IsTrue(d >= expectMin && d <= expectMax,
+                    $"sample={sample}: expected delay in [{expectMin}s, {expectMax}s]; got {d:F2}s.");
             }
+
+            // Floor-clamp: a Reset that is in the past (or very near) must clamp to the
+            // 60s floor. With one-sided jitter the floored 60s only spreads upward
+            // (60s → [60s, 72s]); driving the sample to 0.0 yields exactly 60s.
+            var entity2 = MakeClient();
+            var requeueCalls2 = new List<(V1Client entity, TimeSpan delay)>();
+            var kube2 = new Mock<IKubernetesClient>(MockBehavior.Loose);
+            var controller2 = new TestController(
+                kube2.Object,
+                requeue: (e, d) => requeueCalls2.Add((e, d)),
+                reconcileImpl: (_, __) => throw MakeRateLimitExceptionAt(DateTimeOffset.Now.AddSeconds(-30)),
+                jitterSample: 0.0);
+            await controller2.ReconcileAsync(entity2, CancellationToken.None);
+            Assert.AreEqual(1, requeueCalls2.Count);
+            Assert.AreEqual(TimeSpan.FromMinutes(1), requeueCalls2[0].delay,
+                "Past/near-zero Reset must clamp to the 60s floor with sample=0.0 (factor=1.0).");
         }
 
         // ============================================================================
@@ -177,12 +174,64 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
             Assert.AreEqual(resetAt.ToUnixTimeSeconds(), parsed.ToUnixTimeSeconds(),
                 "`auth0RateLimitResetUtc` must round-trip to the same instant as RateLimit.Reset.");
 
+            Assert.IsTrue(root.TryGetProperty("auth0RequeueFloorSeconds", out var floorProp),
+                "Expected `auth0RequeueFloorSeconds` field (pre-jitter floor) on the warn log.");
+            Assert.AreEqual(JsonValueKind.Number, floorProp.ValueKind);
+            var requeueFloor = floorProp.GetInt32();
+            Assert.IsTrue(requeueFloor >= 60,
+                $"`auth0RequeueFloorSeconds` must be at least the 60s floor; got {requeueFloor}.");
+
             Assert.IsTrue(root.TryGetProperty("auth0RequeueAfterSeconds", out var requeueProp),
-                "Expected `auth0RequeueAfterSeconds` field on the warn log.");
+                "Expected `auth0RequeueAfterSeconds` field (post-jitter actual delay) on the warn log.");
             Assert.AreEqual(JsonValueKind.Number, requeueProp.ValueKind);
             var requeueAfter = requeueProp.GetInt32();
-            Assert.IsTrue(requeueAfter >= 60,
-                $"`auth0RequeueAfterSeconds` must be at least the 60s floor; got {requeueAfter}.");
+            Assert.IsTrue(requeueAfter >= requeueFloor,
+                $"`auth0RequeueAfterSeconds` ({requeueAfter}) must be >= floor ({requeueFloor}) — jitter is one-sided upward.");
+            Assert.IsTrue(requeueAfter <= (int)Math.Ceiling(requeueFloor * 1.2),
+                $"`auth0RequeueAfterSeconds` ({requeueAfter}) must be <= floor*1.2 ({requeueFloor * 1.2}).");
+        }
+
+        // ============================================================================
+        // 2b. RateLimit warn log: auth0RequeueAfterSeconds carries the POST-jitter value
+        //     used by Requeue(...), not the pre-jitter floor.
+        // ============================================================================
+
+        [TestMethod]
+        public async Task RateLimitApiException_RequeueDelay_LogReportsPostJitterValue()
+        {
+            // Reset 150s in the future, jitter sample = 0.999 → factor ≈ 1.1998 → ~180s
+            // (well above the 150s floor). The log's auth0RequeueAfterSeconds must reflect
+            // the post-jitter value (~180s), not the pre-jitter floor (150s).
+            var resetAt = DateTimeOffset.UtcNow.AddSeconds(150);
+            var entity = MakeClient();
+            var capturingLogger = new CapturingLogger();
+            var kube = new Mock<IKubernetesClient>(MockBehavior.Loose);
+            var controller = new TestController(
+                kube.Object,
+                requeue: (_, __) => { },
+                logger: capturingLogger,
+                reconcileImpl: (_, __) => throw MakeRateLimitExceptionAt(resetAt),
+                jitterSample: 0.999);
+
+            await controller.ReconcileAsync(entity, CancellationToken.None);
+
+            var rateLimitEntry = capturingLogger.Entries
+                .Where(e => e.Level == LogLevel.Warning)
+                .Select(e => TryParseJson(e.Message))
+                .Where(e => e is not null)
+                .FirstOrDefault(e => e!.RootElement.TryGetProperty("message", out var m)
+                                     && m.GetString()!.Contains("Auth0 rate limit exceeded"));
+            Assert.IsNotNull(rateLimitEntry);
+
+            var root = rateLimitEntry!.RootElement;
+            var floor = root.GetProperty("auth0RequeueFloorSeconds").GetInt32();
+            var after = root.GetProperty("auth0RequeueAfterSeconds").GetInt32();
+
+            // floor should be ~150s (give or take 1s for the clock); after should be ~floor*1.2.
+            Assert.IsTrue(floor >= 149 && floor <= 150, $"floor={floor}, expected ~150s.");
+            var expectedAfter = floor * 1.2;
+            Assert.IsTrue(Math.Abs(after - expectedAfter) <= 1,
+                $"auth0RequeueAfterSeconds ({after}) must equal floor*1.2 (~{expectedAfter:F1}) ±1s.");
         }
 
         // ============================================================================
@@ -256,49 +305,20 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
         }
 
         // ---- Test scaffolding ----
-
-        private sealed class CapturingLogEntry
-        {
-            public LogLevel Level { get; init; }
-            public string Message { get; init; } = string.Empty;
-            public Exception? Exception { get; init; }
-        }
-
-        /// <summary>
-        /// Minimal capturing logger. Records the formatted message (which, for the
-        /// structured-JSON helpers under test, is the raw JSON payload).
-        /// </summary>
-        private sealed class CapturingLogger : ILogger
-        {
-            public List<CapturingLogEntry> Entries { get; } = new();
-            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-            public bool IsEnabled(LogLevel logLevel) => true;
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            {
-                Entries.Add(new CapturingLogEntry
-                {
-                    Level = logLevel,
-                    Message = formatter(state, exception),
-                    Exception = exception,
-                });
-            }
-
-            private sealed class NullScope : IDisposable
-            {
-                public static readonly NullScope Instance = new();
-                public void Dispose() { }
-            }
-        }
+        // CapturingLogger / CapturingLogEntry / TypedLoggerAdapter live in
+        // Alethic.Auth0.Operator.Tests.TestSupport (lifted in M3 / LA-RF-81 review).
 
         private sealed class TestController : V1TenantEntityController<V1Client, V1Client.SpecDef, V1Client.StatusDef, ClientConf>
         {
             private readonly Func<TestController, V1Client, Task>? _reconcileImpl;
+            private readonly double? _jitterSample;
 
             public TestController(
                 IKubernetesClient kube,
                 EntityRequeue<V1Client> requeue,
                 Func<TestController, V1Client, Task>? reconcileImpl = null,
-                ILogger? logger = null)
+                ILogger? logger = null,
+                double? jitterSample = null)
                 : base(
                     kube,
                     requeue,
@@ -309,9 +329,15 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                     global::Microsoft.Extensions.Options.Options.Create(new OperatorOptions()))
             {
                 _reconcileImpl = reconcileImpl;
+                _jitterSample = jitterSample;
             }
 
             protected override string EntityTypeName => "A0Client";
+
+            // F4 (LA-RF-81): override the protected virtual jitter seam to drive jitter
+            // deterministically when the test supplies a fixed sample.
+            protected override double SampleRateLimitJitter()
+                => _jitterSample ?? base.SampleRateLimitJitter();
 
             protected override Task<System.Collections.Hashtable?> Get(global::Auth0.ManagementApi.IManagementApiClient api, string id, string defaultNamespace, CancellationToken cancellationToken)
                 => Task.FromResult<System.Collections.Hashtable?>(null);
@@ -336,21 +362,6 @@ namespace Alethic.Auth0.Operator.Tests.Controllers
                     await _reconcileImpl(this, entity);
                 return (false, entity);
             }
-        }
-
-        /// <summary>
-        /// Adapts a non-generic <see cref="ILogger"/> instance into the
-        /// <see cref="ILogger{T}"/> the base constructor demands, so tests can supply
-        /// a single capturing logger.
-        /// </summary>
-        private sealed class TypedLoggerAdapter<T> : ILogger<T>
-        {
-            private readonly ILogger _inner;
-            public TypedLoggerAdapter(ILogger inner) { _inner = inner; }
-            public IDisposable BeginScope<TState>(TState state) where TState : notnull => _inner.BeginScope(state)!;
-            public bool IsEnabled(LogLevel logLevel) => _inner.IsEnabled(logLevel);
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-                => _inner.Log(logLevel, eventId, state, exception, formatter);
         }
     }
 }

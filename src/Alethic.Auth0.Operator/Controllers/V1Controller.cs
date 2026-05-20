@@ -697,26 +697,40 @@ namespace Alethic.Auth0.Operator.Controllers
 
                 // F4 (LA-RF-81): floored value (seconds, no jitter) captured here so the
                 // structured warn log surfaces what Auth0's authoritative reset hint dictated
-                // before we layered jitter on top. Jitter is applied to the actual requeue
-                // delay only (below), to avoid multi-pod thundering-herd on the same tenant.
-                var requeueAfterSeconds = (int)Math.Floor(baseDelay.TotalSeconds);
+                // before we layered jitter on top. Jitter is computed once below and used for
+                // both the warn log and the actual Requeue call, to avoid multi-pod
+                // thundering-herd on the same tenant.
+                var requeueFloorSeconds = (int)Math.Floor(baseDelay.TotalSeconds);
                 var rateLimitResetUtc = e.RateLimit?.Reset?.ToUniversalTime().ToString("o");
+
+                // F4 (LA-RF-81): apply one-sided [1.0, 1.2) jitter after the floor; clamp
+                // back to the floor if (defensively) it would fall below. Floor stays
+                // authoritative as the minimum. Computed once so the structured log and
+                // the Requeue call carry the same value.
+                var jitteredDelay = ApplyRateLimitJitter(baseDelay, RateLimitRequeueFloor);
+                var requeueAfterSeconds = (int)jitteredDelay.TotalSeconds;
 
                 try
                 {
                     var duration = DateTimeOffset.UtcNow - startTime;
-                    Logger.LogWarningJson($"Auth0 rate limit exceeded for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Limit={e.RateLimit?.Limit}, Remaining={e.RateLimit?.Remaining}, Reset={e.RateLimit?.Reset}, Duration={duration.TotalMilliseconds}ms", new {
+                    Logger.LogWarningJson($"Auth0 rate limit exceeded for {EntityTypeName} {entity.Namespace()}/{entity.Name()}: Limit={e.RateLimit?.Limit}, Remaining={e.RateLimit?.Remaining}, Reset={e.RateLimit?.Reset}, Duration={duration.TotalMilliseconds}ms, RequeueAfter={jitteredDelay}", new {
                         entityTypeName = EntityTypeName,
                         entityNamespace = entity.Namespace(),
                         entityName = entity.Name(),
                         rateLimitLimit = e.RateLimit?.Limit,
                         rateLimitRemaining = e.RateLimit?.Remaining,
                         rateLimitReset = e.RateLimit?.Reset,
-                        // F4 (LA-RF-81): facet-friendly fields. `auth0RateLimitResetUtc`
-                        // is the SDK-parsed reset hint as ISO-8601 UTC; `auth0RequeueAfterSeconds`
-                        // is the floored delay (before jitter) we'll requeue after.
+                        // F4 (LA-RF-81): facet-friendly fields.
+                        //   `auth0RateLimitResetUtc`   — SDK-parsed reset hint as ISO-8601 UTC.
+                        //   `auth0RequeueFloorSeconds` — floored pre-jitter delay (the floor
+                        //                                Auth0's reset hint dictates).
+                        //   `auth0RequeueAfterSeconds` — actual post-jitter delay used by
+                        //                                Requeue(...). What the operator
+                        //                                will *actually* wait.
                         auth0RateLimitResetUtc = rateLimitResetUtc,
+                        auth0RequeueFloorSeconds = requeueFloorSeconds,
                         auth0RequeueAfterSeconds = requeueAfterSeconds,
+                        rescheduleAfter = jitteredDelay.ToString(),
                         durationMs = duration.TotalMilliseconds
                     });
                     await ReconcileWarningAsync(entity, "RateLimit", e.ApiError?.Message ?? e.Message, cancellationToken);
@@ -730,13 +744,6 @@ namespace Alethic.Auth0.Operator.Controllers
                     }, e2);
                 }
 
-                // F4 (LA-RF-81): apply ±20% jitter after the floor; clamp back to the floor
-                // if jitter would push below it. Floor stays authoritative as the minimum.
-                var jitteredDelay = ApplyRateLimitJitter(baseDelay, RateLimitRequeueFloor);
-
-                Logger.LogWarningJson($"Rate limit exceeded, rescheduling reconciliation after {jitteredDelay}", new {
-                    rescheduleAfter = jitteredDelay.ToString()
-                });
                 Requeue(entity, jitteredDelay);
             }
             catch (RetryException e)
@@ -894,22 +901,24 @@ namespace Alethic.Auth0.Operator.Controllers
         /// </summary>
         internal static readonly TimeSpan RateLimitRequeueFloor = TimeSpan.FromMinutes(1);
 
-        // F4 (LA-RF-81): testability seam. The jitter factor source is injectable so the
-        // `RateLimitApiException_RequeueDelay_AppliesJitterWithinTwentyPercentOfResetHint`
-        // test can drive the boundaries deterministically. Production uses
-        // <see cref="Random.Shared"/>. Internal — never expose on the public surface.
-        internal static Func<double> RateLimitJitterSampler { get; set; } = static () => Random.Shared.NextDouble();
+        /// <summary>
+        /// F4 (LA-RF-81): testability seam for jitter sampling. Tests override this on a
+        /// <c>TestController</c> subclass to drive jitter deterministically (see
+        /// <c>V1ControllerRateLimitObservabilityTests.TestController</c>). Production
+        /// uses <see cref="Random.Shared"/>. Returns a value in <c>[0.0, 1.0)</c>.
+        /// </summary>
+        protected virtual double SampleRateLimitJitter() => Random.Shared.NextDouble();
 
         /// <summary>
-        /// Applies ±20% jitter to <paramref name="baseDelay"/> and clamps the result back
-        /// up to <paramref name="floor"/> if jitter would push it below. Order matters:
-        /// floor is applied first by the caller, then jitter, then re-clamp — so the floor
-        /// is the strict minimum requeue delay regardless of jitter direction.
+        /// Applies one-sided <c>[1.0, 1.2)</c> jitter to <paramref name="baseDelay"/> and clamps
+        /// the result back up to <paramref name="floor"/> if (for any reason) it would fall
+        /// below. Jitter only spreads upward so we never requeue sooner than the SDK's reset
+        /// hint. Floor stays authoritative as the absolute minimum requeue delay.
         /// </summary>
-        internal static TimeSpan ApplyRateLimitJitter(TimeSpan baseDelay, TimeSpan floor)
+        protected TimeSpan ApplyRateLimitJitter(TimeSpan baseDelay, TimeSpan floor)
         {
-            // factor ∈ [0.8, 1.2): NextDouble() ∈ [0,1) → 0.8 + (∈[0,1) * 0.4)
-            var jitterFactor = 0.8 + (RateLimitJitterSampler() * 0.4);
+            // factor ∈ [1.0, 1.2): SampleRateLimitJitter() ∈ [0,1) → 1.0 + (∈[0,1) * 0.2)
+            var jitterFactor = 1.0 + (SampleRateLimitJitter() * 0.2);
             var jittered = TimeSpan.FromTicks((long)(baseDelay.Ticks * jitterFactor));
             return jittered < floor ? floor : jittered;
         }

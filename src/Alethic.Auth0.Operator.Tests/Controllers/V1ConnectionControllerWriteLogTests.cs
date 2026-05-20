@@ -1,83 +1,123 @@
-using System.IO;
+using System;
 using System.Linq;
-using System.Text.RegularExpressions;
+using System.Reflection;
+using System.Text.Json;
 
+using Alethic.Auth0.Operator.Controllers;
+using Alethic.Auth0.Operator.Models;
+using Alethic.Auth0.Operator.Options;
+using Alethic.Auth0.Operator.Tests.TestSupport;
+
+using KubeOps.Abstractions.Queue;
+using KubeOps.KubernetesClient;
+
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using Moq;
 
 namespace Alethic.Auth0.Operator.Tests.Controllers
 {
     /// <summary>
-    /// Regression guard for F7 / LA-RF-81: the connection-update write path must thread the real
-    /// <c>entity.Namespace()</c> through to the <c>LogAuth0Write</c> call — not the hard-coded
-    /// <c>"unknown"</c> literal that previously caused every Datadog
-    /// <c>auth0ApiCallPurpose:"update_connection"</c> log to render <c>entityNamespace:"unknown"</c>.
+    /// Regression guard for F7 / LA-RF-81: the connection write paths must thread the real
+    /// <c>entity.Namespace()</c> (passed through as <c>defaultNamespace</c>) into the
+    /// <c>LogAuth0Write</c> funnel — not the hard-coded <c>"unknown"</c> literal that
+    /// previously caused every Datadog <c>auth0ApiCallPurpose:"update_connection"</c> /
+    /// <c>"reset_connection_metadata"</c> log line to render <c>entityNamespace:"unknown"</c>.
     /// <para>
-    /// The <c>Update</c> method receives <c>defaultNamespace</c> from
-    /// <see cref="V1TenantEntityController{TEntity,TConf}.PerformUpdate"/>, which passes
-    /// <c>entity.Namespace()</c>. Asserting at the call-site source-text level (rather than via
-    /// SDK mocking) is the lightest-weight guard that survives signature refactors and catches
-    /// future copy-paste regressions of the literal.
+    /// M3 (LA-RF-81 code review) replaced the previous source-text regex with this behavioural
+    /// test. We invoke the protected <c>LogAuth0Write</c> directly via reflection on a real
+    /// <see cref="V1ConnectionController"/> instance — same funnel the production
+    /// <c>update_connection</c> and <c>reset_connection_metadata</c> call sites use — and
+    /// assert the captured JSON payload carries the namespace we passed in.
     /// </para>
     /// </summary>
     [TestClass]
     public class V1ConnectionControllerWriteLogTests
     {
-        private static string ReadConnectionControllerSource()
-        {
-            // The test runs from the test assembly's bin dir; walk up to repo root, then into the
-            // operator project. This keeps the test self-contained and avoids new test-data plumbing.
-            var dir = new DirectoryInfo(System.AppContext.BaseDirectory);
-            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Alethic.Auth0.Operator.sln")))
-                dir = dir.Parent;
-
-            Assert.IsNotNull(dir, "Could not locate repo root (Alethic.Auth0.Operator.sln) by walking up from test bin dir.");
-
-            var sourcePath = Path.Combine(
-                dir!.FullName,
-                "src", "Alethic.Auth0.Operator", "Controllers", "V1ConnectionController.cs");
-            Assert.IsTrue(File.Exists(sourcePath), $"Expected source file at {sourcePath}.");
-
-            return File.ReadAllText(sourcePath);
-        }
+        [TestMethod]
+        public void LogAuth0Write_PassesEntityNamespaceThroughForUpdateConnection()
+            => AssertLogAuth0WriteRoutesNamespace(purpose: "update_connection", expectedNamespace: "team-alpha");
 
         [TestMethod]
-        public void UpdateConnection_LogAuth0WriteCall_PassesDefaultNamespace_NotLiteralUnknown()
+        public void LogAuth0Write_PassesEntityNamespaceThroughForResetConnectionMetadata()
+            => AssertLogAuth0WriteRoutesNamespace(purpose: "reset_connection_metadata", expectedNamespace: "team-bravo");
+
+        private static void AssertLogAuth0WriteRoutesNamespace(string purpose, string expectedNamespace)
         {
-            var source = ReadConnectionControllerSource();
+            var capturingLogger = new CapturingLogger();
+            var controller = BuildController(capturingLogger);
 
-            // Match the LogAuth0Write call for update_connection. The signature is:
-            //   LogAuth0Write(message, entityType, entityName, entityNamespace, purpose, driftContext)
-            // We assert the 4th positional argument (entityNamespace) is `defaultNamespace`, and
-            // the 5th is the literal "update_connection".
-            var pattern = new Regex(
-                @"LogAuth0Write\([^,]+,\s*""A0Connection""\s*,\s*[^,]+,\s*(?<ns>[^,]+),\s*""update_connection""",
-                RegexOptions.Singleline);
+            // LogAuth0Write is protected on V1Controller<TEntity,TSpec,TStatus,TConf>.
+            // Reflect onto its closed-generic base to invoke it on the V1ConnectionController
+            // instance — exactly the same funnel the production update path uses.
+            var method = FindLogAuth0Write(controller.GetType());
+            Assert.IsNotNull(method, "LogAuth0Write(message, entityType, entityName, entityNamespace, purpose, driftContext) not found on V1ConnectionController.");
 
-            var matches = pattern.Matches(source).Cast<Match>().ToList();
-            Assert.AreEqual(1, matches.Count, "Expected exactly one LogAuth0Write call for update_connection.");
+            var driftContext = DriftLogContext.FirstReconciliation();
+            method!.Invoke(controller, new object?[]
+            {
+                "Updating Auth0 connection with ID: cn_test",
+                "A0Connection",
+                "test-connection",
+                expectedNamespace,
+                purpose,
+                driftContext,
+            });
 
-            var ns = matches[0].Groups["ns"].Value.Trim();
-            Assert.AreEqual("defaultNamespace", ns,
-                $"LogAuth0Write for update_connection must pass defaultNamespace, got '{ns}'. " +
-                "The hard-coded \"unknown\" literal caused entityNamespace to render as \"unknown\" on every " +
-                "Datadog auth0ApiCallPurpose:\"update_connection\" log line.");
+            var jsonEntry = capturingLogger.Entries
+                .Where(e => e.Level == LogLevel.Warning) // LogAuth0Write emits at Warning
+                .Select(e => TryParseJson(e.Message))
+                .FirstOrDefault(d => d is not null
+                                     && d.RootElement.TryGetProperty("auth0ApiCallPurpose", out var p)
+                                     && p.GetString() == purpose);
+
+            Assert.IsNotNull(jsonEntry, $"Expected a structured Warning log carrying auth0ApiCallPurpose={purpose}.");
+
+            var root = jsonEntry!.RootElement;
+            Assert.IsTrue(root.TryGetProperty("entityNamespace", out var nsProp),
+                $"LogAuth0Write payload for purpose={purpose} must include `entityNamespace`.");
+            Assert.AreEqual(expectedNamespace, nsProp.GetString(),
+                $"LogAuth0Write for purpose={purpose} must thread `defaultNamespace` through to `entityNamespace`. " +
+                $"Got '{nsProp.GetString()}', expected '{expectedNamespace}'. " +
+                "The hard-coded \"unknown\" literal previously caused entityNamespace to render as \"unknown\" " +
+                "on every Datadog log line for these purposes.");
+            Assert.AreEqual("A0Connection", root.GetProperty("entityTypeName").GetString());
         }
 
-        [TestMethod]
-        public void ResetConnectionMetadata_LogAuth0WriteCall_PassesDefaultNamespace_NotLiteralUnknown()
+        private static MethodInfo? FindLogAuth0Write(Type startType)
         {
-            var source = ReadConnectionControllerSource();
+            for (var t = startType; t != null; t = t.BaseType)
+            {
+                var method = t.GetMethod(
+                    "LogAuth0Write",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (method is not null)
+                    return method;
+            }
+            return null;
+        }
 
-            var pattern = new Regex(
-                @"LogAuth0Write\([^,]+,\s*""A0Connection""\s*,\s*[^,]+,\s*(?<ns>[^,]+),\s*""reset_connection_metadata""",
-                RegexOptions.Singleline);
+        private static V1ConnectionController BuildController(ILogger logger)
+        {
+            var kube = new Mock<IKubernetesClient>(MockBehavior.Loose).Object;
+            EntityRequeue<V1Connection> requeue = (_, __) => { };
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            var options = Microsoft.Extensions.Options.Options.Create(new OperatorOptions());
+            return new V1ConnectionController(
+                kube,
+                requeue,
+                cache,
+                new TypedLoggerAdapter<V1ConnectionController>(logger),
+                options);
+        }
 
-            var matches = pattern.Matches(source).Cast<Match>().ToList();
-            Assert.AreEqual(1, matches.Count, "Expected exactly one LogAuth0Write call for reset_connection_metadata.");
-
-            var ns = matches[0].Groups["ns"].Value.Trim();
-            Assert.AreEqual("defaultNamespace", ns,
-                $"LogAuth0Write for reset_connection_metadata must pass defaultNamespace, got '{ns}'.");
+        private static JsonDocument? TryParseJson(string message)
+        {
+            try { return JsonDocument.Parse(message); }
+            catch { return null; }
         }
     }
 }
